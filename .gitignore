@@ -1,0 +1,9 @@
+node_modules/
+dist/
+.logbook/
+logbook/
+.vitest-tmp/
+coverage/
+*.log
+*.tsbuildinfo
+.atl/

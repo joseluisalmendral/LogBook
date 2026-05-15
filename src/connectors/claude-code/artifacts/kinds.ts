@@ -1,0 +1,25 @@
+/**
+ * ArtifactKindName is already defined in src/types/manifest.ts — this module
+ * re-exports it from there and adds the installer-registry constants so that
+ * the connector layer doesn't need to import from src/types directly.
+ */
+
+export type { ArtifactKindName } from "../../../types/manifest.js";
+
+// Iter1-only kinds (the ones we actually install in iteration 1).
+export const ITER1_KINDS: ReadonlyArray<import("../../../types/manifest.js").ArtifactKindName> = [
+  "hook",
+  "gitignore_entry",
+];
+
+// ID prefix per kind — used by concrete installers to generate lb-* ids.
+export const ID_PREFIXES: Record<import("../../../types/manifest.js").ArtifactKindName, string> = {
+  hook: "lb-hook",
+  mcp_server: "lb-mcp",
+  slash_command: "lb-cmd",
+  skill: "lb-skill",
+  subagent: "lb-agent",
+  augment_claudemd: "lb-claudemd",
+  statusline: "lb-statusline",
+  gitignore_entry: "lb-gitignore",
+};

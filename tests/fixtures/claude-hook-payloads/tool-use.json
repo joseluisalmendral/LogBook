@@ -1,0 +1,1 @@
+{"hook_event_name":"PostToolUse","session_id":"sess-002","timestamp":"2026-05-15T20:01:00.000Z","tool_name":"Write","tool_args":{"file_path":"/abs/bar.ts","content":"export const x = 1;"},"tool_response":{"success":true}}

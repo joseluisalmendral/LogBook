@@ -1,0 +1,1 @@
+{"hook_event_name":"PostToolUse","session_id":"sess-004","timestamp":"2026-05-15T20:03:00.000Z","tool_name":"Read","tool_args":{"file_path":"src/foo.ts"},"tool_response":"session=123e4567-e89b-12d3-a456-426614174000 hash=2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824 file=src/foo.ts"}
