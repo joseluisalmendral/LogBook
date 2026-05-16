@@ -1,5 +1,8 @@
 # LogBook (repository instructions)
 
+> Iter1-iter5 complete. See README.md for user-facing reference; logbook_mvp_spec_v3.md remains the
+> canonical spec for all implementation decisions.
+
 Canonical specification: **`logbook_mvp_spec_v3.md`** at the repo root. Read it fully before writing any code.
 
 ## Workflow
