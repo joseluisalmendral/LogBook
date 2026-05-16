@@ -132,13 +132,27 @@ function renderFrame(state: ReviewState): React.ReactNode {
 
 export interface ReviewAppProps {
   initialItems: ReviewItem[];
+  /**
+   * Optional callback invoked when the user exits the review TUI (q, Ctrl+C,
+   * or commit). When provided (e.g. by ReviewBridgeScreen), the callback runs
+   * instead of calling useApp().exit() — this allows the shell to return to the
+   * home screen without closing the parent Ink tree.
+   *
+   * When omitted, the existing behavior is preserved: useApp().exit() is called
+   * and the Ink process terminates. This keeps runReviewTUI() working unchanged.
+   */
+  onExit?: (finalState: ReviewState) => void;
 }
 
 /**
  * Thin Ink component for testing via ink-testing-library.
  * Uses shared renderFrame and keypressToAction helpers.
+ *
+ * Additive onExit prop (iter6 T4): when provided, it replaces the default
+ * useApp().exit() call so the shell can intercept the exit and navigate back
+ * to the home screen without tearing down the parent Ink tree.
  */
-export function ReviewApp({ initialItems }: ReviewAppProps): React.ReactNode {
+export function ReviewApp({ initialItems, onExit }: ReviewAppProps): React.ReactNode {
   const { exit } = useApp();
   const [state, setState] = useState<ReviewState>(() => initialState(initialItems));
 
@@ -147,8 +161,16 @@ export function ReviewApp({ initialItems }: ReviewAppProps): React.ReactNode {
     if (!action) return;
 
     if (action.type === "commit" || action.type === "exit") {
-      setState((s) => reduce(s, action));
-      exit();
+      const next = reduce(state, action);
+      setState(next);
+      if (onExit) {
+        // Shell integration: let the parent handle navigation instead of
+        // closing the Ink process.
+        onExit(next);
+      } else {
+        // Legacy path: terminate the Ink process (runReviewTUI standalone).
+        exit();
+      }
       return;
     }
 

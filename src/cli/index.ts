@@ -3,6 +3,12 @@
  *
  * Wires all subcommands and delegates to citty's runMain.
  * The shebang (#!/usr/bin/env node) is injected by tsup's banner config.
+ *
+ * Zero-arg intercept (iter6 T6):
+ *   When invoked with no arguments AND both stdin and stdout are TTYs,
+ *   the interactive shell TUI is launched instead of printing citty help.
+ *   Any error from the shell falls through to runMain (safe degradation).
+ *   Non-TTY invocations (CI, scripts, piped) always go straight to runMain.
  */
 
 import { defineCommand, runMain } from "citty";
@@ -71,4 +77,43 @@ const main = defineCommand({
   },
 });
 
-runMain(main);
+// ---------------------------------------------------------------------------
+// Zero-arg intercept — launch TUI shell when invoked interactively
+// ---------------------------------------------------------------------------
+
+/**
+ * Attempt to launch the interactive TUI shell.
+ *
+ * Returns true if the shell handled the invocation (caller should return).
+ * Returns false if the shell should be skipped (fall through to runMain).
+ *
+ * Conditions for launching the shell:
+ *   1. No subcommand/flag arguments (process.argv.length === 2).
+ *   2. Both stdin AND stdout are TTYs (interactive terminal session).
+ *
+ * The dynamic import keeps Ink + React out of the cold-start bundle for all
+ * subcommand invocations (design §6, ADR-iter6-04).
+ */
+async function maybeShell(): Promise<boolean> {
+  // argv[0] = node, argv[1] = script path — length === 2 means no user args
+  if (process.argv.length !== 2) return false;
+  // Both stdin and stdout must be TTYs — prevents shell launch in CI / pipes
+  if (!(process.stdin.isTTY && process.stdout.isTTY)) return false;
+
+  try {
+    const { runShell } = await import("../tui/shell.js");
+    await runShell();
+    return true;
+  } catch (err) {
+    if (process.env["LOGBOOK_DEBUG"] === "1") {
+      process.stderr.write(`[shell] ${(err as Error).message}\n`);
+    }
+    // Fall through to runMain — citty prints help on no-args invocation
+    return false;
+  }
+}
+
+(async () => {
+  if (await maybeShell()) return;
+  await runMain(main);
+})();
