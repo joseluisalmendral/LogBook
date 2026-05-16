@@ -1,132 +1,59 @@
 # LogBook
 
-LogBook is a local CLI in Node.js + TypeScript that documents AI-built projects via Claude Code hooks,
-MCP tools, and pedagogical exports. It captures decisions, errors, and lessons as they happen and
-renders them into deterministic markdown docs, teaching scripts, and self-contained HTML exports.
+A local CLI that documents AI-built projects via Claude Code hooks, MCP tools, and pedagogical exports.
 
-## What it does
+LogBook captures decisions, errors, fixes, lessons, and resources as they happen — automatically through Claude Code hooks and MCP tool calls, or manually via CLI commands. It renders them into deterministic markdown, Nygard ADRs, LLM-backed teaching scripts, and self-contained HTML you can hand to a class.
 
-- Records decisions, errors, fixes, lessons, resources, and milestones via MCP tools and CLI commands
-  — automatically via Claude Code hooks or manually on demand.
-- Generates deterministic markdown documentation (ADRs, timeline, error log) inside idempotent
-  `<!-- logbook:generated -->` blocks; content you write outside markers is never touched.
-- Produces LLM-backed teaching scripts that turn session history into structured learning material.
-- Exports self-contained HTML files (no external network calls, no CDN dependencies) and an
-  instructor-pack bundle that merges all docs, ADRs, and teaching scripts into a single distributable.
-- Installs and uninstalls as a coexistence-friendly Claude Code plugin: append-only edits to shared
-  files, every entry tagged, byte-identical uninstall guaranteed.
+## Status
+
+**MVP complete + TUI shell v1.1.** Six SDD iterations shipped. 1286 tests green (909 unit + 354 integration + 23 e2e). Not yet published to npm — install via local clone + `pnpm link --global`. See [`docs/01-getting-started.md`](./docs/01-getting-started.md) for full instructions.
 
 ## Install
 
 ```sh
-# Global install (once published to npm)
-pnpm add -g logbook
-
-# Local dev
+git clone https://github.com/joseluisalmendral/LogBook.git
+cd LogBook
 pnpm install && pnpm build
+pnpm link --global
 ```
 
-## Quick start
+Full installation paths (including ad-hoc per-project usage and the future `pnpm add -g logbook`) live in [`docs/01-getting-started.md`](./docs/01-getting-started.md).
 
-1. `logbook init --preset minimal` — install hooks, MCP server, and Skill into the current repo.
-   Use `--preset standard` for SQLite index + statusline, or `--preset teaching` for the full
-   pedagogical stack (subagents, sessionStart memory, teaching-script support).
-2. Start working — Claude Code hooks capture events automatically on each tool call.
-3. Run `logbook decision`, `logbook error`, `logbook lesson`, etc. to record items manually.
-4. Run `logbook build` to regenerate all markdown docs from the JSONL source.
-5. Run `logbook export html` or `logbook export instructor-pack` to produce a self-contained HTML file.
-6. Run `logbook uninstall --force` to remove all installed artifacts (your data in `logbook/` is preserved).
-
-## Command reference
-
-| Command | Description |
-|---------|-------------|
-| `logbook init [--preset minimal\|standard\|teaching]` | Install LogBook into the current repo |
-| `logbook status` | Show install state, event counts, and last-build timestamp |
-| `logbook doctor [--measure]` | Run health checks; `--measure` prints fixed-context token cost |
-| `logbook disable` | Disable hooks without uninstalling |
-| `logbook enable` | Re-enable previously disabled hooks |
-| `logbook uninstall [--force] [--dry-run]` | Remove installed artifacts; data preserved |
-| `logbook purge [--force] [--dry-run]` | Remove installed artifacts AND all data |
-| `logbook ingest claude` | Ingest a Claude Code session JSON file into the JSONL log |
-| `logbook ingest codex` | Ingest a Codex session (stdin JSON) into the JSONL log |
-| `logbook ingest otel` | Ingest an OTLP-JSON telemetry file into the JSONL log |
-| `logbook decision` | Record an architectural decision (ADR) |
-| `logbook error` | Record an error event |
-| `logbook fix` | Record a fix for a previously recorded error |
-| `logbook lesson` | Record a lesson learned |
-| `logbook resource` | Record an external resource (URL, doc, tool) |
-| `logbook visual` | Record a visual artifact (screenshot, diagram) |
-| `logbook milestone` | Record a project milestone |
-| `logbook start` | Start a new session |
-| `logbook phase` | Record a phase transition within the current session |
-| `logbook session rename` | Rename the current session |
-| `logbook snapshot` | Take a snapshot of the current state |
-| `logbook summarize milestone` | Generate an LLM-backed summary for a milestone |
-| `logbook summarize project` | Generate an LLM-backed project summary |
-| `logbook promote` | Promote a draft decision to accepted |
-| `logbook review` | Review pending decisions and lessons |
-| `logbook providers list` | List configured LLM providers |
-| `logbook providers set` | Set active LLM provider and model |
-| `logbook providers test` | Test provider connectivity |
-| `logbook teaching-script` | Generate a teaching script from session history |
-| `logbook build` | Regenerate all markdown docs from JSONL source |
-| `logbook export html [--safe]` | Export self-contained HTML; `--safe` redacts paths and emails |
-| `logbook export instructor-pack [--safe] [--out <path>]` | Export bundled HTML with all docs, ADRs, and teaching scripts |
-
-## Token budget
-
-LogBook keeps combined fixed-context tokens across all installed artifacts at or below 500 tokens.
-This covers the Skill body, CLAUDE.md augment block, MCP tool descriptions, and SessionStart memory.
-Verify at any time with `logbook doctor --measure`.
-
-Current preset measurements (teaching preset is the maximum):
-
-| Preset | Fixed-context tokens |
-|--------|---------------------|
-| minimal | 0 |
-| standard | 381 |
-| teaching | 499 |
-
-The teaching preset stays 1 token below the hard limit. If future changes push it over 500,
-`doctor --measure` will report a budget violation.
-
-## Architecture
-
-- **MCP server** (stdio transport, project-scoped): exposes `logbook_record`, `logbook_query`, and
-  `logbook_status` tools to Claude Code. No shell exec, no outbound network, path-confined to project root.
-- **Claude Code hooks**: a post-tool hook appends raw events to a JSONL file (p95 < 200 ms, never
-  exits non-zero, degrades silently).
-- **JSONL canonical source**: all events live in `logbook/events.jsonl`. SQLite is a best-effort
-  index rebuilt on demand — never the source of truth.
-- **Deterministic generators**: `logbook build` reads JSONL and writes markdown inside idempotent
-  `<!-- logbook:generated start/end -->` blocks. Idempotent: running build twice produces the same output.
-- **LLM summarization** (optional): `summarize`, `teaching-script`, and `session rename` call a
-  configured provider. All other commands work offline.
-- **Byte-identical install/uninstall**: every artifact is registered in `.logbook/install-manifest.json`.
-  Uninstall replays the manifest in reverse, restoring each shared file to its pre-install state byte-for-byte.
-
-## Uninstall
+## 30-second quick start
 
 ```sh
-logbook uninstall --force
+cd /path/to/your-project
+logbook init --preset standard --yes      # install (or just `logbook` for the TUI wizard)
+# work normally in Claude Code — auto-capture is on
+logbook build                              # regenerate logbook/docs/*
+logbook export instructor-pack             # produce a single shareable HTML
 ```
 
-Removes all installed artifacts (hooks, MCP registration, Skill, CLAUDE.md block, statusline entry,
-subagents). Data in `logbook/` (JSONL, SQLite, exports, docs) is preserved.
+Three presets: `minimal` (hooks only, 0 fixed tokens), `standard` (default, 381 tokens), `teaching` (full pedagogical stack, 499 tokens).
 
-To remove everything including data:
+To remove cleanly: `logbook uninstall --force`. To remove everything including data: `logbook purge --force`.
 
-```sh
-logbook purge --force
-```
+## Documentation
 
-Both commands accept `--dry-run` to preview changes without writing anything.
+Everything lives under [`docs/`](./docs/README.md):
 
-## Status
+- [`docs/01-getting-started.md`](./docs/01-getting-started.md) — install, your first 5 minutes, preset choice, LLM setup, gotchas
+- [`docs/02-concepts.md`](./docs/02-concepts.md) — the conceptual model
+- [`docs/03-cli-reference.md`](./docs/03-cli-reference.md) — every command with flags and examples
+- [`docs/04-flows-by-role.md`](./docs/04-flows-by-role.md) — flows for developers, instructors, and students
+- [`docs/05-architecture.md`](./docs/05-architecture.md) — internals for maintainers
+- [`docs/06-construction-log.md`](./docs/06-construction-log.md) — how LogBook itself was built (6 SDD iterations, methodology, bug case studies)
+- [`docs/07-troubleshooting.md`](./docs/07-troubleshooting.md) — top 10 gotchas with fixes
 
-MVP complete (iter1-iter5). 1100+ tests green (755 unit, 333 integration, 23 e2e).
-See `logbook_mvp_spec_v3.md` for the canonical specification.
+Canonical product spec: [`logbook_mvp_spec_v3.md`](./logbook_mvp_spec_v3.md).
+
+## Architecture in 5 bullets
+
+- **Local-first.** All data lives in the project. No server. No upload except explicit LLM calls.
+- **JSONL is the source of truth.** `logbook/evidence/events.jsonl` is canonical; SQLite is a best-effort index, reconstructable from the JSONL.
+- **Byte-identical install/uninstall.** Every shared file (`CLAUDE.md`, `.claude/settings.local.json`, `.claude/mcp.json`, `.gitignore`) is edited via pure string-patching — never `JSON.parse` + `JSON.stringify`. Uninstall restores the original bytes exactly. Enforced by 6 e2e gate tests.
+- **500-token ceiling for fixed agent context.** `logbook doctor --measure` enforces it; teaching preset sits at 499/500. CI blocks any change that pushes it over.
+- **Deterministic generation.** `logbook build` reads JSONL and writes markdown inside idempotent `<!-- logbook:generated -->` blocks. Content outside markers is preserved literally.
 
 ## License
 
