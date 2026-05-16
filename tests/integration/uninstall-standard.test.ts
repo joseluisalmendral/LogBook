@@ -1,9 +1,10 @@
 /**
  * I-INIT2 — uninstall after init --preset standard.
  *
- * T13: Verifies that uninstall --force reverses all 11 preset standard artifacts
- * cleanly, preserving data directories (.logbook/state.json) but removing
- * all installer-written content.
+ * T13 (iter3): Verifies that uninstall --force reverses all 14 preset standard
+ * manifest entries cleanly, preserving data directories (.logbook/state.json)
+ * but removing all installer-written content including Skill files and their
+ * parent directory (.claude/skills/logbook-auto-capture/ and .claude/skills/).
  */
 
 import * as fs from "node:fs";
@@ -136,5 +137,22 @@ describe("I-INIT2 — uninstall after init --preset standard", () => {
     // We verify this indirectly: .logbook/ dir must still exist if state was written.
     // (init --yes writes state.json, so it should be there)
     expect(fs.existsSync(statePath)).toBe(true);
+  });
+
+  it("Skill files removed after uninstall", () => {
+    const skillMdPath = path.join(tmp, ".claude", "skills", "logbook-auto-capture", "SKILL.md");
+    const refPath = path.join(tmp, ".claude", "skills", "logbook-auto-capture", "reference.md");
+    expect(fs.existsSync(skillMdPath), "SKILL.md should be removed").toBe(false);
+    expect(fs.existsSync(refPath), "reference.md should be removed").toBe(false);
+  });
+
+  it(".claude/skills/logbook-auto-capture/ dir removed after uninstall", () => {
+    const skillDir = path.join(tmp, ".claude", "skills", "logbook-auto-capture");
+    expect(fs.existsSync(skillDir), ".claude/skills/logbook-auto-capture/ should be removed").toBe(false);
+  });
+
+  it(".claude/skills/ dir removed after uninstall (we created it)", () => {
+    const skillsDir = path.join(tmp, ".claude", "skills");
+    expect(fs.existsSync(skillsDir), ".claude/skills/ should be removed (was created by us)").toBe(false);
   });
 });

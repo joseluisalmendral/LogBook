@@ -27,6 +27,11 @@ import resource from "./commands/resource.js";
 import milestone from "./commands/milestone.js";
 import build from "./commands/build.js";
 import exportCmd from "./commands/export.js";
+import providers from "./commands/providers.js";
+import summarize from "./commands/summarize.js";
+import promote from "./commands/promote.js";
+import review from "./commands/review.js";
+import teachingScript from "./commands/teaching-script.js";
 
 const main = defineCommand({
   meta: {
@@ -56,6 +61,11 @@ const main = defineCommand({
     milestone,
     build,
     export: exportCmd,
+    providers,
+    summarize,
+    promote,
+    review,
+    "teaching-script": teachingScript,
   },
 });
 

@@ -87,11 +87,17 @@ export const decisionTool: ToolDef<DecisionInput, DecisionOutput> = {
     const sessionId = ctx.state.session ?? "";
 
     // Write JSONL event — persisted to the canonical event log.
+    // Backward compat note: iter2-era MCP events used { payload: {...} } wrapper.
+    // Iter3+ writes top-level fields to match the CLI event shape (T10b.D1 closure).
     const event = {
       id,
       type: "manual.decision",
       ts,
-      payload: input,
+      title: input.title,
+      ...(input.alternatives !== undefined && { alternatives: input.alternatives }),
+      ...(input.why !== undefined && { why: input.why }),
+      ...(input.status !== undefined && { status: input.status }),
+      ...(input.context !== undefined && { context: input.context }),
     };
     await appendJsonl(ctx.paths.eventsJsonl, JSON.stringify(event));
 

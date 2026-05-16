@@ -20,7 +20,10 @@
  *                            Descriptions are STATIC — baked as a constant
  *                            from the same ToolDef array used by the server.
  *                            This avoids spawning the MCP server at doctor time.
- * skill                    → 0 (iter3)
+ * skill                    → Math.ceil(content.length / 4) for SKILL.md ONLY.
+ *                            reference.md is on-demand (loaded by agent when needed),
+ *                            NOT in fixed context → counted as 0.
+ *                            Distinction: basename === "SKILL.md" → count; else → 0.
  * subagent / statusline    → 0 (iter4)
  * sessionStart             → 0 (iter4)
  */
@@ -230,7 +233,7 @@ export default defineCommand({
 
     // Measure token budget — real chars/4 counting (T13)
     const breakdown = {
-      skill: 0,              // iter3 deferred
+      skill: 0,              // iter3 active: Math.ceil(SKILL.md.length / 4); reference.md → 0
       augmentClaudemd: 0,
       mcpToolDescriptions: 0,
       slashCommandDescriptions: 0,
@@ -262,8 +265,22 @@ export default defineCommand({
         if (desc !== null) {
           breakdown.slashCommandDescriptions += Math.ceil(desc.length / 4);
         }
+      } else if (entry.kind === "skill") {
+        // Only SKILL.md is in fixed context (loaded by Claude Code into agent context).
+        // reference.md is on-demand — the agent reads it only when needed → 0 tokens.
+        const basename = path.basename(entry.file_path);
+        if (basename === "SKILL.md") {
+          const absPath = path.join(paths.root, entry.file_path);
+          let content: string;
+          try {
+            content = fs.readFileSync(absPath, "utf8");
+            breakdown.skill += Math.ceil(content.length / 4);
+          } catch {
+            // File missing: 0 tokens (verify will report it as FAIL)
+          }
+        }
+        // reference.md → 0 (on-demand only, not in fixed context)
       }
-      // "skill" → 0 (iter3)
     }
 
     const fixedContextTokens =

@@ -2,14 +2,19 @@
  * logbook init — install LogBook artifacts into the current project.
  *
  * Preset "minimal" (iter1): one PostToolUse hook + one .gitignore entry.
- * Preset "standard" (iter2): hook + mcp_server + augment_claudemd + 8 slash_command × + gitignore_entry.
+ * Preset "standard" (iter3): 14 manifest entries / 13 logical artifacts.
  *   Install order per design §6 (deterministic):
- *     1. hook
- *     2. mcp_server
- *     3. augment_claudemd
+ *     1.  hook
+ *     2.  mcp_server
+ *     3.  augment_claudemd
  *     4-11. slash_command × 8 (lb-decision, lb-error, lb-fix, lb-lesson,
  *                               lb-milestone, lb-phase, lb-review, lb-status)
- *     12. gitignore_entry (LAST)
+ *     12. skill (SKILL.md — logbook-auto-capture body)
+ *     13. skill (reference.md — logbook-auto-capture reference, on-demand)
+ *     14. gitignore_entry (LAST)
+ *
+ * Logical vs manifest: Skill is 1 logical artifact in 2 files (2 manifest entries).
+ * User-facing summary reports 13 logical artifacts.
  */
 
 import * as fs from "node:fs";
@@ -87,6 +92,16 @@ function readSlashAsset(name: string): string {
  */
 function readAugmentAsset(): string {
   const assetPath = resolveAssetPath("claudemd", "augment.md");
+  return fs.readFileSync(assetPath, "utf8");
+}
+
+/**
+ * Read a Skill asset file from assets/skill/<name>.
+ * Supports SKILL.md and reference.md.
+ * Throws if the file is not found — assets are required for standard preset.
+ */
+function readSkillAsset(name: string): string {
+  const assetPath = resolveAssetPath("skill", name);
   return fs.readFileSync(assetPath, "utf8");
 }
 
@@ -171,7 +186,23 @@ function buildStandardArtifacts(): Artifact[] {
     },
     // 4-11. slash_command × 8 (in §6 order)
     ...slashArtifacts,
-    // 12. gitignore_entry (LAST — per iter1 install-order contract)
+    // 12. skill (SKILL.md — logbook-auto-capture body; in fixed agent context)
+    {
+      kind: "skill",
+      name: "logbook-auto-capture",
+      file_path: ".claude/skills/logbook-auto-capture/SKILL.md",
+      body: readSkillAsset("SKILL.md"),
+      _logbookId: "lb-skill-logbook-auto-capture-skill",
+    },
+    // 13. skill (reference.md — on-demand field reference; NOT in fixed context)
+    {
+      kind: "skill",
+      name: "logbook-auto-capture",
+      file_path: ".claude/skills/logbook-auto-capture/reference.md",
+      body: readSkillAsset("reference.md"),
+      _logbookId: "lb-skill-logbook-auto-capture-reference",
+    },
+    // 14. gitignore_entry (LAST — per iter1 install-order contract)
     {
       kind: "gitignore_entry",
       file_path: ".gitignore",
@@ -183,8 +214,9 @@ function buildStandardArtifacts(): Artifact[] {
 /**
  * Dispatch to the correct artifact builder based on preset.
  * "minimal" → iter1 baseline (hook + gitignore_entry).
- * "standard" → iter2 full set (11 artifacts).
- * "full" is reserved for iter3+; falls back to standard for now.
+ * "standard" → iter3 full set (14 manifest entries / 13 logical artifacts).
+ *              Skill is 1 logical artifact composed of 2 files (SKILL.md + reference.md).
+ * "full" is reserved for iter4+; falls back to standard for now.
  */
 function buildArtifactsForPreset(preset: string): Artifact[] {
   if (preset === "standard" || preset === "full") {

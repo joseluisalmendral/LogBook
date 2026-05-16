@@ -14,17 +14,19 @@ import { GitignoreInstaller } from "./gitignore.js";
 import { MCPServerInstaller } from "./mcp.js";
 import { ClaudeMdAugmentInstaller } from "./claudemd.js";
 import { SlashCommandInstaller } from "./slash.js";
+import { SkillInstaller } from "./skill.js";
 
 let bootstrapped = false;
 
 /**
- * Register all iter1 + iter2 installers into the global registry.
+ * Register all iter1 + iter2 + iter3 installers into the global registry.
  * Idempotent: subsequent calls are no-ops.
  *
  * Iter1: HookInstaller, GitignoreInstaller
  * Iter2 (T4): MCPServerInstaller
  * Iter2 (T5): ClaudeMdAugmentInstaller
  * Iter2 (T6): SlashCommandInstaller
+ * Iter3 (T2): SkillInstaller
  */
 export function bootstrapClaudeCodeInstallers(): void {
   if (bootstrapped) return;
@@ -32,6 +34,7 @@ export function bootstrapClaudeCodeInstallers(): void {
   register(new MCPServerInstaller());
   register(new ClaudeMdAugmentInstaller());
   register(new SlashCommandInstaller());
+  register(new SkillInstaller());
   register(new GitignoreInstaller());
   bootstrapped = true;
 }

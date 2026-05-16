@@ -142,8 +142,9 @@ describe("mcp-tool-phase", () => {
     const events = readEvents(dir);
     const phaseEvent = events.find(
       (e) => (e as { type?: string }).type === "manual.phase",
-    ) as { type: string; payload?: { name?: string } } | undefined;
+    ) as { type: string; name?: string } | undefined;
     expect(phaseEvent).toBeDefined();
-    expect(phaseEvent?.payload?.name).toBe("apply");
+    // iter3+ shape: name is at top level (no payload wrapper).
+    expect(phaseEvent?.name).toBe("apply");
   }, 60_000);
 });

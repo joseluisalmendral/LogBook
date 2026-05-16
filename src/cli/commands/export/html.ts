@@ -1,16 +1,41 @@
 /**
- * logbook export html — Export to self-contained HTML (T12).
+ * logbook export html — Export to self-contained HTML (T12/T4).
  *
  * Reads the 3 generated docs from logbook/docs/, converts to HTML with
  * inlined CSS, writes to logbook/exports/index.html (or --out path).
  *
  * Design §3 CLI command signatures — export html row.
  * Hard contract: externalRefs must be 0 (enforced by sanitize-links).
+ *
+ * T4 (MONITOR-2): the exportHtml function is loaded via a runtime require()
+ * on a non-literal path so that esbuild/tsup cannot inline the
+ * unified/remark/rehype chain into the CLI cold-start bundle
+ * (dist/cli/index.cjs). The heavy deps live only in dist/export/html.cjs
+ * and are loaded on demand when this command actually runs.
  */
 
 import { defineCommand } from "citty";
+import { join } from "node:path";
 import { resolveProjectRoot, makePaths } from "../../../core/paths.js";
-import { exportHtml } from "../../../export/html.js";
+import type { exportHtml as ExportHtmlFn, ExportOptions } from "../../../export/html.js";
+
+/**
+ * Load the export module at runtime via a non-literal require() path.
+ * esbuild cannot statically resolve a path.join(__dirname, ...) argument,
+ * so it leaves the require() as a runtime call — preventing the
+ * unified/remark/rehype tree from being inlined into dist/cli/index.cjs.
+ *
+ * The export bundle (dist/export/html.cjs) is built by the 4th tsup entry
+ * and lives adjacent to the CLI bundle under dist/.
+ */
+function loadExportModule(): { exportHtml: typeof ExportHtmlFn } {
+  // Non-literal path — esbuild cannot resolve at bundle time.
+  // __dirname in CJS bundle resolves to dist/cli/ at runtime.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  return require(join(__dirname, "../export/html.cjs")) as {
+    exportHtml: typeof ExportHtmlFn;
+  };
+}
 
 export default defineCommand({
   meta: {
@@ -46,11 +71,22 @@ export default defineCommand({
         ? args["out"]
         : undefined;
 
+    // Lazy-load the export module — non-literal require() path means esbuild
+    // skips inlining; the heavy unified/remark/rehype chain stays in
+    // dist/export/html.cjs and is loaded only when this command runs.
+    const t0 = Date.now();
+    const { exportHtml } = loadExportModule();
+    if (process.env["LOGBOOK_DEBUG"] === "1") {
+      process.stderr.write(
+        `export: lazy-loaded export module in ${Date.now() - t0}ms\n`
+      );
+    }
+
+    const exportOpts: ExportOptions =
+      outArg !== undefined ? { paths, outFile: outArg } : { paths };
+
     let report: Awaited<ReturnType<typeof exportHtml>>;
     try {
-      const exportOpts = outArg !== undefined
-        ? { paths, outFile: outArg }
-        : { paths };
       report = await exportHtml(exportOpts);
     } catch (err) {
       process.stderr.write(

@@ -215,7 +215,7 @@ describe("mcp-tool-decision", () => {
       const decisionEvent = events.find(
         (e) => (e as { type?: string }).type === "manual.decision" &&
                (e as { id?: string }).id === decisionId,
-      ) as { type: string; ts: string; id: string; payload?: { title?: string } } | undefined;
+      ) as { type: string; ts: string; id: string; title?: string } | undefined;
 
       expect(auditEvent).toBeDefined();
       expect(decisionEvent).toBeDefined();
@@ -225,8 +225,8 @@ describe("mcp-tool-decision", () => {
       const decisionTs = new Date(decisionEvent!.ts).getTime();
       expect(auditTs).toBeLessThanOrEqual(decisionTs);
 
-      // 4. Decision event payload has title.
-      expect(decisionEvent!.payload?.title).toBe("Use SQLite as event store");
+      // 4. Decision event has title at top level (iter3+ shape — no payload wrapper).
+      expect(decisionEvent!.title).toBe("Use SQLite as event store");
 
       // 5. SQLite has a row in the decisions table.
       // We verify indirectly by checking the DB file exists.

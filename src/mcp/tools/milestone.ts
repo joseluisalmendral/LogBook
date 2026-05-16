@@ -45,11 +45,14 @@ export const milestoneTool: ToolDef<MilestoneInput, MilestoneOutput> = {
     const id = generateUlid();
     const ts = new Date().toISOString();
 
+    // Backward compat: iter2-era MCP events used { payload: {...} } wrapper.
+    // Iter3+ writes top-level fields (MONITOR-1 closure).
     const event = {
       id,
       type: "manual.milestone",
       ts,
-      payload: input,
+      title: input.title,
+      ...(input.next !== undefined && { next: input.next }),
     };
     await appendJsonl(ctx.paths.eventsJsonl, JSON.stringify(event));
 

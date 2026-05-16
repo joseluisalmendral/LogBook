@@ -45,11 +45,14 @@ export const resourceTool: ToolDef<ResourceInput, ResourceOutput> = {
     const id = generateUlid();
     const ts = new Date().toISOString();
 
+    // Backward compat: iter2-era MCP events used { payload: {...} } wrapper.
+    // Iter3+ writes top-level fields (MONITOR-1 closure).
     const event = {
       id,
       type: "manual.resource",
       ts,
-      payload: input,
+      url: input.url,
+      ...(input.note !== undefined && { note: input.note }),
     };
     await appendJsonl(ctx.paths.eventsJsonl, JSON.stringify(event));
 

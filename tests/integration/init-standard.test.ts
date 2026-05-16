@@ -1,14 +1,16 @@
 /**
  * I-INIT1 — init --preset standard on an empty project.
  *
- * T13: Verifies that buildArtifactsForPreset("standard") installs exactly 11
- * artifacts in the correct design §6 order:
+ * T13 (iter3): Verifies that buildArtifactsForPreset("standard") installs exactly
+ * 14 manifest entries (13 logical artifacts) in the correct design §6 order:
  *   1  hook
  *   2  mcp_server
  *   3  augment_claudemd
  *   4-11  slash_command × 8 (lb-decision, lb-error, lb-fix, lb-lesson,
  *                             lb-milestone, lb-phase, lb-review, lb-status)
- *   12  gitignore_entry (index 11, 0-based)
+ *   12  skill (SKILL.md)       — logbook-auto-capture Skill body
+ *   13  skill (reference.md)   — logbook-auto-capture reference
+ *   14  gitignore_entry (index 13, 0-based)
  *
  * Spawns the built CJS binary. Requires pnpm build before running.
  */
@@ -86,9 +88,9 @@ describe("I-INIT1 — init --preset standard", () => {
     expect(manifest).toBeDefined();
   });
 
-  it("manifest has exactly 12 artifacts (1 hook + 1 mcp + 1 augment + 8 slash + 1 gitignore)", () => {
-    // Design §6 order: hook(1) + mcp_server(1) + augment_claudemd(1) + slash×8(8) + gitignore(1) = 12
-    expect(manifest.artifacts).toHaveLength(12);
+  it("manifest has exactly 14 entries (1 hook + 1 mcp + 1 augment + 8 slash + 2 skill + 1 gitignore)", () => {
+    // Design §6 iter3 order: hook(1) + mcp_server(1) + augment_claudemd(1) + slash×8(8) + skill×2(2) + gitignore(1) = 14
+    expect(manifest.artifacts).toHaveLength(14);
   });
 
   it("manifest preset is 'standard'", () => {
@@ -129,9 +131,19 @@ describe("I-INIT1 — init --preset standard", () => {
     ]);
   });
 
-  it("last artifact (index 11) is gitignore_entry", () => {
-    // 12 total artifacts: hook(0) mcp(1) augment(2) slash×8(3-10) gitignore(11)
-    expect(manifest.artifacts[11]?.kind).toBe("gitignore_entry");
+  it("artifacts 12-13 (index 11-12) are skill × 2 (SKILL.md + reference.md)", () => {
+    // Index 11 = skill SKILL.md, index 12 = skill reference.md
+    const skillMain = manifest.artifacts[11];
+    const skillRef = manifest.artifacts[12];
+    expect(skillMain?.kind).toBe("skill");
+    expect(skillRef?.kind).toBe("skill");
+    expect(skillMain?.file_path).toContain("SKILL.md");
+    expect(skillRef?.file_path).toContain("reference.md");
+  });
+
+  it("last artifact (index 13) is gitignore_entry", () => {
+    // 14 total entries: hook(0) mcp(1) augment(2) slash×8(3-10) skill×2(11-12) gitignore(13)
+    expect(manifest.artifacts[13]?.kind).toBe("gitignore_entry");
   });
 
   it("hook entry written to settings.local.json", () => {
@@ -176,5 +188,17 @@ describe("I-INIT1 — init --preset standard", () => {
     const content = fs.readFileSync(gitignorePath, "utf8");
     expect(content).toContain(".logbook/");
     expect(content).toContain("logbook/");
+  });
+
+  it("Skill files created under .claude/skills/logbook-auto-capture/", () => {
+    const skillDir = path.join(tmp, ".claude", "skills", "logbook-auto-capture");
+    expect(fs.existsSync(path.join(skillDir, "SKILL.md")), "SKILL.md should exist").toBe(true);
+    expect(fs.existsSync(path.join(skillDir, "reference.md")), "reference.md should exist").toBe(true);
+  });
+
+  it("SKILL.md content contains expected skill name", () => {
+    const skillPath = path.join(tmp, ".claude", "skills", "logbook-auto-capture", "SKILL.md");
+    const content = fs.readFileSync(skillPath, "utf8");
+    expect(content).toContain("logbook-auto-capture");
   });
 });

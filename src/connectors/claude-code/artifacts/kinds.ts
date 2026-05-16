@@ -20,6 +20,12 @@ export const ITER2_KINDS: ReadonlyArray<import("../../../types/manifest.js").Art
   "slash_command",
 ];
 
+// Iter3 additions: new installer kinds introduced in iteration 3.
+// T2 activates "skill".
+export const ITER3_KINDS: ReadonlyArray<import("../../../types/manifest.js").ArtifactKindName> = [
+  "skill",
+];
+
 // ID prefix per kind — used by concrete installers to generate lb-* ids.
 export const ID_PREFIXES: Record<import("../../../types/manifest.js").ArtifactKindName, string> = {
   hook: "lb-hook",

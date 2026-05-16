@@ -189,12 +189,13 @@ describe("mcp-redaction", () => {
         (e) =>
           (e as { type?: string }).type === "manual.lesson" &&
           (e as { id?: string }).id === resultObj.id,
-      ) as { type: string; payload?: { text?: string } } | undefined;
+      ) as { type: string; text?: string } | undefined;
 
       expect(lessonEvent).toBeDefined();
 
-      // The AWS key must NOT appear in the persisted payload.
-      const persistedText = lessonEvent!.payload?.text ?? "";
+      // The AWS key must NOT appear in the persisted event.
+      // Iter3+ shape: text is at top level (no payload wrapper).
+      const persistedText = lessonEvent!.text ?? "";
       expect(persistedText).not.toContain(fakeAwsKey);
       // The redaction marker must be present instead.
       expect(persistedText).toContain("[REDACTED:");

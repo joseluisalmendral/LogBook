@@ -24,9 +24,10 @@ export type Artifact =
     }
   | {
       kind: "skill";
-      name: string;                // e.g. "logbook"
-      file_path: string;           // .claude/skills/<name>/SKILL.md
-      body: string;
+      name: string;                // e.g. "logbook-auto-capture"
+      file_path: string;           // e.g. ".claude/skills/logbook-auto-capture/SKILL.md"
+      body: string;                // file content
+      _logbookId: string;          // e.g. "lb-skill-auto-capture-main" or "lb-skill-auto-capture-ref"
     }
   | {
       kind: "subagent";

@@ -15,7 +15,18 @@ export default defineConfig([
     banner: {
       js: "#!/usr/bin/env node",
     },
-    noExternal: [/.*/],
+    // Externalize heavy/native deps. The CLI still bundles small JS deps
+    // (citty, valibot, pathe, defu, consola, proper-lockfile) for portability,
+    // but the AI SDKs are kept out of the cold-start hot path — they only get
+    // resolved from node_modules when `logbook summarize` / `providers test`
+    // are invoked.
+    external: [
+      "better-sqlite3",
+      "ai",
+      "@ai-sdk/anthropic",
+      "@ai-sdk/openai",
+      "@anthropic-ai/claude-agent-sdk",
+    ],
   },
   {
     // Hook connector — small CJS bundle invoked by Claude Code's hook bus.
@@ -66,6 +77,35 @@ export default defineConfig([
     splitting: false,
     // Only externalize the native module that CANNOT be bundled.
     // @modelcontextprotocol/sdk must be bundled for runtime portability.
+    external: ["better-sqlite3"],
+  },
+  {
+    // Export bundle — heavy unified/remark/rehype chain isolated here.
+    //
+    // CLI commands that need HTML export use a dynamic import() to lazy-load
+    // this bundle only when `logbook export html` is actually invoked. This
+    // keeps the CLI cold-start path (dist/cli/index.cjs) free from the
+    // ~400 KB unified/remark/rehype weight.
+    //
+    // Entry: src/export/index.ts → dist/export/html.cjs
+    // clean: false — preserves the cli/, connectors/, and mcp/ outputs built above.
+    entry: { "export/html": "src/export/index.ts" },
+    format: ["cjs"],
+    target: "node22",
+    outDir: "dist",
+    bundle: true,
+    clean: false,
+    dts: false,
+    sourcemap: false,
+    minify: false,
+    treeshake: true,
+    splitting: false,
+    // Bundle everything including ESM-only unified/remark/rehype deps.
+    // noExternal: [/.*/] overrides per-package externalization so that the
+    // entire chain (unified, remark-parse, remark-rehype, rehype-stringify,
+    // vfile, mdast, hast, etc.) is inlined into this self-contained CJS file.
+    noExternal: [/.*/],
+    // Re-add native module exclusion on top of noExternal (external wins).
     external: ["better-sqlite3"],
   },
 ]);

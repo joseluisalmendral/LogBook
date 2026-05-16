@@ -52,11 +52,13 @@ export const phaseTool: ToolDef<PhaseInput, PhaseOutput> = {
     const ts = new Date().toISOString();
 
     // Append manual.phase event to the canonical event log.
+    // Backward compat: iter2-era MCP events used { payload: {...} } wrapper.
+    // Iter3+ writes top-level fields (MONITOR-1 closure).
     const event = {
       id,
       type: "manual.phase",
       ts,
-      payload: input,
+      name: input.name,
     };
     await appendJsonl(ctx.paths.eventsJsonl, JSON.stringify(event));
 

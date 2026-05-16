@@ -1,10 +1,13 @@
 /**
- * T13 — ITER2 GATE: byte-identity standard install/uninstall.
+ * T13 — ITER3 GATE: byte-identity standard install/uninstall.
  *
  * Copies tests/fixtures/project-standard (which has 2 fake plugin hooks,
  * 1 fake MCP server entry, and 1 fake slash file) into a tmp dir, snapshots
  * the directory, runs `init --preset standard`, then `uninstall --force`, and
  * asserts the post-uninstall snapshot is byte-identical to the pre-install one.
+ *
+ * iter3 addition: verifies that the 2 Skill files (SKILL.md + reference.md)
+ * are installed mid-install and fully removed on uninstall — no trace left.
  *
  * If the diff is non-empty, the full diff arrays are embedded in the failure
  * message so reviewers see what mismatched without re-running.
@@ -25,7 +28,7 @@ const FIXTURE = join(REPO_ROOT, "tests/fixtures/project-standard");
 
 const SNAPSHOT_IGNORE = [".git", "node_modules", ".logbook", "logbook"];
 
-describe("T13 — byte-identity standard install/uninstall (ITER2 GATE)", () => {
+describe("T13 — byte-identity standard install/uninstall (ITER3 GATE)", () => {
   beforeAll(() => {
     if (!existsSync(CLI_BUNDLE) || !existsSync(HOOK_BUNDLE) || !existsSync(MCP_BUNDLE)) {
       spawnSync("pnpm", ["build"], { stdio: "inherit", cwd: REPO_ROOT });
@@ -100,6 +103,10 @@ describe("T13 — byte-identity standard install/uninstall (ITER2 GATE)", () => 
         // fake-plugin.md must still be there (not touched)
         expect(exists(j(tmp, ".claude/commands/fake-plugin.md"))).toBe(true);
 
+        // Skill files installed under .claude/skills/logbook-auto-capture/
+        expect(exists(j(tmp, ".claude/skills/logbook-auto-capture/SKILL.md")), "SKILL.md missing").toBe(true);
+        expect(exists(j(tmp, ".claude/skills/logbook-auto-capture/reference.md")), "reference.md missing").toBe(true);
+
         // .gitignore has our entries appended
         const gitignore = readFileSync(j(tmp, ".gitignore"), "utf8");
         expect(gitignore).toContain(".logbook/");
@@ -132,7 +139,7 @@ describe("T13 — byte-identity standard install/uninstall (ITER2 GATE)", () => 
       expect(
         diff,
         [
-          "ITER2 GATE FAILED — directory is NOT byte-identical after install+uninstall.",
+          "ITER3 GATE FAILED — directory is NOT byte-identical after install+uninstall.",
           "LogBook mutated files it should have fully restored.",
           "",
           "Diff detail (check 'changed' for modified files, 'added'/'removed' for extra/missing):",

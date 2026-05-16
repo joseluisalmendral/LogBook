@@ -57,11 +57,14 @@ export const errorTool: ToolDef<ErrorInput, ErrorOutput> = {
     // ctx.state.session is typed in T8b (LogBookState now has session?: string).
     const sessionId = ctx.state.session ?? "";
 
+    // Backward compat: iter2-era MCP events used { payload: {...} } wrapper.
+    // Iter3+ writes top-level fields (MONITOR-1 closure).
     const event = {
       id,
       type: "manual.error",
       ts,
-      payload: input,
+      title: input.title,
+      ...(input.symptom !== undefined && { symptom: input.symptom }),
     };
     await appendJsonl(ctx.paths.eventsJsonl, JSON.stringify(event));
 

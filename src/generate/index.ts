@@ -12,6 +12,8 @@
 export { readContext } from "./render-context.js";
 export type { RenderContext, RenderEvent } from "./render-context.js";
 export { upsertGeneratedBlock } from "./blocks.js";
+export { generateTeachingScript } from "./teaching-script-doc.js";
+export type { TeachingScriptInput, TeachingScriptResult } from "./teaching-script-doc.js";
 
 import { createHash } from "node:crypto";
 import { join } from "pathe";

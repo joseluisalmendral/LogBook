@@ -183,10 +183,11 @@ describe("mcp-tool-error-fix", () => {
         (e) =>
           (e as { type?: string }).type === "manual.error" &&
           (e as { id?: string }).id === resultObj.id,
-      ) as { type: string; payload?: { title?: string } } | undefined;
+      ) as { type: string; title?: string } | undefined;
 
       expect(errorEvent).toBeDefined();
-      expect(errorEvent!.payload?.title).toBe(
+      // iter3+ shape: title is at top level (no payload wrapper).
+      expect(errorEvent!.title).toBe(
         "TypeError: cannot read property of undefined",
       );
     });
@@ -238,12 +239,12 @@ describe("mcp-tool-error-fix", () => {
         (e) =>
           (e as { type?: string }).type === "manual.fix" &&
           (e as { id?: string }).id === fixResult.id,
-      ) as { payload?: { errorId?: string } } | undefined;
+      ) as { errorId?: string } | undefined;
 
       expect(fixEvent).toBeDefined();
       // The errorId field is a reference field (ends in "Id") — exempt from entropy
-      // redaction. The persisted payload.errorId must match the original errorId.
-      expect(fixEvent!.payload?.errorId).toBe(errorId);
+      // redaction. Iter3+ shape: errorId is at top level (no payload wrapper).
+      expect(fixEvent!.errorId).toBe(errorId);
     });
   }, 60_000);
 

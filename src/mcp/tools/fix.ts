@@ -53,11 +53,14 @@ export const fixTool: ToolDef<FixInput, FixOutput> = {
     const id = generateUlid();
     const ts = new Date().toISOString();
 
+    // Backward compat: iter2-era MCP events used { payload: {...} } wrapper.
+    // Iter3+ writes top-level fields (MONITOR-1 closure).
     const event = {
       id,
       type: "manual.fix",
       ts,
-      payload: input,
+      summary: input.summary,
+      ...(input.errorId !== undefined && { errorId: input.errorId }),
     };
     await appendJsonl(ctx.paths.eventsJsonl, JSON.stringify(event));
 

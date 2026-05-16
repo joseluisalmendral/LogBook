@@ -1,9 +1,15 @@
 /**
  * I-DOC — doctor --measure --json after init --preset standard.
  *
- * T13: Verifies real token counting for augment_claudemd, mcp_server, and
- * slash_command artifacts. Total fixedContextTokens must be ≤ 200 (design
- * budget 180 + tolerance).
+ * T13 (iter3): Verifies real token counting for augment_claudemd, mcp_server,
+ * slash_command, AND skill artifacts.
+ *
+ * Token budget update:
+ *   iter2 baseline: 177 tokens (augment + mcp + slash)
+ *   SKILL.md (813 chars / 4 = ~204 tokens)
+ *   reference.md does NOT count (on-demand only, not in fixed context)
+ *   Expected total: ~350-450 tokens
+ *   Hard gate: ≤ 450
  */
 
 import * as fs from "node:fs";
@@ -89,8 +95,9 @@ describe("I-DOC — doctor --measure --json after preset standard install", () =
     expect(output.fixedContextTokens).toBeGreaterThan(0);
   });
 
-  it("fixedContextTokens is within budget (≤ 200)", () => {
-    expect(output.fixedContextTokens).toBeLessThanOrEqual(200);
+  it("fixedContextTokens is within budget (≤ 450, accounting for Skill body)", () => {
+    // iter2 baseline 177 + SKILL.md ~204 tokens = ~381; tolerance up to 450
+    expect(output.fixedContextTokens).toBeLessThanOrEqual(450);
   });
 
   it("breakdown.augmentClaudemd > 0 (augment block is installed)", () => {
@@ -105,8 +112,14 @@ describe("I-DOC — doctor --measure --json after preset standard install", () =
     expect(output.breakdown.slashCommandDescriptions).toBeGreaterThan(0);
   });
 
-  it("breakdown.skill === 0 (iter3 deferred)", () => {
-    expect(output.breakdown.skill).toBe(0);
+  it("breakdown.skill > 0 (SKILL.md is in fixed context)", () => {
+    // SKILL.md (~813 chars / 4 = ~204 tokens); reference.md does NOT count (on-demand)
+    expect(output.breakdown.skill).toBeGreaterThan(0);
+  });
+
+  it("breakdown.skill <= 250 (SKILL.md ≤ 1000 chars budget)", () => {
+    // Hard gate from T1: SKILL.md ≤ 1000 chars → ≤ 250 tokens
+    expect(output.breakdown.skill).toBeLessThanOrEqual(250);
   });
 
   it("breakdown.sessionStart === 0 (iter4 deferred)", () => {
@@ -119,8 +132,8 @@ describe("I-DOC — doctor --measure --json after preset standard install", () =
     }
   });
 
-  it("verify has 12 entries (all preset standard artifacts: hook+mcp+augment+8slash+gitignore)", () => {
-    // 1 hook + 1 mcp_server + 1 augment_claudemd + 8 slash_command + 1 gitignore_entry = 12
-    expect(output.verify).toHaveLength(12);
+  it("verify has 14 entries (all preset standard iter3: hook+mcp+augment+8slash+2skill+gitignore)", () => {
+    // 1 hook + 1 mcp_server + 1 augment_claudemd + 8 slash_command + 2 skill + 1 gitignore_entry = 14
+    expect(output.verify).toHaveLength(14);
   });
 });

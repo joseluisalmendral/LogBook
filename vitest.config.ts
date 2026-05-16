@@ -9,6 +9,7 @@ export default defineConfig({
           include: ["tests/unit/**/*.test.ts"],
           environment: "node",
           pool: "threads",
+          setupFiles: ["./tests/setup.ts"],
         },
       },
       {
@@ -17,6 +18,7 @@ export default defineConfig({
           include: ["tests/integration/**/*.test.ts"],
           environment: "node",
           pool: "threads",
+          setupFiles: ["./tests/setup.ts"],
         },
       },
       {
