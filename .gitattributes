@@ -2,6 +2,7 @@
 # CRLF bytes on checkout (W1 risk — see design §8 and T3 apply-progress).
 tests/fixtures/crlf/** eol=crlf
 tests/fixtures/crlf-standard/** eol=crlf
+tests/fixtures/statusline/crlf-*.json eol=crlf
 
 # Pin LF fixtures defensively (git should not auto-convert these to CRLF
 # on Windows or when core.autocrlf is set).
@@ -14,3 +15,9 @@ tests/fixtures/empty-project/** eol=lf
 tests/fixtures/project-with-two-plugins/** eol=lf
 tests/fixtures/project-standard/** eol=lf
 tests/fixtures/claudemd/** eol=lf
+tests/fixtures/statusline/empty-*.json eol=lf
+tests/fixtures/statusline/with-*.json eol=lf
+tests/fixtures/subagents/** eol=lf
+tests/fixtures/project-teaching/** eol=lf
+tests/fixtures/otel/** eol=lf
+tests/fixtures/codex-samples/** eol=lf

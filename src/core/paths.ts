@@ -17,6 +17,15 @@ import { LogBookError } from "./errors.js";
 // Markers that indicate the project root directory.
 const ROOT_MARKERS = [".git", ".claude", "package.json"] as const;
 
+/**
+ * Target directory for subagent files.
+ *
+ * Claude Code 2026 uses `.claude/subagents/` per spec §5/§32.
+ * Alternative `.claude/agents/` was used in earlier preview builds.
+ * This const is the single swap point if the path ever changes.
+ */
+export const SUBAGENT_DIR = ".claude/subagents" as const;
+
 export interface ProjectPaths {
   root: string;           // absolute project root
   logbookDir: string;     // <root>/.logbook

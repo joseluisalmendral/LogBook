@@ -26,6 +26,13 @@ export const ITER3_KINDS: ReadonlyArray<import("../../../types/manifest.js").Art
   "skill",
 ];
 
+// Iter4 additions: new installer kinds introduced in iteration 4.
+// T2 activates "subagent"; T3 activates "statusline".
+export const ITER4_KINDS: ReadonlyArray<import("../../../types/manifest.js").ArtifactKindName> = [
+  "subagent",
+  "statusline",
+];
+
 // ID prefix per kind — used by concrete installers to generate lb-* ids.
 export const ID_PREFIXES: Record<import("../../../types/manifest.js").ArtifactKindName, string> = {
   hook: "lb-hook",

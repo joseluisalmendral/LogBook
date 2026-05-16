@@ -27,6 +27,8 @@ export interface LogBookState {
   currentPhase?: string;
   /** Monotonic ADR counter; incremented atomically on each decision capture. */
   adrCounter?: number;
+  /** Optional cache: last built SessionStart summary string. iter4 — rebuilt on each hook call, not used for caching in iter4. */
+  lastSummary?: string;
 }
 
 export function defaultState(): LogBookState {

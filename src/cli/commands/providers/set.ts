@@ -23,6 +23,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { defineCommand } from "citty";
 import { resolveProjectRoot, makePaths } from "../../../core/paths.js";
+import { backupOnce } from "../../../core/backup.js";
 import type { ProvidersConfig, ProviderEntry } from "../../../types/providers.js";
 
 /** Safe default config when providers.json is absent. */
@@ -119,6 +120,14 @@ export default defineCommand({
     }
 
     const paths = makePaths(root);
+
+    // Backup providers.json before any mutation (idempotent; sentinel if file absent).
+    backupOnce(paths.providersPath, {
+      backupsDir: paths.backupsDir,
+      projectRoot: root,
+      now: () => new Date().toISOString(),
+    });
+
     const cfg = loadConfig(paths.providersPath);
 
     // If provider alias doesn't exist, auto-create a placeholder

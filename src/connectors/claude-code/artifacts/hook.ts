@@ -4,15 +4,20 @@
  * Install strategy (design §5):
  * - Target: .claude/settings.local.json
  * - Anchor: json_field with _logbookId
- * - Install: insertIntoJsonArray when the array already exists;
- *   controlled JSON.parse+JSON.stringify when the hooks structure is absent.
- * - Uninstall: removeFromJsonArray (find by _logbookId, not by position).
+ * - Install: pure string-patch for ALL cases — no JSON.parse+JSON.stringify on source.
+ *   Step 1: if hooks key absent, inject "hooks": {} via setJsonObjectKey (root).
+ *   Step 2: if hooks.<Event> array absent, inject "<Event>": [] via setJsonObjectKey (/hooks).
+ *   Step 3: insertIntoJsonArray to append the hook entry into the (now-present) array.
+ * - Uninstall: reverse the above steps via string-patch only:
+ *   Step 1: removeFromJsonArray to remove our entry.
+ *   Step 2: if createdHookEvent → removeJsonObjectKey to remove the now-empty event array.
+ *   Step 3: if createdHooksStructure → removeJsonObjectKey to remove the now-empty hooks key.
  *
- * CONTROLLED RE-SERIALIZE POLICY:
- * We permit JSON.parse+JSON.stringify ONLY when the target structure
- * (hooks.<Event>) does not yet exist in the file. Once the array is present,
- * ALL edits go through string-patch to preserve byte-identity for the bytes
- * outside the insertion span. This is documented as a S7 decision.
+ * PURE STRING-PATCH POLICY (T-FIX-HOOK):
+ * ALL edits to settings.local.json use string operations that preserve every byte
+ * outside the insertion/removal span. JSON.parse+JSON.stringify is NEVER called
+ * on the source. This guarantees byte-identity after install+uninstall regardless
+ * of pre-existing whitespace style.
  *
  * CONTENT HASH POLICY:
  * content_hash is computed over canonical JSON (sorted keys, no whitespace)
@@ -34,6 +39,8 @@ import { ID_PREFIXES } from "./kinds.js";
 import {
   insertIntoJsonArray,
   removeFromJsonArray,
+  setJsonObjectKey,
+  removeJsonObjectKey,
   AnchorNotFoundError,
 } from "../../../util/json-string-patch.js";
 import { sha256 } from "../../../util/hash.js";
@@ -207,66 +214,47 @@ export class HookInstaller implements ArtifactInstaller<HookArtifact> {
       ? toLF(rawSource)
       : { content: "{}", original: "lf" as LineEnding };
 
-    let next: string;
-    let insertedPosition: number;
+    let working = source;
     let createdHooksStructure = false;
+    let createdHookEvent: string | undefined;
 
-    // Detect whether the hooks.<Event> array path already exists in the source.
-    const hooksKeyPresent = /"hooks"\s*:/.test(source);
-    const eventArrayPresent =
-      hooksKeyPresent &&
-      new RegExp(`"${hookEvent}"\\s*:`).test(source);
-
-    if (!eventArrayPresent) {
-      // CONTROLLED RE-SERIALIZE PATH: the array doesn't exist yet.
-      // We must inject the hooks structure. We only do this when the target
-      // structure is absent — never when existing bytes would be mangled.
-      //
-      // Parse the LF-normalized content (safe because we'll re-serialize the
-      // whole thing; no existing hooks bytes to preserve outside the span).
-      const parsed = JSON.parse(source) as Record<string, unknown>;
-
-      // Inject the hooks structure
-      if (!parsed["hooks"] || typeof parsed["hooks"] !== "object") {
-        parsed["hooks"] = {};
-        createdHooksStructure = true;
-      } else {
-        // hooks key existed but the event array was missing
-        createdHooksStructure = false;
-      }
-      const hooks = parsed["hooks"] as Record<string, unknown[]>;
-      if (!Array.isArray(hooks[hookEvent])) {
-        hooks[hookEvent] = [];
-      }
-
-      // Serialize back to a clean LF structure (2-space indent).
-      // Byte-identity on uninstall is achievable because:
-      // - if createdHooksStructure=true, we own the entire hooks key and will
-      //   remove it entirely on uninstall.
-      // - if createdHooksStructure=false, the hooks key existed but the event
-      //   array didn't — we re-serialize, which may not be byte-identical for
-      //   the surrounding content. Known limitation documented in apply-progress.
-      const reserializedBase = JSON.stringify(parsed, null, 2) + "\n";
-
-      // Now use insertIntoJsonArray on the re-serialized LF string.
-      const insertResult = insertIntoJsonArray({
-        source: reserializedBase,
-        jsonPath: arrayJsonPath,
-        entryJson,
+    // Step 1: if the top-level "hooks" key is absent, inject it as an empty object.
+    // Uses setJsonObjectKey with jsonPath="" (root) — pure string-patch, no re-serialize.
+    const hooksKeyPresent = /"hooks"\s*:/.test(working);
+    if (!hooksKeyPresent) {
+      const r = setJsonObjectKey({
+        source: working,
+        jsonPath: "",
+        key: "hooks",
+        valueJson: "{}",
       });
-      next = insertResult.next;
-      insertedPosition = insertResult.position;
-    } else {
-      // STRING-PATCH PATH: array already exists — use insertIntoJsonArray
-      // to preserve every byte outside the insertion span.
-      const insertResult = insertIntoJsonArray({
-        source,
-        jsonPath: arrayJsonPath,
-        entryJson,
-      });
-      next = insertResult.next;
-      insertedPosition = insertResult.position;
+      working = r.next;
+      createdHooksStructure = true;
     }
+
+    // Step 2: if the hooks.<Event> array is absent, inject it as an empty array.
+    // Uses setJsonObjectKey with jsonPath="/hooks" — pure string-patch.
+    const eventArrayPresent = new RegExp(`"${hookEvent}"\\s*:`).test(working);
+    if (!eventArrayPresent) {
+      const r = setJsonObjectKey({
+        source: working,
+        jsonPath: "/hooks",
+        key: hookEvent,
+        valueJson: "[]",
+      });
+      working = r.next;
+      createdHookEvent = hookEvent;
+    }
+
+    // Step 3: insert the hook entry into the (now-guaranteed-present) array.
+    // Uses insertIntoJsonArray — pure string-patch; preserves all bytes outside the span.
+    const insertResult = insertIntoJsonArray({
+      source: working,
+      jsonPath: arrayJsonPath,
+      entryJson,
+    });
+    const next = insertResult.next;
+    const insertedPosition = insertResult.position;
 
     // Restore original line endings before writing (CRLF normalize — T3).
     await atomicWrite(targetPath, fromLF(next, detectedEnding));
@@ -281,6 +269,7 @@ export class HookInstaller implements ArtifactInstaller<HookArtifact> {
         idField: "_logbookId",
         idValue: logbookId,
         ...(createdHooksStructure ? { createdHooksStructure: true } : {}),
+        ...(createdHookEvent !== undefined ? { createdHookEvent } : {}),
       },
       content_hash: contentHash,
       installed_at: ctx.now(),
@@ -318,14 +307,19 @@ export class HookInstaller implements ArtifactInstaller<HookArtifact> {
     const targetEnding = entry.detectedLineEnding ?? "lf";
     const { content: source } = toLF(rawSource);
 
-    // Only remove the hooks structure entirely if we created it during install.
-    // This flag is persisted in the anchor to enable byte-identical uninstall
-    // for the empty.json case (where we injected the entire hooks key).
+    // Read the flags recorded during install that tell us what structures we created.
+    // These drive the symmetric reversal: we only tear down what we built.
+    const shouldRemoveHookEvent =
+      entry.anchor.type === "json_field" &&
+      "createdHookEvent" in entry.anchor &&
+      typeof entry.anchor.createdHookEvent === "string";
+
     const shouldRemoveHooksKey =
       entry.anchor.type === "json_field" &&
       "createdHooksStructure" in entry.anchor &&
       entry.anchor.createdHooksStructure === true;
 
+    // Step 1: remove our entry from hooks.<Event> array via string-patch.
     let next: string;
     try {
       next = removeFromJsonArray({
@@ -342,48 +336,30 @@ export class HookInstaller implements ArtifactInstaller<HookArtifact> {
       throw err;
     }
 
-    // If we created the hooks structure during install, remove it entirely now
-    // that our entry is gone, restoring the file to its pre-install state.
+    // Step 2: if we injected the event array key, remove it now via string-patch.
+    // This is the inverse of setJsonObjectKey(source, "/hooks", hookEvent, "[]").
+    if (shouldRemoveHookEvent) {
+      const r = removeJsonObjectKey({
+        source: next,
+        jsonPath: "/hooks",
+        key: hookEvent,
+      });
+      next = r.next;
+    }
+
+    // Step 3: if we injected the hooks key itself, remove it via string-patch.
+    // This is the inverse of setJsonObjectKey(source, "", "hooks", "{}").
     if (shouldRemoveHooksKey) {
-      next = this._removeHooksKeyIfEmpty(next, hookEvent);
+      const r = removeJsonObjectKey({
+        source: next,
+        jsonPath: "",
+        key: "hooks",
+      });
+      next = r.next;
     }
 
     // Restore original line endings before writing (CRLF normalize — T3).
     await atomicWrite(targetPath, fromLF(next, targetEnding));
-  }
-
-  /**
-   * After removeFromJsonArray, if hooks.<Event> is now empty AND hooks has no
-   * other events, remove the hooks key entirely via controlled parse+stringify.
-   *
-   * The re-serialized result will match the original if the original was
-   * re-serialized the same way (which it was, in install's controlled path).
-   */
-  private _removeHooksKeyIfEmpty(source: string, hookEvent: string): string {
-    try {
-      const parsed = JSON.parse(source) as Record<string, unknown>;
-      const hooks = parsed["hooks"];
-      if (!hooks || typeof hooks !== "object" || Array.isArray(hooks)) {
-        return source;
-      }
-      const hooksObj = hooks as Record<string, unknown>;
-      const arr = hooksObj[hookEvent];
-      if (!Array.isArray(arr) || arr.length > 0) {
-        return source;
-      }
-
-      // Remove the empty event array
-      delete hooksObj[hookEvent];
-
-      // If hooks object is now empty, remove hooks key entirely
-      if (Object.keys(hooksObj).length === 0) {
-        delete parsed["hooks"];
-      }
-
-      return JSON.stringify(parsed, null, 2) + "\n";
-    } catch {
-      return source;
-    }
   }
 
   async verify(entry: ManifestArtifact, ctx: InstallContext): Promise<VerifyResult> {

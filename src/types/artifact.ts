@@ -31,9 +31,10 @@ export type Artifact =
     }
   | {
       kind: "subagent";
-      name: string;                // e.g. "logbook-reviewer"
-      file_path: string;           // .claude/agents/<name>.md
+      name: string;                // e.g. "logbook-curator"
+      file_path: string;           // .claude/subagents/<name>.md
       body: string;
+      _logbookId: string;          // e.g. "lb-agent-curator"
     }
   | {
       kind: "augment_claudemd";
@@ -44,6 +45,7 @@ export type Artifact =
   | {
       kind: "statusline";
       command: string;             // shell command for statusline output
+      _logbookId: string;          // virtual id for manifest tracking (NOT embedded in installed JSON — scalar value has no in-situ id field)
     }
   | {
       kind: "gitignore_entry";

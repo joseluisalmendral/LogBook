@@ -7,6 +7,10 @@ export type AnchorSpec =
       // Set true when HookInstaller created the entire hooks structure (not just the array entry).
       // Used on uninstall to decide whether to remove the hooks key entirely (S7 addition).
       createdHooksStructure?: boolean;
+      // Set to the hookEvent name when HookInstaller injected the event array key (e.g. "SessionStart")
+      // into an existing hooks object. On uninstall, removes that array key via string-patch,
+      // preserving all other hooks byte-for-byte (T-FIX-HOOK).
+      createdHookEvent?: string;
     }
   | {
       // T4 addition — used by mcp_server installer.
@@ -74,8 +78,8 @@ export interface ManifestArtifact {
   detectedLineEnding?: "lf" | "crlf" | "mixed";
   // iter2 T6: parent dirs created by owned-file installer, removed on uninstall if empty.
   createdParentDirs?: string[];
-  // iter2 T13: origin preset tag.
-  preset?: "minimal" | "standard" | "full";
+  // iter2 T13: origin preset tag. iter4 T8: added "teaching".
+  preset?: "minimal" | "standard" | "full" | "teaching";
 }
 
 export interface BackupRef {
@@ -88,7 +92,7 @@ export interface BackupRef {
 export interface Manifest {
   version: 1;                              // bumped on breaking manifest schema changes
   installed_at: string;                    // RFC3339 UTC of first install
-  preset: "minimal" | "standard" | "full"; // iter1: only "minimal" honored
+  preset: "minimal" | "standard" | "full" | "teaching"; // iter1: only "minimal" honored; iter4: "teaching" added
   artifacts: ManifestArtifact[];           // every installed artifact
   backups: BackupRef[];                    // every shared file backed up
 }

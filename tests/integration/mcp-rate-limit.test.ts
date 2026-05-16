@@ -4,14 +4,14 @@
  * Tests the SlidingWindowLimiter enforced by the dispatcher:
  *  - 20 calls per tool per 1000ms allowed
  *  - 21st call in the same window → -32000 (rate_limited)
- *  - Window slides: after 1100ms, a new call succeeds
+ *  - Window slides: after 1300ms, a new call succeeds
  *  - Per-tool isolation: lesson and error each have their own 20-count window;
  *    alternating 20 of each (40 total) all succeed
  *
  * Timing note: the sliding window implementation in rate-limit.ts uses timestamps
- * so these tests do rely on wall-clock timing. The 1100ms wait is deliberately
- * conservative (window is 1000ms) to avoid flakiness on slow CI machines.
- * If flakiness is observed, increase to 1500ms.
+ * so these tests do rely on wall-clock timing. The 1300ms wait is deliberately
+ * conservative (window is 1000ms) — bumped from 1100ms to give more headroom for
+ * loaded CI runners (iter3 W-MONITOR-2 closed).
  */
 
 import { describe, it, expect, beforeAll } from "vitest";
@@ -182,7 +182,7 @@ describe("mcp-rate-limit", () => {
     }
   }, 30_000);
 
-  it("after 1100ms window slides and next call succeeds", async () => {
+  it("after 1300ms window slides and next call succeeds", async () => {
     const dir = makeTmpProject();
     const server = await spawnServer(dir);
 
@@ -198,7 +198,8 @@ describe("mcp-rate-limit", () => {
       expect(rl.error?.code).toBe(-32000);
 
       // Wait for the window to slide past.
-      await new Promise((r) => setTimeout(r, 1100));
+      // 1300ms (was 1100ms) — gives more headroom for loaded CI runners; closes iter3 W-MONITOR-2.
+      await new Promise((r) => setTimeout(r, 1300));
 
       // Now the call should succeed.
       const afterWait = await callLesson(server.send, "after-wait");

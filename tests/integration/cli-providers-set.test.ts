@@ -188,4 +188,56 @@ describe("cli-providers-set", () => {
     expect((providers["providers"] as Record<string, unknown>)["new-provider"]).toBeDefined();
     expect((providers["by_task"] as Record<string, string>)["summarize.project"]).toBe("new-provider");
   });
+
+  it("creates a backup of providers.json before writing (closes iter3 S3 — providers backup coverage)", () => {
+    const originalContent = JSON.stringify(
+      {
+        default_provider: "anthropic-default",
+        providers: {
+          "anthropic-default": {
+            kind: "anthropic",
+            model: "claude-sonnet-4-5",
+            api_key_env: "ANTHROPIC_API_KEY",
+          },
+        },
+        by_task: {},
+        by_phase: {},
+      },
+      null,
+      2,
+    );
+    const dir = makeTmpProject();
+    fs.writeFileSync(path.join(dir, ".logbook", "providers.json"), originalContent);
+
+    const { code } = runCli(
+      ["providers", "set", "task:summarize.milestone", "anthropic-default"],
+      dir,
+    );
+
+    expect(code).toBe(0);
+
+    // The backup directory must exist and contain a backup of the pre-mutation providers.json.
+    const backupsDir = path.join(dir, ".logbook", "backups");
+    expect(fs.existsSync(backupsDir)).toBe(true);
+
+    const backupFiles = fs.readdirSync(backupsDir);
+    expect(backupFiles.length).toBeGreaterThan(0);
+
+    // The backup file name follows the sha256[0:16]-<basename> convention.
+    const backupFile = backupFiles.find((f) => f.endsWith("providers.json"));
+    expect(backupFile).toBeDefined();
+
+    // The backup content must match the pre-mutation file (not the post-mutation one).
+    const backedUpContent = fs.readFileSync(
+      path.join(backupsDir, backupFile!),
+      "utf8",
+    );
+    expect(backedUpContent).toBe(originalContent);
+
+    // The live providers.json must now reflect the mutation (by_task updated).
+    const providers = readProviders(dir);
+    expect(
+      (providers["by_task"] as Record<string, string>)["summarize.milestone"],
+    ).toBe("anthropic-default");
+  });
 });

@@ -18,6 +18,7 @@ import remarkRehype from "remark-rehype";
 import rehypeStringify from "rehype-stringify";
 import { INLINE_CSS } from "./inline-css.js";
 import { assertNoExternalRefs } from "./sanitize-links.js";
+import { sanitizeForSafeExport } from "./safe.js";
 import type { ProjectPaths } from "../core/paths.js";
 import type { ExportReport } from "../types/reports.js";
 
@@ -25,6 +26,12 @@ export interface ExportOptions {
   paths: ProjectPaths;
   /** Output path. Default: <projectRoot>/logbook/exports/index.html */
   outFile?: string;
+  /**
+   * Enable safe-export redaction before the markdown is passed to the
+   * rehype pipeline. Redacts absolute paths, usernames, and email addresses.
+   * Default: false (original behaviour unchanged).
+   */
+  safe?: boolean;
 }
 
 /** Names of the 3 source doc files under logbook/docs/. */
@@ -104,7 +111,14 @@ export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
           `Run \`logbook build\` first to generate the docs before exporting.`
       );
     }
-    const content = await readFile(docPath, "utf8");
+    let content = await readFile(docPath, "utf8");
+
+    // Safe-export pass: redact BEFORE markdown reaches the rehype pipeline.
+    // Order: safe sanitize → markdown concat → rehype → inline CSS → sanitize-links.
+    if (opts.safe) {
+      content = sanitizeForSafeExport(content);
+    }
+
     const label = SECTION_LABELS[docName] ?? docName;
     // Add a section header + content + divider
     markdownParts.push(`## ${label}\n\n${content.trim()}`);

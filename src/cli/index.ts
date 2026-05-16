@@ -8,6 +8,7 @@
 import { defineCommand, runMain } from "citty";
 import init from "./commands/init.js";
 import status from "./commands/status.js";
+import state from "./commands/state.js";
 import doctor from "./commands/doctor.js";
 import disable from "./commands/disable.js";
 import enable from "./commands/enable.js";
@@ -42,6 +43,7 @@ const main = defineCommand({
   subCommands: {
     init,
     status,
+    state,
     doctor,
     disable,
     enable,

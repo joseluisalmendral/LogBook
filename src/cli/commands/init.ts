@@ -105,6 +105,15 @@ function readSkillAsset(name: string): string {
   return fs.readFileSync(assetPath, "utf8");
 }
 
+/**
+ * Read a subagent body from assets/subagents/<name>.md.
+ * Throws if not found — assets are required for teaching preset.
+ */
+function readSubagentAsset(name: string): string {
+  const assetPath = resolveAssetPath("subagents", `${name}.md`);
+  return fs.readFileSync(assetPath, "utf8");
+}
+
 // ---------------------------------------------------------------------------
 // The 8 slash command names in design §6 install order.
 // ---------------------------------------------------------------------------
@@ -212,14 +221,90 @@ function buildStandardArtifacts(): Artifact[] {
 }
 
 /**
+ * Build the full artifact list for preset "teaching" in T8 design order.
+ *
+ * Teaching = standard set + 2 subagents + statusline + SessionStart hook.
+ *
+ * Final manifest order (18 entries):
+ *   0   hook (PostToolUse)
+ *   1   mcp_server
+ *   2   augment_claudemd
+ *   3-10 slash_command × 8
+ *   11  skill (SKILL.md)
+ *   12  skill (reference.md)
+ *   13  subagent (logbook-curator)
+ *   14  subagent (logbook-teacher)
+ *   15  statusline
+ *   16  hook (SessionStart)
+ *   17  gitignore_entry (LAST)
+ */
+function buildTeachingArtifacts(): Artifact[] {
+  const hookPath = resolveHookPath();
+  const standard = buildStandardArtifacts();
+
+  // Standard artifacts without the trailing gitignore_entry (we re-append it last).
+  const withoutGitignore = standard.slice(0, standard.length - 1);
+  const gitignoreEntry = standard[standard.length - 1]!;
+
+  // Subagent bodies from assets/subagents/
+  const curatorBody = readSubagentAsset("logbook-curator");
+  const teacherBody = readSubagentAsset("logbook-teacher");
+
+  // Statusline command: invoke the CLI's state --inline subcommand.
+  // __dirname at runtime = dist/cli/ → the CLI bundle is dist/cli/index.cjs.
+  const cliAbsPath = path.resolve(__dirname, "index.cjs");
+  const statuslineCommand = `node ${cliAbsPath} state --inline`;
+
+  return [
+    ...withoutGitignore,
+    // 13. subagent — logbook-curator
+    {
+      kind: "subagent",
+      name: "logbook-curator",
+      file_path: ".claude/subagents/logbook-curator.md",
+      body: curatorBody,
+      _logbookId: "lb-agent-curator-001",
+    },
+    // 14. subagent — logbook-teacher
+    {
+      kind: "subagent",
+      name: "logbook-teacher",
+      file_path: ".claude/subagents/logbook-teacher.md",
+      body: teacherBody,
+      _logbookId: "lb-agent-teacher-001",
+    },
+    // 15. statusline
+    {
+      kind: "statusline",
+      command: statuslineCommand,
+      _logbookId: "lb-statusline-001",
+    },
+    // 16. hook (SessionStart) — distinct id from PostToolUse hook
+    {
+      kind: "hook",
+      hookEvent: "SessionStart",
+      command: `node ${hookPath}`,
+      _logbookId: "lb-hook-sessionstart-001",
+    },
+    // 17. gitignore_entry (LAST — per iter1 install-order contract)
+    gitignoreEntry,
+  ];
+}
+
+/**
  * Dispatch to the correct artifact builder based on preset.
- * "minimal" → iter1 baseline (hook + gitignore_entry).
+ * "minimal"  → iter1 baseline (hook + gitignore_entry).
  * "standard" → iter3 full set (14 manifest entries / 13 logical artifacts).
  *              Skill is 1 logical artifact composed of 2 files (SKILL.md + reference.md).
- * "full" is reserved for iter4+; falls back to standard for now.
+ * "teaching" → iter4 teaching preset (18 manifest entries):
+ *              standard set + 2 subagents + statusline + SessionStart hook.
+ * "full" is reserved for future use; falls back to teaching for now.
  */
 function buildArtifactsForPreset(preset: string): Artifact[] {
-  if (preset === "standard" || preset === "full") {
+  if (preset === "teaching" || preset === "full") {
+    return buildTeachingArtifacts();
+  }
+  if (preset === "standard") {
     return buildStandardArtifacts();
   }
   // Default: minimal
@@ -246,7 +331,7 @@ export default defineCommand({
     preset: {
       type: "string",
       default: "minimal",
-      description: "minimal | standard | full (iter1: only minimal honored)",
+      description: "minimal | standard | teaching | full",
     },
     yes: {
       type: "boolean",
@@ -293,7 +378,7 @@ export default defineCommand({
     try {
       result = await runInstall({
         paths,
-        preset: (preset === "standard" || preset === "full") ? "standard" : "minimal",
+        preset: (preset === "teaching" || preset === "full") ? "teaching" : (preset === "standard") ? "standard" : "minimal",
         artifacts,
         dryRun,
         onReport(report) {

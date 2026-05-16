@@ -53,6 +53,11 @@ export default defineCommand({
       default: false,
       description: "Emit ExportReport as JSON",
     },
+    safe: {
+      type: "boolean",
+      default: false,
+      description: "Redact paths, usernames, and emails before export",
+    },
   },
   async run({ args }) {
     let root: string;
@@ -82,8 +87,11 @@ export default defineCommand({
       );
     }
 
+    const safeMode = args["safe"] === true;
     const exportOpts: ExportOptions =
-      outArg !== undefined ? { paths, outFile: outArg } : { paths };
+      outArg !== undefined
+        ? { paths, outFile: outArg, safe: safeMode }
+        : { paths, safe: safeMode };
 
     let report: Awaited<ReturnType<typeof exportHtml>>;
     try {

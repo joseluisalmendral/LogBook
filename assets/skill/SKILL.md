@@ -3,7 +3,7 @@ name: logbook-auto-capture
 description: Capture architectural decisions, didactic errors, fixes, lessons, and milestones via LogBook MCP tools
 ---
 
-Use LogBook MCP tools to capture durable learning during this session.
+Use LogBook MCP tools to capture durable learning this session.
 
 When the user makes an architectural decision (technology choice, tradeoff resolved, pattern established), call `logbook_decision` with title, context, chosen, consequences.
 

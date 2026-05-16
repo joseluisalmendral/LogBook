@@ -18,6 +18,7 @@ import { appendJsonl } from "../../store/jsonl.js";
 import { resolveProjectRoot, makePaths } from "../../core/paths.js";
 import { readState } from "../../core/state.js";
 import { generateUlid } from "../../util/ulid.js";
+import { buildSessionStartSummary } from "../../hooks/session-start.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -41,6 +42,15 @@ export interface IngestResult {
   redacted: boolean;
   /** Human-readable reason when written=false. */
   reason?: string;
+  /**
+   * For SessionStart events: the summary printed to stdout for agent context injection.
+   * Undefined for all other event kinds.
+   *
+   * Side effects for SessionStart:
+   *   (a) JSONL append — audit trail (same as all other events).
+   *   (b) stdout summary — injected into the agent context by Claude Code.
+   */
+  sessionStartSummary?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -137,5 +147,29 @@ export async function ingestClaudePayload(opts: IngestOptions): Promise<IngestRe
   const line = JSON.stringify(event);
   await appendJsonl(paths.eventsJsonl, line);
 
-  return { written: true, redacted: redactedAny };
+  // 8. SessionStart dispatch — TWO side effects per design §6:
+  //    (a) JSONL append (audit) — already done in step 7.
+  //    (b) stdout summary — print context memory for Claude Code's agent context injection.
+  //
+  //    This branch runs ONLY for SessionStart. All other events skip it.
+  //    Never throws — the hook MUST exit 0. Failures degrade silently.
+  let sessionStartSummary: string | undefined;
+  if (parsed.hook_event_name === "SessionStart") {
+    try {
+      const summaryResult = await buildSessionStartSummary({ paths });
+      sessionStartSummary = summaryResult.summary;
+      process.stdout.write(summaryResult.summary + "\n");
+    } catch {
+      // Degrade silently — hook must never exit non-zero.
+      if (process.env["LOGBOOK_HOOK_DEBUG"] === "1") {
+        process.stderr.write("[logbook] SessionStart summary build failed\n");
+      }
+    }
+  }
+
+  return {
+    written: true,
+    redacted: redactedAny,
+    ...(sessionStartSummary !== undefined && { sessionStartSummary }),
+  };
 }

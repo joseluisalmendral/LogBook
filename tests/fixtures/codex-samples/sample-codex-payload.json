@@ -1,0 +1,8 @@
+{
+  "event_type": "tool_call",
+  "tool": "Read",
+  "tool_args": { "path": "src/index.ts" },
+  "model": "codex-v1",
+  "ts": 1715000000000,
+  "custom_future_field": "forward-compatible-value"
+}

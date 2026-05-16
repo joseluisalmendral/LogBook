@@ -25,3 +25,19 @@ export interface ExportReport {
   /** Wall-clock duration in milliseconds. */
   durationMs: number;
 }
+
+/**
+ * Options for the safe-export redaction pass (T7).
+ * Mirrors SafeExportOptions in src/export/safe.ts but exported from the
+ * types layer for consumers that only import from src/types/.
+ */
+export interface ExportSafeOptions {
+  /** Replace absolute filesystem paths. Default: true. */
+  redactPaths: boolean;
+  /** Replace extracted usernames. Default: true. */
+  redactUsers: boolean;
+  /** Replace email addresses. Default: true. */
+  redactEmails: boolean;
+  /** Strip sub-day precision from RFC3339 timestamps. Default: false. */
+  redactTimestamps: boolean;
+}

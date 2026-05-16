@@ -10,6 +10,13 @@ describe("Skill body assets — budget gate", () => {
     expect(content.length, `SKILL.md is ${content.length} chars (over the 1000-char hard gate)`).toBeLessThanOrEqual(1000);
   });
 
+  test("assets/skill/SKILL.md is at most 806 chars (T8 iter4 budget trim — token ceiling 202)", () => {
+    // T8.1 trim: removed " during" (7 chars) to bring SKILL.md to 806 chars.
+    // ceil(806/4) = 202 tokens. Post-trim projected total = 381 - 204 + 202 + 120 = 499 ≤ 500.
+    const content = readFileSync(resolve(REPO_ROOT, "assets/skill/SKILL.md"), "utf-8");
+    expect(content.length, `SKILL.md is ${content.length} chars (over the T8 806-char ceiling)`).toBeLessThanOrEqual(806);
+  });
+
   test("assets/skill/SKILL.md has the YAML frontmatter required by Claude Code", () => {
     const content = readFileSync(resolve(REPO_ROOT, "assets/skill/SKILL.md"), "utf-8");
     expect(content.startsWith("---\nname: logbook-auto-capture")).toBe(true);
