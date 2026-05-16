@@ -1,0 +1,1 @@
+{"mcpServers":{"fake-plugin":{"type":"stdio","command":"node","args":["./fake-plugin-mcp.cjs"],"_fakePluginId":"fp-001"}}}

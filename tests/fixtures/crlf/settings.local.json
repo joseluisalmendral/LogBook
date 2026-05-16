@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [{"type": "command", "command": "plugin-alpha"}],
+        "_alphaPluginId": "alpha-001"
+      },
+      {
+        "matcher":  "Read",
+        "hooks":    [{"type":    "command",    "command":    "plugin-beta"}],
+        "_betaPluginId":    "beta-001"
+      }
+    ]
+  }
+}

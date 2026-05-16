@@ -14,6 +14,19 @@ import enable from "./commands/enable.js";
 import uninstall from "./commands/uninstall.js";
 import purge from "./commands/purge.js";
 import ingest from "./commands/ingest/index.js";
+import start from "./commands/start.js";
+import phase from "./commands/phase.js";
+import session from "./commands/session.js";
+import snapshot from "./commands/snapshot.js";
+import visual from "./commands/visual.js";
+import decision from "./commands/decision.js";
+import error from "./commands/error.js";
+import fix from "./commands/fix.js";
+import lesson from "./commands/lesson.js";
+import resource from "./commands/resource.js";
+import milestone from "./commands/milestone.js";
+import build from "./commands/build.js";
+import exportCmd from "./commands/export.js";
 
 const main = defineCommand({
   meta: {
@@ -30,6 +43,19 @@ const main = defineCommand({
     uninstall,
     purge,
     ingest,
+    start,
+    phase,
+    session,
+    snapshot,
+    visual,
+    decision,
+    error,
+    fix,
+    lesson,
+    resource,
+    milestone,
+    build,
+    export: exportCmd,
   },
 });
 

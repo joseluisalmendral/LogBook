@@ -570,3 +570,447 @@ export function removeFromJsonArray(
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+// ---------------------------------------------------------------------------
+// RFC 6901 resolver for OBJECTS (mirrors resolveArrayPath for objects)
+// ---------------------------------------------------------------------------
+
+/**
+ * Walk the source string following a RFC 6901 JSON Pointer and return the
+ * byte offsets of the target OBJECT's opening `{` and matching closing `}`.
+ *
+ * Throws AnchorNotFoundError if any segment along the path does not exist,
+ * or if the final value is not an object.
+ */
+function resolveObjectPath(
+  src: string,
+  jsonPath: string
+): { openBrace: number; closeBrace: number } {
+  const segments = jsonPath
+    .split("/")
+    .slice(1) // remove leading empty segment
+    .map((s) => s.replace(/~1/g, "/").replace(/~0/g, "~"));
+
+  let pos = skipWhitespace(src, 0);
+
+  // Special case: empty path "" means the root — but RFC 6901 "/" would mean
+  // one empty segment. We require at least one segment to be useful here.
+  if (segments.length === 0 || (segments.length === 1 && segments[0] === "")) {
+    // Root object
+    if (src[pos] !== "{") {
+      throw new AnchorNotFoundError(`Root value is not an object`);
+    }
+    const objEnd = skipObject(src, pos);
+    return { openBrace: pos, closeBrace: objEnd - 1 };
+  }
+
+  for (let segIdx = 0; segIdx < segments.length; segIdx++) {
+    const seg = segments[segIdx]!;
+    pos = skipWhitespace(src, pos);
+
+    if (src[pos] !== "{") {
+      throw new AnchorNotFoundError(
+        `Expected object at offset ${pos} for segment "${seg}"`
+      );
+    }
+
+    pos++; // consume {
+    pos = skipWhitespace(src, pos);
+
+    let found = false;
+    while (pos < src.length) {
+      pos = skipWhitespace(src, pos);
+      if (src[pos] === "}") break;
+
+      // Read key string
+      const keyStart = pos;
+      const keyEnd = skipString(src, pos);
+      const rawKey = src.slice(keyStart + 1, keyEnd - 1); // strip quotes
+      // Decode the key using JSON.parse for correctness (we parse a key span, not the full source)
+      let key: string;
+      try {
+        key = JSON.parse(src.slice(keyStart, keyEnd)) as string;
+      } catch {
+        key = rawKey.replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+      }
+
+      pos = skipWhitespace(src, keyEnd);
+      if (src[pos] !== ":") throw new Error(`Expected : at ${pos}`);
+      pos++;
+
+      const valueStart = skipWhitespace(src, pos);
+
+      if (key === seg) {
+        if (segIdx === segments.length - 1) {
+          // Final segment — must be an object
+          if (src[valueStart] !== "{") {
+            throw new AnchorNotFoundError(
+              `Expected object at offset ${valueStart} for path "${jsonPath}"`
+            );
+          }
+          const objEnd = skipObject(src, valueStart);
+          return { openBrace: valueStart, closeBrace: objEnd - 1 };
+        } else {
+          // Intermediate segment — dive into its value
+          pos = valueStart;
+          found = true;
+          break;
+        }
+      } else {
+        // Skip this value and its optional trailing comma
+        pos = skipValue(src, valueStart);
+        pos = skipWhitespace(src, pos);
+        if (src[pos] === ",") pos++;
+      }
+    }
+
+    if (!found) {
+      throw new AnchorNotFoundError(
+        `Key "${seg}" not found in object at offset ${pos}`
+      );
+    }
+  }
+
+  throw new AnchorNotFoundError(`Path "${jsonPath}" could not be resolved`);
+}
+
+// ---------------------------------------------------------------------------
+// Object entry enumerator
+// ---------------------------------------------------------------------------
+
+interface ObjectEntry {
+  /** Offset of the opening `"` of the key. */
+  keyStart: number;
+  /** Exclusive offset just past the closing `"` of the key. */
+  keyEnd: number;
+  /** Decoded logical key (via JSON.parse on the key span). */
+  key: string;
+  /** Offset of the first char of the value (after `:`+whitespace). */
+  valueStart: number;
+  /** Exclusive offset just past the last char of the value. */
+  valueEnd: number;
+  /**
+   * Offset of the leading whitespace before this entry's key.
+   * For the first entry, this is the position right after `{`.
+   * For subsequent entries, this is right after the preceding comma.
+   */
+  entryLeadStart: number;
+}
+
+/**
+ * Walk inside an object (openBrace points at `{`) and return all entry spans.
+ * Does NOT include the surrounding `{` or `}`.
+ */
+function enumerateObjectEntries(src: string, openBrace: number): ObjectEntry[] {
+  const entries: ObjectEntry[] = [];
+  let pos = openBrace + 1; // skip {
+
+  while (pos < src.length) {
+    const entryLeadStart = pos;
+    pos = skipWhitespace(src, pos);
+
+    if (src[pos] === "}") break; // end of object
+
+    const keyStart = pos;
+    const keyEnd = skipString(src, pos);
+    let key: string;
+    try {
+      key = JSON.parse(src.slice(keyStart, keyEnd)) as string;
+    } catch {
+      key = src.slice(keyStart + 1, keyEnd - 1).replace(/\\"/g, '"').replace(/\\\\/g, "\\");
+    }
+
+    pos = skipWhitespace(src, keyEnd);
+    if (src[pos] !== ":") throw new Error(`Expected : at ${pos}`);
+    pos++; // consume :
+
+    const valueStart = skipWhitespace(src, pos);
+    const valueEnd = skipValue(src, valueStart);
+
+    entries.push({ keyStart, keyEnd, key, valueStart, valueEnd, entryLeadStart });
+
+    pos = skipWhitespace(src, valueEnd);
+    if (src[pos] === "}") break;
+    if (src[pos] === ",") pos++; // consume comma
+  }
+
+  return entries;
+}
+
+// ---------------------------------------------------------------------------
+// Indent detection for object entries
+// ---------------------------------------------------------------------------
+
+/**
+ * Detect the indentation of entries inside an object.
+ * Returns { entryIndent, parentIndent }.
+ *
+ * If the object is empty (no entries), falls back to detecting the line
+ * that contains `{` and adds one indent level.
+ */
+function detectObjectEntryIndent(
+  src: string,
+  openBrace: number,
+  entries: ObjectEntry[]
+): { entryIndent: string; parentIndent: string } {
+  if (entries.length > 0) {
+    // Use the first entry's leading whitespace (on its own line)
+    const first = entries[0]!;
+    // Walk back from keyStart to find start of line
+    let lineStart = first.keyStart - 1;
+    while (lineStart >= 0 && src[lineStart] !== "\n") lineStart--;
+    lineStart++;
+    const linePrefix = src.slice(lineStart, first.keyStart);
+    if (/^\s+$/.test(linePrefix)) {
+      const entryIndent = linePrefix;
+      const style = detectIndent(src);
+      const unit = indentString(style);
+      const parentIndent = entryIndent.startsWith(unit)
+        ? entryIndent.slice(unit.length)
+        : entryIndent.slice(0, Math.max(0, entryIndent.length - 2));
+      return { entryIndent, parentIndent };
+    }
+    // Inline object (key on same line as {): no meaningful indent to detect
+    return { entryIndent: "", parentIndent: "" };
+  }
+
+  // Empty object — detect from the line containing `{`
+  let lineStart = openBrace - 1;
+  while (lineStart >= 0 && src[lineStart] !== "\n") lineStart--;
+  lineStart++;
+  const parentLinePrefix = src.slice(lineStart, openBrace);
+  const parentIndent = /^\s*$/.test(parentLinePrefix)
+    ? parentLinePrefix.replace(/[^\s]/g, "")
+    : "";
+  const style = detectIndent(src);
+  const unit = indentString(style);
+  return { entryIndent: parentIndent + unit, parentIndent };
+}
+
+// ---------------------------------------------------------------------------
+// Public API — object key primitives
+// ---------------------------------------------------------------------------
+
+export interface SetJsonObjectKeyInput {
+  /** Full file content (preserved byte-for-byte outside the edit). */
+  source: string;
+  /** RFC 6901 Pointer to the OBJECT that will contain the key (e.g. "/mcpServers"). */
+  jsonPath: string;
+  /** The key to insert or replace (e.g. "logbook-mcp"). */
+  key: string;
+  /** JSON text of the value (must be valid JSON). */
+  valueJson: string;
+}
+
+export interface SetJsonObjectKeyResult {
+  /** Updated source. */
+  next: string;
+  /** true if the key did not exist and was inserted; false if it existed and was replaced. */
+  inserted: boolean;
+}
+
+/**
+ * Insert or replace an object key identified by jsonPath, using only string
+ * operations. The source is preserved byte-for-byte outside the
+ * insertion/replacement span.
+ *
+ * Escape semantics: `key` is passed through JSON.stringify for the inserted
+ * form so any JSON-special characters are properly encoded. When looking up
+ * an existing entry, the key string span is decoded via JSON.parse and
+ * compared against the caller-supplied `key`.
+ *
+ * The "create parent object when missing" path is out of scope for this
+ * primitive — the caller (T4 MCP installer) is responsible for ensuring the
+ * parent object at jsonPath exists. For `mcpServers`, the installer uses a
+ * controlled re-serialize fallback when the object is absent entirely.
+ */
+export function setJsonObjectKey(
+  input: SetJsonObjectKeyInput
+): SetJsonObjectKeyResult {
+  const { source, jsonPath, key, valueJson } = input;
+
+  // Validate valueJson is well-formed (we MAY parse the argument, not the source)
+  try {
+    JSON.parse(valueJson);
+  } catch {
+    throw new Error(`valueJson is not valid JSON: ${valueJson.slice(0, 80)}`);
+  }
+
+  const { openBrace, closeBrace } = resolveObjectPath(source, jsonPath);
+  const entries = enumerateObjectEntries(source, openBrace);
+
+  // Look for an existing entry with the same decoded key
+  const existing = entries.find((e) => e.key === key);
+
+  if (existing !== undefined) {
+    // Replace the value span only. The key string and surrounding whitespace
+    // (including the `:`) are preserved byte-for-byte.
+    const colonPos = source.indexOf(":", existing.keyEnd);
+    // valueStart already skips whitespace; we must preserve the whitespace between : and value
+    const next =
+      source.slice(0, existing.valueStart) +
+      valueJson +
+      source.slice(existing.valueEnd);
+    return { next, inserted: false };
+  }
+
+  // Key not present — insert before the closing `}`
+  const { entryIndent, parentIndent } = detectObjectEntryIndent(
+    source,
+    openBrace,
+    entries
+  );
+
+  const encodedKey = JSON.stringify(key);
+
+  if (entries.length === 0) {
+    // Empty object: {} → {\n<indent>"key": value\n<parentIndent>}
+    // But we need to handle the inline case (no newlines) vs pretty-printed case.
+    // Check if the object is on a single line (no \n between { and })
+    const interior = source.slice(openBrace + 1, closeBrace);
+    const isInline = !interior.includes("\n");
+
+    let insertion: string;
+    if (isInline && entryIndent === "") {
+      // Compact inline object: { } → {"key":value}
+      insertion = `${encodedKey}:${valueJson}`;
+      const next =
+        source.slice(0, openBrace + 1) +
+        insertion +
+        source.slice(closeBrace);
+      return { next, inserted: true };
+    } else {
+      // Pretty object: {} → {\n  "key": value\n}
+      insertion = `\n${entryIndent}${encodedKey}: ${valueJson}\n${parentIndent}`;
+      const next =
+        source.slice(0, openBrace + 1) +
+        insertion +
+        source.slice(closeBrace);
+      return { next, inserted: true };
+    }
+  } else {
+    // Non-empty: append after the last entry's value, before `}`
+    const lastEntry = entries[entries.length - 1]!;
+
+    // Check if entries are inline (no newline between { and first entry)
+    const beforeFirstEntry = source.slice(openBrace + 1, entries[0]!.keyStart);
+    const isInline = !beforeFirstEntry.includes("\n");
+
+    let insertion: string;
+    if (isInline && entryIndent === "") {
+      // Compact inline: ,"key":value
+      insertion = `,${encodedKey}:${valueJson}`;
+    } else {
+      // Pretty: ,\n<indent>"key": value
+      insertion = `,\n${entryIndent}${encodedKey}: ${valueJson}`;
+    }
+
+    const next =
+      source.slice(0, lastEntry.valueEnd) +
+      insertion +
+      source.slice(lastEntry.valueEnd);
+    return { next, inserted: true };
+  }
+}
+
+export interface RemoveJsonObjectKeyInput {
+  source: string;
+  /** RFC 6901 Pointer to the OBJECT containing the key. */
+  jsonPath: string;
+  /** The key to remove. */
+  key: string;
+}
+
+export interface RemoveJsonObjectKeyResult {
+  /** Updated source. */
+  next: string;
+  /** false if the key was not present (idempotent — no throw on absence). */
+  removed: boolean;
+}
+
+/**
+ * Remove an object key identified by jsonPath + key, using only string
+ * operations. Idempotent: returns `{ next: source, removed: false }` when
+ * the key is absent — no throw — because uninstall must be safe to call
+ * even if the entry was already removed.
+ *
+ * Byte-identity invariant: bytes outside the removed span are identical to
+ * the source. The roundtrip property (setJsonObjectKey + removeJsonObjectKey
+ * = original source) holds for every fixture.
+ */
+export function removeJsonObjectKey(
+  input: RemoveJsonObjectKeyInput
+): RemoveJsonObjectKeyResult {
+  const { source, jsonPath, key } = input;
+
+  const { openBrace, closeBrace } = resolveObjectPath(source, jsonPath);
+  const entries = enumerateObjectEntries(source, openBrace);
+
+  const targetIdx = entries.findIndex((e) => e.key === key);
+
+  if (targetIdx === -1) {
+    // Key not present — idempotent return
+    return { next: source, removed: false };
+  }
+
+  const target = entries[targetIdx]!;
+  const isOnly = entries.length === 1;
+
+  if (isOnly) {
+    // setJsonObjectKey replaced source[openBrace+1..closeBrace] entirely when inserting
+    // into an empty object. To invert, we remove everything between { and }, recovering
+    // the empty-object form. Byte-identity holds for objects whose original interior
+    // was "" (e.g. {}) — the spec's invariant is scoped to bytes outside the edited span.
+    const next =
+      source.slice(0, openBrace + 1) +
+      source.slice(closeBrace);
+    return { next, removed: true };
+  }
+
+  // Multiple entries
+  const isFirst = targetIdx === 0;
+  const isLast = targetIdx === entries.length - 1;
+
+  if (isFirst) {
+    // Remove this entry plus the trailing comma that separates it from the next.
+    // The insertion (by setJsonObjectKey) added: ,\n<indent>encodedKey: value
+    // at lastEntry.valueEnd. So for REMOVAL of the first entry, we need to
+    // remove from target.entryLeadStart to the comma after target.valueEnd.
+    //
+    // Find the comma after target.valueEnd
+    let afterValue = target.valueEnd;
+    afterValue = skipWhitespace(source, afterValue);
+    // afterValue should be at ','
+    if (source[afterValue] === ",") afterValue++;
+    // afterValue now points at the start of the next entry's leading whitespace
+    // Remove from target.entryLeadStart to afterValue
+    const next =
+      source.slice(0, target.entryLeadStart) +
+      source.slice(afterValue);
+    return { next, removed: true };
+  }
+
+  if (isLast) {
+    // Remove the comma before this entry plus the entry itself.
+    // The insertion added: ,\n<indent>encodedKey: value (appended after prev valueEnd)
+    // So the comma is right at entries[targetIdx-1].valueEnd (after skipWhitespace).
+    const prev = entries[targetIdx - 1]!;
+    let commaPos = prev.valueEnd;
+    commaPos = skipWhitespace(source, commaPos);
+    // commaPos should be at ','
+    // Remove from commaPos to target.valueEnd
+    const next =
+      source.slice(0, commaPos) +
+      source.slice(target.valueEnd);
+    return { next, removed: true };
+  }
+
+  // Middle entry: remove from entryLeadStart to the comma + whitespace after valueEnd
+  let afterValue = target.valueEnd;
+  afterValue = skipWhitespace(source, afterValue);
+  if (source[afterValue] === ",") afterValue++;
+  const next =
+    source.slice(0, target.entryLeadStart) +
+    source.slice(afterValue);
+  return { next, removed: true };
+}

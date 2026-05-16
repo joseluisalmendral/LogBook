@@ -1,0 +1,10 @@
+{
+	"mcpServers": {
+		"other-plugin": {
+			"type": "stdio",
+			"command": "node",
+			"args": ["/abs/path/to/other.cjs"],
+			"_otherPluginId": "op-tab-001"
+		}
+	}
+}

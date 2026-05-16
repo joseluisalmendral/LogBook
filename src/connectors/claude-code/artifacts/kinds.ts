@@ -12,6 +12,14 @@ export const ITER1_KINDS: ReadonlyArray<import("../../../types/manifest.js").Art
   "gitignore_entry",
 ];
 
+// Iter2 additions: new installer kinds introduced in iteration 2.
+// T4 activates "mcp_server"; T5 will activate "augment_claudemd"; T6 activates "slash_command".
+export const ITER2_KINDS: ReadonlyArray<import("../../../types/manifest.js").ArtifactKindName> = [
+  "mcp_server",
+  "augment_claudemd",
+  "slash_command",
+];
+
 // ID prefix per kind — used by concrete installers to generate lb-* ids.
 export const ID_PREFIXES: Record<import("../../../types/manifest.js").ArtifactKindName, string> = {
   hook: "lb-hook",

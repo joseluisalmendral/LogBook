@@ -1,0 +1,1 @@
+LogBook is active. Capture decisions, errors, fixes, lessons, and milestones via logbook MCP tools or `lb-*` slash commands. Run `logbook build` to refresh docs. Skip routine actions — record only durable learning.

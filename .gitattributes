@@ -1,0 +1,16 @@
+# Pin CRLF test fixtures so git auto-EOL normalization does not clobber
+# CRLF bytes on checkout (W1 risk — see design §8 and T3 apply-progress).
+tests/fixtures/crlf/** eol=crlf
+tests/fixtures/crlf-standard/** eol=crlf
+
+# Pin LF fixtures defensively (git should not auto-convert these to CRLF
+# on Windows or when core.autocrlf is set).
+tests/fixtures/markdown/** eol=lf
+tests/fixtures/settings-local-json/** eol=lf
+tests/fixtures/gitignore/** eol=lf
+tests/fixtures/mcp-json/** eol=lf
+tests/fixtures/claude-hook-payloads/** eol=lf
+tests/fixtures/empty-project/** eol=lf
+tests/fixtures/project-with-two-plugins/** eol=lf
+tests/fixtures/project-standard/** eol=lf
+tests/fixtures/claudemd/** eol=lf

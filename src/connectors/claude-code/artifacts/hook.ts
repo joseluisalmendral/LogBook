@@ -37,6 +37,9 @@ import {
   AnchorNotFoundError,
 } from "../../../util/json-string-patch.js";
 import { sha256 } from "../../../util/hash.js";
+// CRLF normalize before string-patch — see crlf.ts (T3 retro-touch)
+import { toLF, fromLF } from "../../../util/crlf.js";
+import type { LineEnding } from "../../../util/crlf.js";
 
 type HookArtifact = Extract<Artifact, { kind: "hook" }>;
 
@@ -197,10 +200,12 @@ export class HookInstaller implements ArtifactInstaller<HookArtifact> {
     const parsedEntry = JSON.parse(entryJson) as Record<string, unknown>;
     const contentHash = sha256(canonicalJson(parsedEntry));
 
-    let source = await readFileOrNull(targetPath);
-    if (source === null) {
-      source = "{}";
-    }
+    const rawSource = await readFileOrNull(targetPath);
+    // CRLF normalize: work in LF internally for all string operations.
+    // fromLF restores original line endings on write.
+    const { content: source, original: detectedEnding } = rawSource !== null
+      ? toLF(rawSource)
+      : { content: "{}", original: "lf" as LineEnding };
 
     let next: string;
     let insertedPosition: number;
@@ -217,8 +222,8 @@ export class HookInstaller implements ArtifactInstaller<HookArtifact> {
       // We must inject the hooks structure. We only do this when the target
       // structure is absent — never when existing bytes would be mangled.
       //
-      // Parse the entire file (which is safe because we know we'll re-serialize
-      // the whole thing; there are no existing hooks bytes to preserve).
+      // Parse the LF-normalized content (safe because we'll re-serialize the
+      // whole thing; no existing hooks bytes to preserve outside the span).
       const parsed = JSON.parse(source) as Record<string, unknown>;
 
       // Inject the hooks structure
@@ -234,7 +239,7 @@ export class HookInstaller implements ArtifactInstaller<HookArtifact> {
         hooks[hookEvent] = [];
       }
 
-      // Serialize back to a clean structure (2-space indent).
+      // Serialize back to a clean LF structure (2-space indent).
       // Byte-identity on uninstall is achievable because:
       // - if createdHooksStructure=true, we own the entire hooks key and will
       //   remove it entirely on uninstall.
@@ -243,7 +248,7 @@ export class HookInstaller implements ArtifactInstaller<HookArtifact> {
       //   the surrounding content. Known limitation documented in apply-progress.
       const reserializedBase = JSON.stringify(parsed, null, 2) + "\n";
 
-      // Now use insertIntoJsonArray on the re-serialized string.
+      // Now use insertIntoJsonArray on the re-serialized LF string.
       const insertResult = insertIntoJsonArray({
         source: reserializedBase,
         jsonPath: arrayJsonPath,
@@ -263,7 +268,8 @@ export class HookInstaller implements ArtifactInstaller<HookArtifact> {
       insertedPosition = insertResult.position;
     }
 
-    await atomicWrite(targetPath, next);
+    // Restore original line endings before writing (CRLF normalize — T3).
+    await atomicWrite(targetPath, fromLF(next, detectedEnding));
 
     return {
       id: logbookId,
@@ -278,13 +284,14 @@ export class HookInstaller implements ArtifactInstaller<HookArtifact> {
       },
       content_hash: contentHash,
       installed_at: ctx.now(),
+      detectedLineEnding: detectedEnding,
     };
   }
 
   async uninstall(entry: ManifestArtifact, ctx: InstallContext): Promise<void> {
     const targetPath = settingsPath(ctx);
-    const source = await readFileOrNull(targetPath);
-    if (source === null) {
+    const rawSource = await readFileOrNull(targetPath);
+    if (rawSource === null) {
       // File missing — nothing to remove; idempotent.
       return;
     }
@@ -304,6 +311,12 @@ export class HookInstaller implements ArtifactInstaller<HookArtifact> {
         `HookInstaller.uninstall: cannot extract hookEvent from jsonPath: ${entry.anchor.jsonPath}`
       );
     }
+
+    // CRLF normalize: work in LF for all string operations (T3 retro-touch).
+    // Use entry.detectedLineEnding as the target; fall back to "lf" for
+    // backward compat with iter1-installed manifests that lack this field.
+    const targetEnding = entry.detectedLineEnding ?? "lf";
+    const { content: source } = toLF(rawSource);
 
     // Only remove the hooks structure entirely if we created it during install.
     // This flag is persisted in the anchor to enable byte-identical uninstall
@@ -335,7 +348,8 @@ export class HookInstaller implements ArtifactInstaller<HookArtifact> {
       next = this._removeHooksKeyIfEmpty(next, hookEvent);
     }
 
-    await atomicWrite(targetPath, next);
+    // Restore original line endings before writing (CRLF normalize — T3).
+    await atomicWrite(targetPath, fromLF(next, targetEnding));
   }
 
   /**
@@ -374,15 +388,20 @@ export class HookInstaller implements ArtifactInstaller<HookArtifact> {
 
   async verify(entry: ManifestArtifact, ctx: InstallContext): Promise<VerifyResult> {
     const targetPath = settingsPath(ctx);
-    const source = await readFileOrNull(targetPath);
+    const rawSource = await readFileOrNull(targetPath);
 
-    if (source === null) {
+    if (rawSource === null) {
       return { ok: false, reason: "file_missing" };
     }
 
     if (entry.anchor.type !== "json_field") {
       return { ok: false, reason: "anchor_missing" };
     }
+
+    // CRLF normalize before locate: the canonical JSON hash is layout-independent
+    // (sorted keys, no whitespace), so CRLF does not affect hash correctness.
+    // Normalizing to LF ensures locateInstalledEntry works on CRLF files (T3).
+    const { content: source } = toLF(rawSource);
 
     // Locate the object with matching _logbookId
     const located = locateInstalledEntry(source, entry.anchor.idValue);

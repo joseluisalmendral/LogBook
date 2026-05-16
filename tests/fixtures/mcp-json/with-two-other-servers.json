@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "plugin-a": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/abs/path/to/a.cjs"],
+      "_pluginAId": "pa-001"
+    },
+    "plugin-b": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["/abs/path/to/b.cjs"],
+      "_pluginBId": "pb-001"
+    }
+  }
+}

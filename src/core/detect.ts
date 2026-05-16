@@ -158,6 +158,44 @@ function scanMarkdownBlock(
 // ---------------------------------------------------------------------------
 
 /**
+ * json_object_key variant: used by MCPServerInstaller for .claude/mcp.json.
+ *
+ * The anchor records the full RFC 6901 path to the key, e.g. "/mcpServers/logbook-mcp".
+ * Detection: scan for the idValue literal inside the file; if found, locate the
+ * enclosing object value and compute its canonical-JSON hash.
+ *
+ * The hash strategy mirrors json_field: we locate the object by idValue, extract the
+ * raw span, compute sha256 of that span. This is intentionally identical to scanJsonField
+ * because the underlying byte-search algorithm is the same — the type distinction is
+ * at the installer level (object-key insertion vs array-item insertion), not at the
+ * hash/detect level.
+ */
+function scanJsonObjectKey(
+  fileContent: string,
+  anchor: Extract<AnchorSpec, { type: "json_object_key" }>,
+  expectedHash: string
+): AnchorScanResult {
+  const { idValue } = anchor;
+
+  const escaped = idValue.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`"${escaped}"`, "g");
+
+  if (!pattern.test(fileContent)) {
+    return { present: false, contentMatchesHash: false };
+  }
+
+  // Locate the innermost object containing the idValue literal and hash it.
+  const hash = computeJsonFieldHash(fileContent, idValue);
+  if (hash === null) {
+    return { present: true, contentMatchesHash: false };
+  }
+
+  return { present: true, contentMatchesHash: hash === expectedHash };
+}
+
+// ---------------------------------------------------------------------------
+
+/**
  * line_set variant: search for the exact joined line block as a substring.
  * Hash is sha256 of lines.join("\n").
  */
@@ -178,6 +216,33 @@ function scanLineSet(
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * owned_file variant: used by slash_command installer.
+ *
+ * The fileContent is the full current content of the file (already read by the caller).
+ * The anchor's expected_sha256 is the hash of the content we wrote at install time.
+ *
+ * Semantics:
+ * - File does not exist → present: false, contentMatchesHash: false (caller checks existence first).
+ * - File exists with sha256 === expected_sha256 → present: true, contentMatchesHash: true.
+ * - File exists with different sha256 → present: false (we don't own this slot anymore),
+ *   contentMatchesHash: false.
+ *
+ * Note: "present" here means "we still own this file at the expected content". If the user
+ * modified the file (different hash), we report not-present to signal loss of ownership.
+ */
+function scanOwnedFile(
+  fileContent: string,
+  anchor: Extract<AnchorSpec, { type: "owned_file" }>,
+  _expectedContentHash: string
+): AnchorScanResult {
+  const currentHash = sha256(fileContent);
+  const matches = currentHash === anchor.expected_sha256;
+  return { present: matches, contentMatchesHash: matches };
+}
+
+// ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------
 
@@ -192,10 +257,14 @@ export function scanForAnchor(
   switch (anchor.type) {
     case "json_field":
       return scanJsonField(fileContent, anchor, expectedContentHash);
+    case "json_object_key":
+      return scanJsonObjectKey(fileContent, anchor, expectedContentHash);
     case "markdown_block":
       return scanMarkdownBlock(fileContent, anchor, expectedContentHash);
     case "line_set":
       return scanLineSet(fileContent, anchor, expectedContentHash);
+    case "owned_file":
+      return scanOwnedFile(fileContent, anchor, expectedContentHash);
   }
 }
 
@@ -230,6 +299,15 @@ export function findExistingLogbookEntry(
     }
 
     if (
+      anchor.type === "json_object_key" &&
+      a.type === "json_object_key" &&
+      a.idField === anchor.idField &&
+      a.idValue === anchor.idValue
+    ) {
+      return artifact;
+    }
+
+    if (
       anchor.type === "markdown_block" &&
       a.type === "markdown_block" &&
       a.start_marker === anchor.start_marker &&
@@ -243,6 +321,11 @@ export function findExistingLogbookEntry(
       a.type === "line_set" &&
       a.lines.join("\n") === anchor.lines.join("\n")
     ) {
+      return artifact;
+    }
+
+    // owned_file: match by file_path only (one owned file per path; the entire file is the artifact).
+    if (anchor.type === "owned_file" && a.type === "owned_file") {
       return artifact;
     }
   }

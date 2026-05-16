@@ -19,6 +19,14 @@ export interface LogBookState {
   lastError?: { code: string; message: string; at: string };
   warnings: string[];           // non-fatal issues recorded by hook or doctor
   staleLocksReleased: number;   // counter for ops observability
+  /** Current session id (set by `logbook start` or the MCP phase tool). */
+  session?: string;
+  /** Human-readable label for the current session (set by `logbook start --label` or `logbook session rename`). */
+  sessionLabel?: string;
+  /** Active phase name (set by `logbook phase` or `logbook_phase` MCP tool). */
+  currentPhase?: string;
+  /** Monotonic ADR counter; incremented atomically on each decision capture. */
+  adrCounter?: number;
 }
 
 export function defaultState(): LogBookState {

@@ -2,7 +2,14 @@
  * logbook init — install LogBook artifacts into the current project.
  *
  * Preset "minimal" (iter1): one PostToolUse hook + one .gitignore entry.
- * Other presets are accepted for forward-compat but behave like minimal.
+ * Preset "standard" (iter2): hook + mcp_server + augment_claudemd + 8 slash_command × + gitignore_entry.
+ *   Install order per design §6 (deterministic):
+ *     1. hook
+ *     2. mcp_server
+ *     3. augment_claudemd
+ *     4-11. slash_command × 8 (lb-decision, lb-error, lb-fix, lb-lesson,
+ *                               lb-milestone, lb-phase, lb-review, lb-status)
+ *     12. gitignore_entry (LAST)
  */
 
 import * as fs from "node:fs";
@@ -30,6 +37,77 @@ function resolveHookPath(): string {
   return path.resolve(__dirname, "../connectors/claude-code/hook.cjs");
 }
 
+// ---------------------------------------------------------------------------
+// MCP server path resolution.
+// Production: dist/cli/index.cjs → __dirname = dist/cli/
+//             server is at dist/mcp/server.cjs
+// Tests: override via LOGBOOK_MCP_SERVER_PATH env var (same pattern as T4).
+// ---------------------------------------------------------------------------
+function resolveMcpServerPath(): string {
+  if (process.env["LOGBOOK_MCP_SERVER_PATH"]) {
+    return process.env["LOGBOOK_MCP_SERVER_PATH"];
+  }
+  // __dirname in CJS output → dist/cli
+  return path.resolve(__dirname, "../mcp/server.cjs");
+}
+
+// ---------------------------------------------------------------------------
+// Asset reading helpers — read slash command bodies and augment block from disk.
+// These paths are relative to the repo root in dev; in production the assets
+// are bundled alongside the CJS at dist/cli/../assets/ (i.e., ../../assets/).
+// We resolve relative to __dirname at runtime for CJS output compatibility.
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve path to an asset file relative to the CLI bundle.
+ * Production CJS layout:
+ *   dist/cli/index.cjs          ← __dirname = dist/cli
+ *   assets/slash/lb-*.md        ← 2 levels up from dist/cli, then assets/
+ *
+ * At tsup bundle time, assets/ is NOT inlined — we read from the filesystem.
+ * The LOGBOOK_ASSETS_ROOT env var overrides for tests (tests use repo root).
+ */
+function resolveAssetPath(...segments: string[]): string {
+  const assetsRoot = process.env["LOGBOOK_ASSETS_ROOT"] ??
+    path.resolve(__dirname, "../../assets");
+  return path.join(assetsRoot, ...segments);
+}
+
+/**
+ * Read a slash command body from assets/slash/<name>.md.
+ * Throws if the file is not found — assets are required for standard preset.
+ */
+function readSlashAsset(name: string): string {
+  const assetPath = resolveAssetPath("slash", `${name}.md`);
+  return fs.readFileSync(assetPath, "utf8");
+}
+
+/**
+ * Read the augment_claudemd body from assets/claudemd/augment.md.
+ */
+function readAugmentAsset(): string {
+  const assetPath = resolveAssetPath("claudemd", "augment.md");
+  return fs.readFileSync(assetPath, "utf8");
+}
+
+// ---------------------------------------------------------------------------
+// The 8 slash command names in design §6 install order.
+// ---------------------------------------------------------------------------
+const STANDARD_SLASH_NAMES = [
+  "lb-decision",
+  "lb-error",
+  "lb-fix",
+  "lb-lesson",
+  "lb-milestone",
+  "lb-phase",
+  "lb-review",
+  "lb-status",
+] as const;
+
+// ---------------------------------------------------------------------------
+// Artifact builders
+// ---------------------------------------------------------------------------
+
 function buildMinimalArtifacts(): Artifact[] {
   const hookPath = resolveHookPath();
   return [
@@ -45,6 +123,75 @@ function buildMinimalArtifacts(): Artifact[] {
       lines: [".logbook/", "logbook/", "# lb-gitignore-001"],
     },
   ];
+}
+
+/**
+ * Build the full artifact list for preset "standard" in design §6 order.
+ *
+ * Reads slash command bodies and the augment block from the assets/ directory
+ * at build time (not at install time — the list is assembled once, then the
+ * install-engine installs them in order). This matches the §6 spec exactly.
+ */
+function buildStandardArtifacts(): Artifact[] {
+  const hookPath = resolveHookPath();
+  const mcpServerPath = resolveMcpServerPath();
+  const augmentBody = readAugmentAsset();
+
+  // Build the 8 slash command artifacts
+  const slashArtifacts: Artifact[] = STANDARD_SLASH_NAMES.map((name) => ({
+    kind: "slash_command" as const,
+    name,
+    file_path: `.claude/commands/${name}.md`,
+    body: readSlashAsset(name),
+    _logbookId: `lb-cmd-${name}`,
+  }));
+
+  return [
+    // 1. hook (PostToolUse — same as minimal)
+    {
+      kind: "hook",
+      hookEvent: "PostToolUse",
+      command: `node ${hookPath}`,
+      _logbookId: "lb-hook-posttooluse-001",
+    },
+    // 2. mcp_server (logbook-mcp → dist/mcp/server.cjs)
+    {
+      kind: "mcp_server",
+      name: "logbook-mcp",
+      command: "node",
+      args: [mcpServerPath],
+      _logbookId: "lb-mcp-001",
+    },
+    // 3. augment_claudemd
+    {
+      kind: "augment_claudemd",
+      file_path: "CLAUDE.md",
+      block_content: augmentBody,
+      _logbookId: "lb-claudemd-001",
+    },
+    // 4-11. slash_command × 8 (in §6 order)
+    ...slashArtifacts,
+    // 12. gitignore_entry (LAST — per iter1 install-order contract)
+    {
+      kind: "gitignore_entry",
+      file_path: ".gitignore",
+      lines: [".logbook/", "logbook/", "# lb-gitignore-001"],
+    },
+  ];
+}
+
+/**
+ * Dispatch to the correct artifact builder based on preset.
+ * "minimal" → iter1 baseline (hook + gitignore_entry).
+ * "standard" → iter2 full set (11 artifacts).
+ * "full" is reserved for iter3+; falls back to standard for now.
+ */
+function buildArtifactsForPreset(preset: string): Artifact[] {
+  if (preset === "standard" || preset === "full") {
+    return buildStandardArtifacts();
+  }
+  // Default: minimal
+  return buildMinimalArtifacts();
 }
 
 async function confirmPrompt(question: string): Promise<boolean> {
@@ -94,8 +241,8 @@ export default defineCommand({
     const paths = makePaths(root);
     bootstrapClaudeCodeInstallers();
 
-    // iter1: all presets map to minimal artifact set
-    const artifacts = buildMinimalArtifacts();
+    const preset = (args["preset"] as string) || "minimal";
+    const artifacts = buildArtifactsForPreset(preset);
     const dryRun = args["dry-run"] as boolean;
     const skipConfirm = args["yes"] as boolean;
 
@@ -114,7 +261,7 @@ export default defineCommand({
     try {
       result = await runInstall({
         paths,
-        preset: "minimal",
+        preset: (preset === "standard" || preset === "full") ? "standard" : "minimal",
         artifacts,
         dryRun,
         onReport(report) {

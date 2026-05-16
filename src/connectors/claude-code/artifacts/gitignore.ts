@@ -36,6 +36,9 @@ import {
   AnchorNotFoundError,
 } from "../../../util/line-set.js";
 import { sha256 } from "../../../util/hash.js";
+// CRLF normalize before line-set operations — see crlf.ts (T3 retro-touch)
+import { toLF, fromLF } from "../../../util/crlf.js";
+import type { LineEnding } from "../../../util/crlf.js";
 
 type GitignoreArtifact = Extract<Artifact, { kind: "gitignore_entry" }>;
 
@@ -102,7 +105,9 @@ export class GitignoreInstaller
     ctx: InstallContext
   ): Promise<DetectionResult> {
     const targetPath = resolveTargetPath(artifact, ctx);
-    const source = await readFileOrNull(targetPath);
+    const rawSource = await readFileOrNull(targetPath);
+    // CRLF normalize for detection: hasContiguousBlock uses LF-joined lines (T3).
+    const source = rawSource !== null ? toLF(rawSource).content : null;
 
     if (source !== null && hasContiguousBlock(source, artifact.lines)) {
       // Lines are present — check if they belong to us (manifest entry exists)
@@ -131,15 +136,19 @@ export class GitignoreInstaller
     ctx: InstallContext
   ): Promise<ManifestArtifact> {
     const targetPath = resolveTargetPath(artifact, ctx);
-    const source = await readFileOrEmpty(targetPath);
+    const rawSource = await readFileOrEmpty(targetPath);
     const { lines } = artifact;
+
+    // CRLF normalize: work in LF for appendLines; restore on write (T3 retro-touch).
+    const { content: source, original: detectedEnding } = toLF(rawSource);
 
     const { next, addedLeadingNewline, trailingNewlineAdded } = appendLines({
       source,
       lines,
     });
 
-    await atomicWrite(targetPath, next);
+    // Restore original line endings before writing.
+    await atomicWrite(targetPath, fromLF(next, detectedEnding));
 
     const contentHash = sha256(lines.join("\n"));
 
@@ -156,6 +165,7 @@ export class GitignoreInstaller
       },
       content_hash: contentHash,
       installed_at: ctx.now(),
+      detectedLineEnding: detectedEnding,
     };
   }
 
@@ -169,12 +179,18 @@ export class GitignoreInstaller
     }
 
     const targetPath = nodePath.join(ctx.projectRoot, entry.file_path);
-    const source = await readFileOrNull(targetPath);
+    const rawSource = await readFileOrNull(targetPath);
 
-    if (source === null) {
+    if (rawSource === null) {
       // File missing — nothing to remove; idempotent.
       return;
     }
+
+    // CRLF normalize: work in LF for removeLines (T3 retro-touch).
+    // Use entry.detectedLineEnding as the target; fall back to "lf" for
+    // backward compat with iter1-installed manifests that lack this field.
+    const targetEnding: LineEnding = entry.detectedLineEnding ?? "lf";
+    const { content: source } = toLF(rawSource);
 
     let next: string;
     try {
@@ -196,7 +212,8 @@ export class GitignoreInstaller
       throw err;
     }
 
-    await atomicWrite(targetPath, next);
+    // Restore original line endings before writing.
+    await atomicWrite(targetPath, fromLF(next, targetEnding));
   }
 
   async verify(
@@ -208,12 +225,14 @@ export class GitignoreInstaller
     }
 
     const targetPath = nodePath.join(ctx.projectRoot, entry.file_path);
-    const source = await readFileOrNull(targetPath);
+    const rawSource = await readFileOrNull(targetPath);
 
-    if (source === null) {
+    if (rawSource === null) {
       return { ok: false, reason: "file_missing" };
     }
 
+    // CRLF normalize before checking: hasContiguousBlock uses LF-joined lines (T3).
+    const { content: source } = toLF(rawSource);
     const { lines } = entry.anchor;
 
     if (!hasContiguousBlock(source, lines)) {

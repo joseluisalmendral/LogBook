@@ -9,16 +9,18 @@ export type Artifact =
     }
   | {
       kind: "mcp_server";
-      name: string;                // key under mcpServers in .claude/mcp.json
-      command: string;             // node abs path
-      args: string[];
+      name: string;                // key under mcpServers in .claude/mcp.json (e.g. "logbook-mcp")
+      command: string;             // node abs path (e.g. "node")
+      args: string[];              // e.g. ["/abs/dist/mcp/server.cjs"]
       env?: Record<string, string>;
+      _logbookId: string;          // lb-id written into the value object (e.g. "lb-mcp-001")
     }
   | {
       kind: "slash_command";
-      name: string;                // e.g. "logbook:status"
-      file_path: string;           // .claude/commands/<name>.md
-      body: string;                // template content
+      name: string;                // e.g. "lb-decision"
+      file_path: string;           // typically ".claude/commands/<name>.md"
+      body: string;                // bundled body content
+      _logbookId: string;          // e.g. "lb-cmd-decision"; written into the ManifestArtifact id
     }
   | {
       kind: "skill";
@@ -36,6 +38,7 @@ export type Artifact =
       kind: "augment_claudemd";
       file_path: string;           // typically "CLAUDE.md"
       block_content: string;       // body inside markdown markers
+      _logbookId: string;          // e.g. "lb-claudemd-001"; written into the ManifestArtifact id
     }
   | {
       kind: "statusline";

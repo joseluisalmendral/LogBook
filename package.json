@@ -17,13 +17,18 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.29.0",
     "better-sqlite3": "^11.9.1",
     "citty": "^0.1.6",
     "consola": "^3.4.2",
     "defu": "^6.1.4",
     "pathe": "^2.0.3",
     "proper-lockfile": "^4.1.2",
+    "rehype-stringify": "10.0.1",
+    "remark-parse": "11.0.0",
+    "remark-rehype": "11.1.1",
     "ulid": "^2.3.0",
+    "unified": "11.0.5",
     "valibot": "^1.0.0"
   },
   "devDependencies": {
