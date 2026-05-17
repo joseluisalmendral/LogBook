@@ -41,6 +41,9 @@
  *                            use 120 as the hard worst-case constant for budget math.
  *                            Using the conservative max guarantees the budget test
  *                            catches any real overage.
+ *
+ * SG-C: bundle size soft warning (D5/D6/D7 from v1.2 design).
+ * softThresholdKb / classifyBundle / formatBundleLine exported for unit tests.
  */
 
 import { defineCommand } from "citty";
@@ -52,6 +55,53 @@ import { readState } from "../../core/state.js";
 import { generateUlid } from "../../util/ulid.js";
 import { renderTable, renderKv, renderJson } from "../render.js";
 import { computeTokenBreakdown } from "../../core/token-measure.js";
+
+// ---------- SG-C bundle helpers (exported for unit tests) ----------
+
+export type BundleStatus = "ok" | "warn" | "fail" | "not_built";
+
+export interface BundleResult {
+  name: string;
+  path: string;
+  capKb: number;
+  softKb: number;
+  status: BundleStatus;
+  sizeKb?: number;
+}
+
+/** D6: soft = cap-20 if cap>=200, else floor(cap*0.95) */
+export function softThresholdKb(c: number): number {
+  return c >= 200 ? c - 20 : Math.floor(c * 0.95);
+}
+
+/** Classify actual bytes vs cap KB → "ok"|"warn"|"fail" */
+export function classifyBundle(b: number, c: number): Exclude<BundleStatus, "not_built"> {
+  const s = softThresholdKb(c) * 1024;
+  return b >= c * 1024 ? "fail" : b >= s ? "warn" : "ok";
+}
+
+/** Format one bundle result as a human-readable line (D7). nc=true strips ANSI. */
+export function formatBundleLine(r: BundleResult, nc: boolean): string {
+  const p = r.path.padEnd(44);
+  if (r.status === "not_built") return nc ? `- ${p} (not built)` : `\x1b[2m- ${p} (not built)\x1b[0m`;
+  const s = `${r.sizeKb!.toFixed(2).padStart(7)} KB  (cap ${r.capKb} KB, soft ${r.softKb} KB)`;
+  const [an, sy] = r.status==="fail" ? ["\x1b[31m","✗"] : r.status==="warn" ? ["\x1b[33m","⚠"] : ["\x1b[32m","✓"];
+  return `${nc ? sy : an+sy+"\x1b[0m"} ${p} ${s}`;
+}
+
+// D6: bundle cap table — [name, path-relative-to-root, capKb]
+const BC=[["cli","dist/cli/index.cjs",400],["hook","dist/connectors/claude-code/hook.cjs",50],["mcp","dist/mcp/server.cjs",100],["html","dist/export/html.cjs",400],["pdf","dist/export/pdf.cjs",80]] as [string,string,number][];
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const _fs=require("node:fs") as {statSync:(p:string)=>{size:number}};
+function checkBundles(root: string): BundleResult[] {
+  return BC.map(([name,p,cap])=>{
+    const softKb=softThresholdKb(cap);
+    try{const sz=_fs.statSync(`${root}/${p}`).size;return{name,path:p,capKb:cap,softKb,status:classifyBundle(sz,cap),sizeKb:sz/1024};}
+    catch{return{name,path:p,capKb:cap,softKb,status:"not_built" as const};}
+  });
+}
+
+// -------------------------------------------------------------------
 
 export default defineCommand({
   meta: {
@@ -148,6 +198,9 @@ export default defineCommand({
       breakdown.statusline +
       breakdown.sessionStart;
 
+    // D6/D7: check bundle sizes (statSync, relative to project root)
+    const bundles = checkBundles(root);
+
     if (args["json"]) {
       process.stdout.write(
         renderJson({
@@ -160,6 +213,7 @@ export default defineCommand({
             ...(reason !== undefined ? { reason } : {}),
           })),
           disabled: state.disabled,
+          bundles: bundles.map(({ name, path: p, capKb, softKb, status, sizeKb }) => ({ name, path: p, capKb, softKb, status, sizeKb })),
         }),
       );
       return;
@@ -199,5 +253,10 @@ export default defineCommand({
         ]),
       );
     }
+
+    // D7: emit Bundles section (D5: never changes exit code)
+    const nc = !process.stdout.isTTY || process.env.NO_COLOR === "1";
+    process.stdout.write("\nBundles\n");
+    for (const r of bundles) process.stdout.write(formatBundleLine(r, nc) + "\n");
   },
 });
