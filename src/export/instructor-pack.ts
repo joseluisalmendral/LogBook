@@ -27,6 +27,12 @@ import { INLINE_CSS } from "./inline-css.js";
 import { assertNoExternalRefs } from "./sanitize-links.js";
 import { sanitizeForSafeExport, sanitizeCss } from "./safe.js";
 import { preprocessMermaidPlaceholders, injectMermaidSvgs } from "./mermaid.js";
+import {
+  stripSpeakerBlocks,
+  preprocessSpeakerPlaceholders,
+  injectSpeakerDivs,
+  type SpeakerBlock,
+} from "../generate/speaker-blocks.js";
 import type { ProjectPaths } from "../core/paths.js";
 import type { ExportReport } from "../types/reports.js";
 
@@ -46,6 +52,13 @@ export interface InstructorPackOptions {
    * INSTEAD of INLINE_CSS. Throws if the file cannot be read.
    */
   themePath?: string;
+  /**
+   * Speaker mode (S6.2).
+   * When true, <!-- logbook:speaker start --> ... <!-- logbook:speaker end --> blocks
+   * are rendered as <div class="speaker-note">...</div> in the output HTML.
+   * When false (default), speaker blocks are stripped entirely.
+   */
+  speakerMode?: boolean;
 }
 
 /** A single section in the bundle (one source file). */
@@ -338,8 +351,13 @@ export function rewriteDocLinks(markdown: string): string {
  * 5. rehype-stringify — serialize to HTML (comments preserved verbatim)
  * 6. injectMermaidSvgs — replace placeholder comments with
  *    <div class="mermaid"><svg>…</svg></div> via string-replace
+ * 7. injectSpeakerDivs (if speakerBlocks provided) — replace <p>LBSPEAKER_N</p>
+ *    paragraphs with <div class="speaker-note">...</div>
  */
-async function markdownToHtml(markdown: string): Promise<string> {
+async function markdownToHtml(
+  markdown: string,
+  speakerBlocks?: SpeakerBlock[],
+): Promise<string> {
   // Phase 1: extract mermaid fences → placeholders + SVG array.
   const { markdown: withPlaceholders, svgs } =
     await preprocessMermaidPlaceholders(markdown);
@@ -353,7 +371,14 @@ async function markdownToHtml(markdown: string): Promise<string> {
   const file = await processor.process(withPlaceholders);
 
   // Phase 2: inject sanitized SVG divs in place of comment placeholders.
-  return injectMermaidSvgs(String(file), svgs);
+  let html = injectMermaidSvgs(String(file), svgs);
+
+  // Phase 3 (speaker mode): inject speaker note divs.
+  if (speakerBlocks && speakerBlocks.length > 0) {
+    html = injectSpeakerDivs(html, speakerBlocks);
+  }
+
+  return html;
 }
 
 /**
@@ -468,8 +493,18 @@ export async function exportInstructorPack(
     combinedMarkdown = sanitizeForSafeExport(combinedMarkdown);
   }
 
+  // S6.2 — apply speaker block transformation before the unified pipeline.
+  let speakerBlocks: SpeakerBlock[] | undefined;
+  if (opts.speakerMode) {
+    const result = preprocessSpeakerPlaceholders(combinedMarkdown);
+    combinedMarkdown = result.markdown;
+    speakerBlocks = result.blocks;
+  } else {
+    combinedMarkdown = stripSpeakerBlocks(combinedMarkdown);
+  }
+
   // 6. Convert to HTML
-  const htmlBody = await markdownToHtml(combinedMarkdown);
+  const htmlBody = await markdownToHtml(combinedMarkdown, speakerBlocks);
 
   // 7. Build full document
   const fullHtml = buildHtmlDocument(htmlBody, "LogBook — Instructor Pack", inlineCss);

@@ -64,6 +64,11 @@ export default defineCommand({
       required: false,
       description: "Path to a custom CSS theme file (replaces default styles)",
     },
+    "speaker-mode": {
+      type: "boolean",
+      default: false,
+      description: "Include speaker notes in output (default: stripped)",
+    },
   },
   async run({ args }) {
     let root: string;
@@ -94,6 +99,7 @@ export default defineCommand({
     }
 
     const safeMode = args["safe"] === true;
+    const speakerMode = args["speaker-mode"] === true;
     const themeArg =
       typeof args["theme"] === "string" && args["theme"]
         ? nodePath.resolve(process.cwd(), args["theme"])
@@ -102,6 +108,7 @@ export default defineCommand({
     const exportOpts: ExportOptions = {
       paths,
       safe: safeMode,
+      ...(speakerMode && { speakerMode }),
       ...(outArg !== undefined && { outFile: outArg }),
       ...(themeArg !== undefined && { themePath: themeArg }),
     };

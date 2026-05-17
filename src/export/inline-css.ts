@@ -28,4 +28,6 @@ export const INLINE_CSS =
   `blockquote { border-left: 3px solid #d0d0d0; margin: 1rem 0; padding: 0.25rem 1rem;\n` +
   `             color: #555; }\n` +
   `hr { border: none; border-top: 1px solid #e0e0e0; margin: 2rem 0; }\n` +
-  `@media print { body { max-width: none; margin: 0; } }\n`;
+  `@media print { body { max-width: none; margin: 0; } }\n` +
+  `.speaker-note { background: #fff8c4; border-left: 4px solid #e6c200; padding: 8px 12px;\n` +
+  `                margin: 12px 0; font-style: italic; }\n`;

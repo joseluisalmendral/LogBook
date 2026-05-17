@@ -39,6 +39,7 @@ import summarize from "./commands/summarize.js";
 import promote from "./commands/promote.js";
 import review from "./commands/review.js";
 import teachingScript from "./commands/teaching-script.js";
+import annotate from "./commands/annotate.js";
 
 const main = defineCommand({
   meta: {
@@ -74,6 +75,7 @@ const main = defineCommand({
     promote,
     review,
     "teaching-script": teachingScript,
+    annotate,
   },
 });
 
