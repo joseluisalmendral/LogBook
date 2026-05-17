@@ -3,10 +3,11 @@
  *
  * Side effects:
  *  1. Best-effort git context capture (HEAD sha + dirty file count).
- *     Uses execFileSync with explicit "git" binary — NO shell execution.
+ *     Uses getGitSha() from src/connectors/git.ts — NO shell execution.
  *     On any failure (git not installed, not a repo) both sha and dirty
  *     are undefined; the command still exits 0.
  *  2. Appends a `manual.snapshot` event to events.jsonl.
+ *     The event includes gitSha (v1.1 S2.3) when available.
  *  3. Prints JSON: { sha?, dirty?, note? }.
  *
  * Design §3 CLI command signatures — snapshot row.
@@ -18,25 +19,7 @@ import { defineCommand } from "citty";
 import { resolveProjectRoot, makePaths } from "../../core/paths.js";
 import { appendJsonl } from "../../store/jsonl.js";
 import { generateUlid } from "../../util/ulid.js";
-
-/**
- * Attempt to get the current git HEAD sha.
- * Returns undefined if git is unavailable or the directory is not a git repo.
- * Uses execFileSync with args-as-array — no shell execution.
- */
-function getGitSha(cwd: string): string | undefined {
-  try {
-    const output = execFileSync("git", ["rev-parse", "HEAD"], {
-      cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: 5_000,
-    });
-    return output.trim() || undefined;
-  } catch {
-    return undefined;
-  }
-}
+import { getGitSha } from "../../connectors/git.js";
 
 /**
  * Attempt to count the number of dirty (modified/untracked) files.
@@ -91,15 +74,17 @@ export default defineCommand({
     fs.mkdirSync(paths.evidenceDir, { recursive: true });
 
     // Best-effort git context (both undefined is fine for non-git projects).
-    const sha = getGitSha(root);
+    const sha = await getGitSha(root);
     const dirty = sha !== undefined ? getGitDirtyCount(root) : undefined;
 
     // Build event — omit undefined fields (exactOptionalPropertyTypes).
+    // gitSha (v1.1 S2.3): attach the captured SHA for the commits-doc cross-index.
     const event: Record<string, unknown> = {
       id: generateUlid(),
       type: "manual.snapshot",
       ts: new Date().toISOString(),
       ...(sha !== undefined && { sha }),
+      ...(sha !== undefined && { gitSha: sha }),
       ...(dirty !== undefined && { dirty }),
       ...(note !== undefined && note !== "" && { note }),
     };

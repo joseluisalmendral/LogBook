@@ -29,6 +29,18 @@ export interface LogBookState {
   adrCounter?: number;
   /** Optional cache: last built SessionStart summary string. iter4 — rebuilt on each hook call, not used for caching in iter4. */
   lastSummary?: string;
+  /**
+   * Cached git HEAD SHA captured at SessionStart (v1.1 S2.3).
+   * Set once per session by the SessionStart hook; subsequent hook events
+   * read from this cached value (0ms, no subprocess). Manual commands call
+   * getGitSha() fresh at invocation time.
+   */
+  gitSha?: string;
+  /**
+   * ISO8601 timestamp when gitSha was last captured (v1.1 S2.3).
+   * Stored alongside gitSha so callers can detect session boundaries.
+   */
+  gitShaCapturedAt?: string;
 }
 
 export function defaultState(): LogBookState {
