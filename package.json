@@ -56,5 +56,8 @@
       "better-sqlite3",
       "esbuild"
     ]
+  },
+  "optionalDependencies": {
+    "puppeteer-core": "25.0.2"
   }
 }
