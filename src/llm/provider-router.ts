@@ -145,6 +145,12 @@ function resolveAuth(providerEntry: ProviderEntry): LlmAuthResolution {
     return { kind: "api-key", envVar: providerEntry.api_key_env ?? "OLLAMA_API_KEY", value: resolvedKey };
   }
 
+  // 3d. codex-cli kind — subprocess adapter, no API key used; resolve as "none"
+  // The codexCliAdapter handles auth independently (uses the codex CLI binary directly).
+  if (providerEntry.kind === "codex-cli") {
+    return { kind: "none" };
+  }
+
   // 4. Inline key from providers.json (api_key_env points to env var)
   if (providerEntry.api_key_env) {
     const inlineKey = process.env[providerEntry.api_key_env];
@@ -254,7 +260,10 @@ export function createRouter(opts: CreateRouterOpts): LlmProviderRouter {
       // ------ 3. Resolve auth ----------------------------------------------
       const auth = resolveAuth(providerEntry);
 
-      if (auth.kind === "none" && opts.mockAdapter === undefined) {
+      // codex-cli does not use API key auth — its adapter handles the subprocess directly
+      const isAuthless = providerEntry.kind === "codex-cli";
+
+      if (auth.kind === "none" && opts.mockAdapter === undefined && !isAuthless) {
         return makeErrorResult(
           "no_auth",
           "No authentication available: set ANTHROPIC_API_KEY, OPENAI_API_KEY, or run inside Claude Code",
@@ -292,7 +301,7 @@ export function createRouter(opts: CreateRouterOpts): LlmProviderRouter {
         try {
           const callFn = opts.mockAdapter
             ? () => opts.mockAdapter!(adapterInput)
-            : () => selectAdapter(auth)(adapterInput);
+            : () => selectAdapter(auth, providerEntry)(adapterInput);
 
           const text = await withTimeout(callFn(), timeoutMs);
 
@@ -349,12 +358,26 @@ export function createRouter(opts: CreateRouterOpts): LlmProviderRouter {
 // ---------------------------------------------------------------------------
 
 /**
- * Selects the appropriate real SDK adapter based on auth resolution.
+ * Selects the appropriate real SDK adapter based on auth resolution and provider kind.
  * Note: this is NOT called when opts.mockAdapter is provided.
+ *
+ * Dispatch order:
+ *   1. codex-cli kind → codexCliAdapter (subprocess, bypasses Vercel SDK)
+ *   2. claude-agent-sdk auth → claudeSdkAdapter
+ *   3. api-key auth → vercelSdkAdapter
  */
 function selectAdapter(
-  auth: LlmAuthResolution
+  auth: LlmAuthResolution,
+  providerEntry?: ProviderEntry
 ): (input: LlmAdapterCallInput) => Promise<string> {
+  // codex-cli is a subprocess adapter — does not use Vercel SDK or claude-agent-sdk
+  if (providerEntry?.kind === "codex-cli") {
+    return async (input: LlmAdapterCallInput) => {
+      const { codexCliAdapter } = await import("./codex-cli.js");
+      return codexCliAdapter(input);
+    };
+  }
+
   if (auth.kind === "claude-agent-sdk") {
     return async (input: LlmAdapterCallInput) => {
       const { claudeSdkAdapter } = await import("./claude-sdk.js");

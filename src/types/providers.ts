@@ -1,5 +1,5 @@
 export interface ProviderEntry {
-  kind: "anthropic" | "openai" | "azure" | "google" | "local";
+  kind: "anthropic" | "openai" | "azure" | "google" | "local" | "codex-cli";
   model: string;                           // provider-specific model id
   base_url?: string;                       // override for self-hosted gateways
   api_key_env: string;                     // env var name (never the key itself)
