@@ -292,6 +292,9 @@ export function createRouter(opts: CreateRouterOpts): LlmProviderRouter {
         maxTokens: input.maxTokens ?? DEFAULT_MAX_TOKENS,
         temperature: input.temperature ?? DEFAULT_TEMPERATURE,
         timeoutMs,
+        // Thread optional streaming callback through to the adapter unchanged.
+        // Adapters that do not support streaming silently ignore this field.
+        ...(input.onChunk !== undefined ? { onChunk: input.onChunk } : {}),
       };
 
       // ------ 6. Retry loop (3 attempts) ------------------------------------

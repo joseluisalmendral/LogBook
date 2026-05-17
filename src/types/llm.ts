@@ -8,6 +8,13 @@ export interface LlmProviderCallInput {
   maxTokens?: number;        // default 1500
   temperature?: number;      // default 0.2
   timeoutMs?: number;        // default 30000; env override LOGBOOK_LLM_TIMEOUT_MS
+  /**
+   * Optional streaming callback. When provided, the adapter MAY invoke it for each
+   * text chunk as it arrives. The final router result.text is the full concatenated
+   * string regardless — callers need not buffer chunks themselves.
+   * If the adapter does not support streaming it silently ignores this field.
+   */
+  onChunk?: (chunk: string) => void;
 }
 
 export interface LlmProviderCallError {
@@ -66,6 +73,12 @@ export interface LlmAdapterCallInput {
   maxTokens: number;
   temperature: number;
   timeoutMs: number;
+  /**
+   * Optional streaming callback threaded from LlmProviderCallInput.onChunk.
+   * Adapters that support streaming SHOULD invoke this for each text chunk.
+   * Adapters that do not support streaming MUST silently ignore this field.
+   */
+  onChunk?: (chunk: string) => void;
 }
 
 export type LlmAuthResolution =
