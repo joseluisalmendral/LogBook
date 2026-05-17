@@ -11,8 +11,8 @@
  *    Used in unit tests — they assert the returned markdown string shape.
  *
  * 2. preprocessMermaidPlaceholders (internal, used by html.ts / instructor-pack.ts):
- *    Replaces fences with unique HTML comment markers
- *    <!-- LOGBOOK_MERMAID_PLACEHOLDER_<n> --> and returns the SVG array.
+ *    Replaces fences with unique bare-text placeholders LBMERMAID_<n>
+ *    (rendered as <p>LBMERMAID_<n></p> by remark/rehype) and returns the SVG array.
  *    The HTML pipeline then does a post-process string-replace AFTER rehype-stringify.
  *    This avoids rehype-raw (and its parse5 dep), saving ~318 KB from the bundle.
  *
@@ -46,10 +46,18 @@ const MERMAID_FENCE_RE = /```mermaid\n([\s\S]*?)\n```/g;
 
 /**
  * Placeholder format used by preprocessMermaidPlaceholders.
- * HTML comments survive the remark/rehype pipeline and are emitted verbatim
- * by rehype-stringify. Post-process replaces them with the actual SVG divs.
+ *
+ * Uses a bare text token (not an HTML comment) — when placed as a standalone
+ * paragraph in markdown, remark renders it as `<p>LBMERMAID_N</p>` which
+ * survives rehype-stringify verbatim. HTML comments are stripped by
+ * remark-rehype unless `allowDangerousHtml: true` is enabled (which would
+ * require rehype-raw + parse5 → +318 KB bundle).
+ *
+ * Post-process replaces `<p>LBMERMAID_N</p>` with the actual SVG div.
+ *
+ * Same approach as src/generate/speaker-blocks.ts (LBSPEAKER_N).
  */
-const PLACEHOLDER_PREFIX = "LOGBOOK_MERMAID_PLACEHOLDER_";
+const PLACEHOLDER_PREFIX = "LBMERMAID_";
 
 /**
  * Mock SVG returned when LOGBOOK_MERMAID_MOCK=1 or opts.mock=true.
@@ -160,27 +168,27 @@ export async function preprocessMermaidPlaceholders(
     svgs.push(sanitizeSvg(rawSvg));
   }
 
-  // Replace fences with placeholder comments, indexed by position.
+  // Replace fences with bare-text placeholder paragraphs. Wrapped in blank
+  // lines so remark parses each as a standalone paragraph.
   let idx = 0;
   const transformed = markdown.replace(
     MERMAID_FENCE_RE,
-    () => `<!-- ${PLACEHOLDER_PREFIX}${idx++} -->`
+    () => `\n\n${PLACEHOLDER_PREFIX}${idx++}\n\n`,
   );
 
   return { markdown: transformed, svgs };
 }
 
 /**
- * Phase 2: replace placeholder comments in an HTML string with the actual SVG divs.
+ * Phase 2: replace placeholder paragraphs in an HTML string with the actual SVG divs.
  *
  * Call this AFTER rehype-stringify has serialized the unified AST. Each
- * <!-- LOGBOOK_MERMAID_PLACEHOLDER_<n> --> comment is replaced by:
+ * `<p>LBMERMAID_<n></p>` is replaced by:
  *   <div class="mermaid">{sanitizedSvg}</div>
  *
  * Placeholders that appear inside markdown code blocks (<code> elements) are
- * NOT replaced because the regex matches the raw comment string which would
- * have been HTML-escaped by rehype-stringify inside <code> elements
- * (becoming &lt;!-- ... --&gt;, not <!-- ... -->).
+ * NOT replaced because rehype-stringify wraps code content in <code>…</code>,
+ * not <p>…</p>.
  *
  * @param html   HTML string from rehype-stringify.
  * @param svgs   Sanitized SVG array from preprocessMermaidPlaceholders.
@@ -190,13 +198,13 @@ export function injectMermaidSvgs(html: string, svgs: string[]): string {
   if (svgs.length === 0) return html;
 
   return html.replace(
-    /<!-- LOGBOOK_MERMAID_PLACEHOLDER_(\d+) -->/g,
+    /<p>LBMERMAID_(\d+)<\/p>/g,
     (_match, idxStr: string) => {
       const n = parseInt(idxStr, 10);
       const svg = svgs[n];
       if (svg === undefined) return _match; // safety: unknown index → leave as-is
       return `<div class="mermaid">${svg}</div>`;
-    }
+    },
   );
 }
 

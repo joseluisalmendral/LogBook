@@ -75,7 +75,7 @@ const SECTION_LABELS: Record<string, string> = {
  *
  * Pipeline (SG2c refactor — placeholder pattern, no rehype-raw):
  * 1. preprocessMermaidPlaceholders — replace ```mermaid fences with
- *    <!-- LOGBOOK_MERMAID_PLACEHOLDER_<n> --> comments; stash rendered SVGs.
+ *    LBMERMAID_<n> bare-text placeholders (renders as <p>LBMERMAID_<n></p>); stash rendered SVGs.
  * 2. remark-parse — parse markdown AST
  * 3. remark-rehype — convert to hast (no allowDangerousHtml needed)
  * 4. rehype-slug — add id attributes to headings for anchor navigation

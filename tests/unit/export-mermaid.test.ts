@@ -16,7 +16,15 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
-import { renderMermaidFences } from "../../src/export/mermaid.js";
+import { unified } from "unified";
+import remarkParse from "remark-parse";
+import remarkRehype from "remark-rehype";
+import rehypeStringify from "rehype-stringify";
+import {
+  renderMermaidFences,
+  preprocessMermaidPlaceholders,
+  injectMermaidSvgs,
+} from "../../src/export/mermaid.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -142,5 +150,72 @@ describe("renderMermaidFences — production mode detection (S2.1)", () => {
         process.env["LOGBOOK_MERMAID_MOCK"] = saved;
       }
     }
+  });
+});
+
+describe("preprocessMermaidPlaceholders + injectMermaidSvgs — end-to-end through real unified pipeline (regression for placeholder survival)", () => {
+  let originalEnv: string | undefined;
+
+  beforeEach(() => {
+    originalEnv = process.env["LOGBOOK_MERMAID_MOCK"];
+    process.env["LOGBOOK_MERMAID_MOCK"] = "1";
+  });
+
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env["LOGBOOK_MERMAID_MOCK"];
+    } else {
+      process.env["LOGBOOK_MERMAID_MOCK"] = originalEnv;
+    }
+  });
+
+  async function runPipeline(md: string): Promise<string> {
+    const result = await unified()
+      .use(remarkParse)
+      .use(remarkRehype)
+      .use(rehypeStringify)
+      .process(md);
+    return String(result);
+  }
+
+  it("placeholder survives remark-parse → remark-rehype → rehype-stringify (no rehype-raw, no allowDangerousHtml)", async () => {
+    const md = `# Title\n\n${mermaidFence(FLOWCHART)}\n\nSome text.`;
+    const { markdown, svgs } = await preprocessMermaidPlaceholders(md);
+
+    // Placeholder is bare text wrapped in newlines — survives as <p>LBMERMAID_N</p>.
+    expect(markdown).toContain("LBMERMAID_0");
+
+    const html = await runPipeline(markdown);
+    expect(html).toContain("<p>LBMERMAID_0</p>");
+
+    const final = injectMermaidSvgs(html, svgs);
+    expect(final).not.toContain("LBMERMAID_0");
+    expect(final).toContain('<div class="mermaid">');
+    expect(final).toContain('data-mermaid-mock="1"');
+  });
+
+  it("multiple placeholders all survive and are replaced in order", async () => {
+    const md = `# Title\n\n${mermaidFence(FLOWCHART)}\n\nMiddle.\n\n${mermaidFence(SEQ_DIAGRAM)}\n\nEnd.`;
+    const { markdown, svgs } = await preprocessMermaidPlaceholders(md);
+    expect(svgs).toHaveLength(2);
+
+    const html = await runPipeline(markdown);
+    expect(html).toContain("<p>LBMERMAID_0</p>");
+    expect(html).toContain("<p>LBMERMAID_1</p>");
+
+    const final = injectMermaidSvgs(html, svgs);
+    expect(final.match(/<div class="mermaid">/g)).toHaveLength(2);
+    expect(final).not.toContain("LBMERMAID_");
+  });
+
+  it("no mermaid fences → no placeholders, html unchanged by inject step", async () => {
+    const md = `# Title\n\nPlain markdown only.`;
+    const { markdown, svgs } = await preprocessMermaidPlaceholders(md);
+    expect(svgs).toHaveLength(0);
+    expect(markdown).toBe(md);
+
+    const html = await runPipeline(markdown);
+    const final = injectMermaidSvgs(html, svgs);
+    expect(final).toBe(html);
   });
 });
