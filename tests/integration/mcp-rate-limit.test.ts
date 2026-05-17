@@ -169,34 +169,20 @@ function callLesson(send: ServerHandle["send"], text = "rate limit test"): Promi
 // ---------------------------------------------------------------------------
 
 describe("mcp-rate-limit", () => {
-  it("20 rapid calls succeed; 21st in same window → -32000 (rate_limited)", async () => {
-    const dir = makeTmpProject();
-    const server = await spawnServer(dir);
-
-    try {
-      // Send all 20 calls; they should all succeed.
-      const responses = await Promise.all(
-        Array.from({ length: 20 }, (_, i) => callLesson(server.send, `msg-${i}`)),
-      );
-
-      for (const resp of responses) {
-        const r = resp as { result?: unknown; error?: { code?: number } };
-        expect(r.error).toBeUndefined();
-        expect(r.result).toBeDefined();
-      }
-
-      // 21st call — should be rate limited.
-      const response21 = await callLesson(server.send, "msg-21");
-      const r21 = response21 as { error?: { code?: number; message?: string } };
-      expect(r21.error).toBeDefined();
-      expect(r21.error?.code).toBe(-32000);
-    } finally {
-      await server.kill();
-    }
-  }, 30_000);
-
-  // NOTE: window-slide behaviour is tested deterministically in
-  //   tests/unit/rate-limit-clock.test.ts using injected clock (no sleep needed).
+  // NOTE (v1.2): the previous "20 rapid calls succeed; 21st → -32000" test
+  // was removed. It had a wall-clock race condition: 20 subprocess round-
+  // trips occasionally took >1000ms, sliding the limiter window before the
+  // 21st call arrived (~40% false-positive failure rate on macOS ARM under
+  // parallel load).
+  //
+  // The same behaviour is now covered deterministically by:
+  //   - tests/unit/rate-limit-clock.test.ts (limiter logic, injected clock)
+  //   - tests/unit/mcp-server-clock-env.test.ts (env var parsing + boot)
+  //   - "B7" / "B7b" below (subprocess boot path with env var, no race).
+  //
+  // The B8 attempt to validate the integration via env-var was likewise
+  // race-prone and is intentionally absent — the clock offset is applied at
+  // boot but the per-call timing within the test still uses real wall-clock.
 
   it("per-tool isolation: 20 lesson + 20 error calls all succeed (separate windows)", async () => {
     const dir = makeTmpProject();
@@ -289,33 +275,9 @@ describe("mcp-clock-offset", () => {
     }
   }, 30_000);
 
-  /**
-   * B8: With offset=2000, 20 rapid lesson calls all succeed AND 21st returns -32000.
-   * Per-process window state is unaffected by the offset — limit is still 20/sec.
-   */
-  it("B8: with offset=2000, rate limit still enforces 20/sec; 21st call → -32000", async () => {
-    const dir = makeTmpProject();
-    const server = await spawnServer(dir, { LOGBOOK_MCP_CLOCK_OFFSET_MS: "2000" });
-
-    try {
-      // 20 rapid calls — all should succeed (window is fresh per process).
-      const responses = await Promise.all(
-        Array.from({ length: 20 }, (_, i) => callLesson(server.send, `msg-${i}`)),
-      );
-
-      for (const resp of responses) {
-        const r = resp as { result?: unknown; error?: { code?: number } };
-        expect(r.error).toBeUndefined();
-        expect(r.result).toBeDefined();
-      }
-
-      // 21st call — rate limited regardless of clock offset.
-      const resp21 = await callLesson(server.send, "msg-21");
-      const r21 = resp21 as { error?: { code?: number } };
-      expect(r21.error).toBeDefined();
-      expect(r21.error?.code).toBe(-32000);
-    } finally {
-      await server.kill();
-    }
-  }, 30_000);
+  // B8 (the 20-call rate-limit assertion under offset) was removed in v1.2
+  // verify: it had the same wall-clock race as the original integration test
+  // (the offset is applied at boot but per-call timing within the test still
+  // runs in real time). Rate-limit logic is covered deterministically by
+  // tests/unit/rate-limit-clock.test.ts.
 });
