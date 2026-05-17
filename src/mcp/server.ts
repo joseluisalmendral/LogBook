@@ -51,6 +51,31 @@ import { redactDeep } from "./redact.js";
 import { ALL_TOOLS, type ToolDef } from "./tools/index.js";
 
 // ---------------------------------------------------------------------------
+// Clock offset helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse the LOGBOOK_MCP_CLOCK_OFFSET_MS environment variable.
+ *
+ * TEST-ONLY env var — DO NOT use in production.
+ * When set to a non-zero integer, shifts the SlidingWindowLimiter's clock by
+ * N milliseconds for deterministic rate-limit tests without wall-clock sleeps.
+ * Production behavior (env var unset) is bit-identical to v1.1 (offset = 0).
+ *
+ * Rules:
+ *   - undefined or "" → 0 (default, no offset)
+ *   - Valid integer string → parsed value (negative allowed)
+ *   - NaN / non-numeric → 0 (silent fallback, never throws)
+ *
+ * @param raw - The raw env var string or undefined when unset.
+ */
+export function parseMcpClockOffset(raw: string | undefined): number {
+  if (raw === undefined || raw === "") return 0;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) ? n : 0;
+}
+
+// ---------------------------------------------------------------------------
 // Package version
 // ---------------------------------------------------------------------------
 
@@ -237,7 +262,19 @@ async function main(): Promise<void> {
     { capabilities: { tools: {} } },
   );
 
-  const limiter = new SlidingWindowLimiter(20, 1000);
+  // TEST-ONLY: read clock offset from env var (see parseMcpClockOffset JSDoc).
+  // Production behavior is unchanged when the var is unset (offset = 0).
+  const clockOffsetMs = parseMcpClockOffset(process.env["LOGBOOK_MCP_CLOCK_OFFSET_MS"]);
+  if (clockOffsetMs !== 0) {
+    process.stderr.write(
+      `[logbook][TEST] MCP clock offset = ${clockOffsetMs}ms — should never be set in production\n`,
+    );
+  }
+  const limiter = new SlidingWindowLimiter(
+    20,
+    1000,
+    clockOffsetMs !== 0 ? { clock: () => Date.now() + clockOffsetMs } : {},
+  );
 
   // tools/list — advertise all registered tools with their JSON Schema.
   server.setRequestHandler(ListToolsRequestSchema, async () => {

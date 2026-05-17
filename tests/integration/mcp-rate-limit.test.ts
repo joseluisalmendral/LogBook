@@ -12,6 +12,10 @@
  *
  * This file retains only the subprocess-level assertions that need a real
  * MCP server process (no wall-clock waits).
+ *
+ * SG-B additions: mcp-clock-offset describe block tests B7, B7b, B8 —
+ * verify that LOGBOOK_MCP_CLOCK_OFFSET_MS is parsed correctly at server boot
+ * and that the clock offset wiring does not break rate-limit semantics.
  */
 
 import { describe, it, expect, beforeAll } from "vitest";
@@ -60,13 +64,18 @@ interface ServerHandle {
   send: (msg: object) => Promise<unknown>;
   sendNoReply: (msg: object) => void;
   kill: () => Promise<void>;
+  /** Collected stderr output at the time of calling (accumulated). */
+  getStderr: () => string;
 }
 
-async function spawnServer(cwd: string): Promise<ServerHandle> {
+async function spawnServer(
+  cwd: string,
+  extraEnv: Record<string, string> = {},
+): Promise<ServerHandle> {
   const proc = spawn("node", [SERVER_BUNDLE], {
     cwd,
     stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env },
+    env: { ...process.env, ...extraEnv },
   });
 
   const stderrChunks: Buffer[] = [];
@@ -140,7 +149,11 @@ async function spawnServer(cwd: string): Promise<ServerHandle> {
     });
   }
 
-  return { send, sendNoReply, kill };
+  function getStderr(): string {
+    return stderrChunks.map((c) => c.toString()).join("");
+  }
+
+  return { send, sendNoReply, kill, getStderr };
 }
 
 function callLesson(send: ServerHandle["send"], text = "rate limit test"): Promise<unknown> {
@@ -216,6 +229,91 @@ describe("mcp-rate-limit", () => {
         expect(r.error).toBeUndefined();
         expect(r.result).toBeDefined();
       }
+    } finally {
+      await server.kill();
+    }
+  }, 30_000);
+});
+
+// ---------------------------------------------------------------------------
+// SG-B: LOGBOOK_MCP_CLOCK_OFFSET_MS integration tests (B7, B7b, B8)
+// ---------------------------------------------------------------------------
+
+describe("mcp-clock-offset", () => {
+  /**
+   * B7: Server boots successfully with LOGBOOK_MCP_CLOCK_OFFSET_MS=2000.
+   * Asserts: env var parsing doesn't break startup; tools/list responds normally.
+   * Asserts: stderr warning emitted at boot when offset != 0.
+   */
+  it("B7: server with LOGBOOK_MCP_CLOCK_OFFSET_MS=2000 boots and responds to tools/list", async () => {
+    const dir = makeTmpProject();
+    const server = await spawnServer(dir, { LOGBOOK_MCP_CLOCK_OFFSET_MS: "2000" });
+
+    try {
+      const resp = await server.send({
+        jsonrpc: "2.0",
+        method: "tools/list",
+        params: {},
+      });
+      const r = resp as { result?: { tools?: unknown[] }; error?: unknown };
+      expect(r.error).toBeUndefined();
+      expect(Array.isArray(r.result?.tools)).toBe(true);
+
+      // Stderr must contain the TEST-ONLY boot warning when offset != 0.
+      const stderr = server.getStderr();
+      expect(stderr).toContain("[logbook][TEST] MCP clock offset = 2000ms");
+      expect(stderr).toContain("should never be set in production");
+    } finally {
+      await server.kill();
+    }
+  }, 30_000);
+
+  /**
+   * B7b: Server with offset=0 (default) emits NO boot warning — production path.
+   */
+  it("B7b: server with no offset set produces no TEST warning in stderr", async () => {
+    const dir = makeTmpProject();
+    const server = await spawnServer(dir);
+
+    try {
+      await server.send({
+        jsonrpc: "2.0",
+        method: "tools/list",
+        params: {},
+      });
+
+      const stderr = server.getStderr();
+      expect(stderr).not.toContain("[logbook][TEST]");
+    } finally {
+      await server.kill();
+    }
+  }, 30_000);
+
+  /**
+   * B8: With offset=2000, 20 rapid lesson calls all succeed AND 21st returns -32000.
+   * Per-process window state is unaffected by the offset — limit is still 20/sec.
+   */
+  it("B8: with offset=2000, rate limit still enforces 20/sec; 21st call → -32000", async () => {
+    const dir = makeTmpProject();
+    const server = await spawnServer(dir, { LOGBOOK_MCP_CLOCK_OFFSET_MS: "2000" });
+
+    try {
+      // 20 rapid calls — all should succeed (window is fresh per process).
+      const responses = await Promise.all(
+        Array.from({ length: 20 }, (_, i) => callLesson(server.send, `msg-${i}`)),
+      );
+
+      for (const resp of responses) {
+        const r = resp as { result?: unknown; error?: { code?: number } };
+        expect(r.error).toBeUndefined();
+        expect(r.result).toBeDefined();
+      }
+
+      // 21st call — rate limited regardless of clock offset.
+      const resp21 = await callLesson(server.send, "msg-21");
+      const r21 = resp21 as { error?: { code?: number } };
+      expect(r21.error).toBeDefined();
+      expect(r21.error?.code).toBe(-32000);
     } finally {
       await server.kill();
     }
