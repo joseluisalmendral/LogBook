@@ -6,16 +6,19 @@ For developers maintaining or extending LogBook. This document maps the codebase
 
 ```
 src/
-├── cli/                          # citty entry + 27 subcommand files
+├── cli/                          # citty entry + subcommand files
 │   ├── index.ts                  # main + zero-arg shell intercept
 │   └── commands/                 # one file per subcommand (init, doctor, build, …)
+│       ├── annotate.ts           # logbook annotate <event-id> --note (v1.1)
+│       └── export/
+│           └── pdf.ts            # logbook export pdf via puppeteer-core (v1.1)
 ├── connectors/
 │   ├── claude-code/
 │   │   ├── hook.ts               # 22-line PostToolUse / SessionStart hot path
 │   │   ├── ingest.ts             # stdin → normalize → redact → JSONL append
 │   │   └── artifacts/            # 8 installers (one per artifact kind)
 │   ├── codex/                    # Codex ingest normalizer
-│   └── git.ts                    # snapshot helpers (execFileSync, no shell)
+│   └── git.ts                    # getGitSha + getRemoteUrl + buildCommitLink (v1.1)
 ├── core/                         # install engine, manifest, paths, presets, token budget
 │   ├── install-engine.ts         # 13-step orchestrator + reverse rollback
 │   ├── uninstall-engine.ts       # symmetric reverse pass
@@ -24,13 +27,18 @@ src/
 │   ├── manifest.ts               # install-manifest.json CRUD
 │   ├── backup.ts                 # backupOnce (sentinel + sha256)
 │   ├── detect.ts                 # plugin fingerprint detection
-│   └── state.ts                  # .logbook/state.json read/write
-├── export/                       # HTML + instructor-pack + safe-mode
-├── generate/                     # 4 deterministic generators
-│   ├── adr.ts                    # Nygard ADR writer (atomic counter)
+│   └── state.ts                  # .logbook/state.json (gitSha?, gitShaCapturedAt? in v1.1)
+├── export/                       # HTML + instructor-pack + safe-mode + PDF
+│   ├── mermaid.ts                # Mermaid fence → inline SVG pipeline (v1.1)
+│   ├── pdf.ts                    # exportPdf + detectChromePath (v1.1, puppeteer-core)
+│   └── safe.ts                   # sanitizeForSafeExport + sanitizeSvg + sanitizeCss (v1.1)
+├── generate/                     # deterministic generators
+│   ├── adr.ts                    # Nygard ADR writer (--with-diff support in v1.1)
 │   ├── index-doc.ts              # logbook/docs/index.md
 │   ├── timeline-doc.ts           # logbook/docs/timeline.md
 │   ├── errors-doc.ts             # logbook/docs/errors-and-lessons.md
+│   ├── commits-doc.ts            # logbook/docs/commits.md cross-index (v1.1)
+│   ├── speaker-blocks.ts         # speaker-note marker family (v1.1)
 │   ├── teaching-script-doc.ts    # logbook/teaching-scripts/* (LLM-backed)
 │   └── blocks.ts                 # marker family management
 ├── hooks/
@@ -38,14 +46,15 @@ src/
 ├── llm/                          # provider router + adapters
 │   ├── provider-router.ts        # tasks > phase > default cascade
 │   ├── claude-sdk.ts             # @anthropic-ai/claude-agent-sdk
-│   ├── vercel-sdk.ts             # ai + @ai-sdk/anthropic
+│   ├── vercel-sdk.ts             # ai + @ai-sdk/anthropic + google + openai-compat (v1.1)
+│   ├── codex-cli.ts              # Codex CLI subprocess adapter (v1.1)
 │   ├── guards.ts                 # assertNoLiveLLMInTests
 │   ├── redact-before-send.ts     # pre-flight scrub
-│   └── summarize.ts              # high-level summarize entry
+│   └── summarize.ts              # high-level summarize entry (outPath support in v1.1)
 ├── mcp/                          # logbook-mcp server
 │   ├── server.ts                 # SDK low-level Server + dispatcher
 │   ├── audit.ts                  # writeAuditEvent (before-effect contract)
-│   ├── rate-limit.ts             # SlidingWindowLimiter (20/sec/tool)
+│   ├── rate-limit.ts             # SlidingWindowLimiter with injectable clock (v1.1)
 │   ├── redact.ts                 # redactDeep for tool inputs
 │   ├── context.ts                # bootstrap MCPContext (db, paths, state)
 │   └── tools/                    # 9 tool files + index.ts barrel
@@ -57,11 +66,12 @@ src/
 │   ├── tui.ts                    # Ink shell
 │   └── persist.ts                # side-effect bridge
 ├── store/                        # JSONL append + SQLite index
-├── tui/                          # iter6 unified shell (4 screens)
+├── tui/                          # unified shell (5 screens in v1.1)
 │   ├── shell.ts                  # Ink ShellApp + runShell()
 │   ├── shell-flows.ts            # pure reducer
-│   ├── persist.ts                # buildSnapshot + 7 action handlers
-│   ├── screens/                  # home, install-wizard, configure, review-bridge, doing
+│   ├── persist.ts                # buildSnapshot + action handlers
+│   ├── screens/                  # home, install-wizard, configure, review-bridge, doing, providers (v1.1)
+│   │   └── providers.ts          # ProvidersScreen list/detail/routing/add flows (v1.1)
 │   └── components/               # breadcrumb, footer, token-budget-bar, modal-confirm
 ├── types/                        # event, decision, error, lesson, manifest, providers, …
 └── util/                         # json-string-patch, crlf, markdown-block, hash, ulid, …
@@ -73,9 +83,9 @@ assets/                           # bundled templates (not inlined at build time
 └── claudemd/augment.md
 
 tests/
-├── unit/                         # 69 files / 909 tests
-├── integration/                  # 63 files / 354 tests
-├── e2e/                          # 11 files / 23 tests (incl. byte-identity gates)
+├── unit/                         # ~120 files / 1309 tests (v1.1)
+├── integration/                  # ~40 files / 167 tests (v1.1)
+├── e2e/                          # 9 files / 25 tests (incl. 8 byte-identity gates)
 └── fixtures/                     # other-plugin fixtures for coexistence tests
 ```
 
@@ -264,9 +274,11 @@ The shape is intentionally bottom-heavy.
 
 | Layer | Files | Tests | Speed | Purpose |
 |-------|-------|-------|-------|---------|
-| Unit | 69 | 909 | ~1.2 s | Pure functions: reducers, redactor, normalizers, generators, string-patch primitives. |
-| Integration | 63 | 354 | ~5 s | CLI commands invoked via in-process modules; installers; MCP boot; review flows; LLM router with mocks. |
-| E2E | 11 | 23 | ~3 s | Built CJS bundles spawned as child processes. The 6 byte-identity gates live here. |
+| Unit | ~120 | 1309 | ~1.5 s | Pure functions: reducers, redactor, normalizers, generators, string-patch primitives, new v1.1 adapters. |
+| Integration | ~40 | 167 | ~5 s | CLI commands invoked via in-process modules; installers; MCP boot; review flows; LLM router with mocks. |
+| E2E | 9 | 25 | ~3 s | Built CJS bundles spawned as child processes. The 8 byte-identity gates live here. |
+
+v1.1 adds 215 tests net across 18 implementation slices (SG0 + S4.1/S4.2 + S1.1–S1.5 + S3.1–S3.3 + S2.1–S2.4 + S6.1–S6.2 + S5.1). All slices follow strict TDD (RED → GREEN → REFACTOR).
 
 Run them individually:
 
