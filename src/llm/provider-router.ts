@@ -119,12 +119,30 @@ function resolveAuth(providerEntry: ProviderEntry): LlmAuthResolution {
     return { kind: "api-key", envVar: "ANTHROPIC_API_KEY", value: anthropicKey };
   }
 
-  // 3. OPENAI_API_KEY → vercel-sdk with OpenAI (only for openai kind providers)
+  // 3a. OPENAI_API_KEY → vercel-sdk with OpenAI (only for openai/azure kind providers)
   if (providerEntry.kind === "openai" || providerEntry.kind === "azure") {
     const openaiKey = process.env["OPENAI_API_KEY"];
     if (openaiKey !== undefined && openaiKey !== "") {
       return { kind: "api-key", envVar: "OPENAI_API_KEY", value: openaiKey };
     }
+  }
+
+  // 3b. GOOGLE_GENERATIVE_AI_API_KEY → vercel-sdk with Google (only for google kind)
+  if (providerEntry.kind === "google") {
+    const googleKey = process.env["GOOGLE_GENERATIVE_AI_API_KEY"];
+    if (googleKey !== undefined && googleKey !== "") {
+      return { kind: "api-key", envVar: "GOOGLE_GENERATIVE_AI_API_KEY", value: googleKey };
+    }
+  }
+
+  // 3c. local kind (Ollama) — no real API key required; use placeholder if no env var
+  if (providerEntry.kind === "local") {
+    // Ollama runs locally — auth.value is passed as a placeholder to @ai-sdk/openai
+    // but is not sent over the network. We still resolve through api_key_env so the
+    // user can override if a remote Ollama instance requires a key.
+    const localKey = providerEntry.api_key_env ? process.env[providerEntry.api_key_env] : undefined;
+    const resolvedKey = localKey ?? "ollama";
+    return { kind: "api-key", envVar: providerEntry.api_key_env ?? "OLLAMA_API_KEY", value: resolvedKey };
   }
 
   // 4. Inline key from providers.json (api_key_env points to env var)
