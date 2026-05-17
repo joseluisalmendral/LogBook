@@ -352,23 +352,33 @@ describe("ReviewBridgeScreen Ink render", () => {
 });
 
 // ---------------------------------------------------------------------------
-// DoingScreen — pure function tests
+// DoingScreen — render tests (uses hooks; must render via ink-testing-library)
 // ---------------------------------------------------------------------------
 
 describe("DoingScreen pure function", () => {
-  it("pending: returns a defined React element", async () => {
-    const { DoingScreen } = await import("../../src/tui/screens/doing.js");
-    const el = DoingScreen({ state: makeDoingState("pending"), dispatch: noop });
-    expect(el).toBeDefined();
-    expect(el).not.toBeNull();
-  });
+  // DoingScreen uses React hooks (useState/useEffect for spinner), so it must
+  // be rendered via ink-testing-library rather than called directly.
+  it.skipIf(!inkTestingLibraryAvailable)(
+    "pending: renders without throwing",
+    async () => {
+      const { render } = await import("ink-testing-library");
+      const { DoingScreen } = await import("../../src/tui/screens/doing.js");
+      expect(() => {
+        render(createElement(DoingScreen, { state: makeDoingState("pending"), dispatch: noop }));
+      }).not.toThrow();
+    },
+  );
 
-  it("err: returns a defined React element with error message", async () => {
-    const { DoingScreen } = await import("../../src/tui/screens/doing.js");
-    const el = DoingScreen({ state: makeDoingState("err", "Something went wrong"), dispatch: noop });
-    expect(el).toBeDefined();
-    expect(el).not.toBeNull();
-  });
+  it.skipIf(!inkTestingLibraryAvailable)(
+    "err: renders without throwing (error message state)",
+    async () => {
+      const { render } = await import("ink-testing-library");
+      const { DoingScreen } = await import("../../src/tui/screens/doing.js");
+      expect(() => {
+        render(createElement(DoingScreen, { state: makeDoingState("err", "Something went wrong"), dispatch: noop }));
+      }).not.toThrow();
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
