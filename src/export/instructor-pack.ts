@@ -25,7 +25,7 @@ import rehypeSlug from "rehype-slug";
 import rehypeStringify from "rehype-stringify";
 import { INLINE_CSS } from "./inline-css.js";
 import { assertNoExternalRefs } from "./sanitize-links.js";
-import { sanitizeForSafeExport } from "./safe.js";
+import { sanitizeForSafeExport, sanitizeCss } from "./safe.js";
 import type { ProjectPaths } from "../core/paths.js";
 import type { ExportReport } from "../types/reports.js";
 
@@ -39,6 +39,12 @@ export interface InstructorPackOptions {
   outFile?: string;
   /** Redact paths/users/emails before rendering. Default: false. */
   safe?: boolean;
+  /**
+   * Absolute or relative path to a custom CSS theme file (S2.4).
+   * When set, the file is read (UTF-8), run through sanitizeCss(), and used
+   * INSTEAD of INLINE_CSS. Throws if the file cannot be read.
+   */
+  themePath?: string;
 }
 
 /** A single section in the bundle (one source file). */
@@ -335,15 +341,16 @@ async function markdownToHtml(markdown: string): Promise<string> {
 
 /**
  * Wrap an HTML body fragment in a complete self-contained HTML document.
+ * @param css  The CSS string to inline (either INLINE_CSS or a sanitized theme).
  */
-function buildHtmlDocument(htmlBody: string, title: string): string {
+function buildHtmlDocument(htmlBody: string, title: string, css: string): string {
   return (
     `<!DOCTYPE html>\n` +
     `<html lang="en">\n` +
     `<head>\n` +
     `  <meta charset="utf-8">\n` +
     `  <title>${title}</title>\n` +
-    `  <style>${INLINE_CSS}</style>\n` +
+    `  <style>${css}</style>\n` +
     `</head>\n` +
     `<body>\n` +
     htmlBody +
@@ -376,6 +383,20 @@ export async function exportInstructorPack(
 ): Promise<ExportReport> {
   const start = Date.now();
   const { paths } = opts;
+
+  // S2.4 — load and sanitize custom theme if provided; otherwise use default.
+  let inlineCss = INLINE_CSS;
+  if (opts.themePath) {
+    let rawTheme: string;
+    try {
+      rawTheme = await readFile(opts.themePath, "utf8");
+    } catch (err) {
+      throw new Error(
+        `theme file could not be read: ${opts.themePath} — ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+    inlineCss = sanitizeCss(rawTheme);
+  }
 
   const outFile =
     opts.outFile ?? join(paths.dataDir, "exports", "instructor-pack.html");
@@ -434,7 +455,7 @@ export async function exportInstructorPack(
   const htmlBody = await markdownToHtml(combinedMarkdown);
 
   // 7. Build full document
-  const fullHtml = buildHtmlDocument(htmlBody, "LogBook — Instructor Pack");
+  const fullHtml = buildHtmlDocument(htmlBody, "LogBook — Instructor Pack", inlineCss);
 
   // 8. Assert no external refs
   assertNoExternalRefs(fullHtml);

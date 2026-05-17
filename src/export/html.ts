@@ -19,7 +19,7 @@ import rehypeSlug from "rehype-slug";
 import rehypeStringify from "rehype-stringify";
 import { INLINE_CSS } from "./inline-css.js";
 import { assertNoExternalRefs } from "./sanitize-links.js";
-import { sanitizeForSafeExport } from "./safe.js";
+import { sanitizeForSafeExport, sanitizeCss } from "./safe.js";
 import type { ProjectPaths } from "../core/paths.js";
 import type { ExportReport } from "../types/reports.js";
 
@@ -33,6 +33,12 @@ export interface ExportOptions {
    * Default: false (original behaviour unchanged).
    */
   safe?: boolean;
+  /**
+   * Absolute or relative path to a custom CSS theme file (S2.4).
+   * When set, the file is read (UTF-8), run through sanitizeCss(), and used
+   * INSTEAD of INLINE_CSS. Throws if the file cannot be read.
+   */
+  themePath?: string;
 }
 
 /** Names of the 3 source doc files under logbook/docs/. */
@@ -66,15 +72,16 @@ async function markdownToHtml(markdown: string): Promise<string> {
 
 /**
  * Wrap an HTML body fragment in a complete HTML document with inlined CSS.
+ * @param css  The CSS string to inline (either INLINE_CSS or a sanitized theme).
  */
-function buildHtmlDocument(htmlBody: string, title: string): string {
+function buildHtmlDocument(htmlBody: string, title: string, css: string): string {
   return (
     `<!DOCTYPE html>\n` +
     `<html lang="en">\n` +
     `<head>\n` +
     `  <meta charset="utf-8">\n` +
     `  <title>${title}</title>\n` +
-    `  <style>${INLINE_CSS}</style>\n` +
+    `  <style>${css}</style>\n` +
     `</head>\n` +
     `<body>\n` +
     htmlBody +
@@ -98,6 +105,20 @@ function buildHtmlDocument(htmlBody: string, title: string): string {
 export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
   const start = Date.now();
   const { paths } = opts;
+
+  // S2.4 — load and sanitize custom theme if provided; otherwise use default.
+  let inlineCss = INLINE_CSS;
+  if (opts.themePath) {
+    let rawTheme: string;
+    try {
+      rawTheme = await readFile(opts.themePath, "utf8");
+    } catch (err) {
+      throw new Error(
+        `theme file could not be read: ${opts.themePath} — ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+    inlineCss = sanitizeCss(rawTheme);
+  }
 
   const docsDir = join(paths.dataDir, "docs");
   const outFile =
@@ -131,7 +152,7 @@ export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
 
   // 3 & 4. Convert to HTML and build the full document.
   const htmlBody = await markdownToHtml(combinedMarkdown);
-  const fullHtml = buildHtmlDocument(htmlBody, "LogBook");
+  const fullHtml = buildHtmlDocument(htmlBody, "LogBook", inlineCss);
 
   // 5. Sanitize — throws if any external ref is detected.
   assertNoExternalRefs(fullHtml);

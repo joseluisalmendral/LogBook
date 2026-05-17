@@ -135,6 +135,43 @@ const HOST_ENTRIES: HostEntry[] = [
 ];
 
 /**
+ * Get the diff stat summary for the HEAD commit (`git show HEAD --stat`).
+ *
+ * Returns the trimmed stat output (file list + summary line), or undefined
+ * if git is unavailable, cwd is not a repo, or there are no commits.
+ *
+ * The output is intentionally the stat-only form — no full patch — to keep
+ * ADR files compact (S2.2 design: file list, NOT full diff).
+ *
+ * Line count is capped at MAX_STAT_LINES to prevent unbounded ADR content.
+ */
+const MAX_STAT_LINES = 50;
+
+export async function getDiffStat(cwd: string): Promise<string | undefined> {
+  const raw = runGit(
+    ["show", "HEAD", "--stat", "--format="],
+    cwd,
+  );
+  if (raw === undefined) return undefined;
+
+  // `git show HEAD --stat --format=` outputs a blank first line then stats.
+  // Trim blank lines, then truncate to MAX_STAT_LINES.
+  const lines = raw
+    .split("\n")
+    .map((l) => l.trimEnd())
+    .filter((l) => l.length > 0);
+
+  if (lines.length === 0) return undefined;
+
+  const truncated =
+    lines.length > MAX_STAT_LINES
+      ? [...lines.slice(0, MAX_STAT_LINES), `... (${lines.length - MAX_STAT_LINES} more lines truncated)`]
+      : lines;
+
+  return truncated.join("\n");
+}
+
+/**
  * Build a web URL pointing to a specific commit, given the remote URL and SHA.
  *
  * Detects github.com, gitlab.com, bitbucket.org from the remote URL (both

@@ -12,6 +12,7 @@
 
 import { defineCommand } from "citty";
 import { join } from "node:path";
+import * as nodePath from "node:path";
 import { resolveProjectRoot, makePaths } from "../../../core/paths.js";
 import type {
   exportInstructorPack as ExportInstructorPackFn,
@@ -51,6 +52,11 @@ export default defineCommand({
       default: false,
       description: "Redact paths, usernames, and emails before export",
     },
+    theme: {
+      type: "string",
+      required: false,
+      description: "Path to a custom CSS theme file (replaces default styles)",
+    },
     json: {
       type: "boolean",
       default: false,
@@ -84,10 +90,17 @@ export default defineCommand({
     }
 
     const safeMode = args["safe"] === true;
-    const exportOpts: InstructorPackOptions =
-      outArg !== undefined
-        ? { paths, outFile: outArg, safe: safeMode }
-        : { paths, safe: safeMode };
+    const themeArg =
+      typeof args["theme"] === "string" && args["theme"]
+        ? nodePath.resolve(process.cwd(), args["theme"])
+        : undefined;
+
+    const exportOpts: InstructorPackOptions = {
+      paths,
+      safe: safeMode,
+      ...(outArg !== undefined && { outFile: outArg }),
+      ...(themeArg !== undefined && { themePath: themeArg }),
+    };
 
     let report: Awaited<ReturnType<typeof exportInstructorPack>>;
     try {

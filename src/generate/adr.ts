@@ -27,6 +27,16 @@ import type { ProjectPaths } from "../core/paths.js";
 // Public types
 // ---------------------------------------------------------------------------
 
+/** Git diff stat data captured via `--with-diff` (S2.2). */
+export interface AdrImplementation {
+  /** Full 40-char git SHA of the commit. */
+  sha: string;
+  /** Stat output from `git show HEAD --stat --format=` (file list + summary). */
+  stats: string;
+  /** Optional web URL to the commit on the hosting provider. */
+  commitUrl?: string;
+}
+
 export interface AdrInput {
   title: string;
   context?: string;
@@ -38,6 +48,11 @@ export interface AdrInput {
   status?: string;
   /** RFC3339 UTC date string; default is now(). */
   date?: string;
+  /**
+   * Captured git diff stat for `--with-diff` (S2.2).
+   * When present, renderAdr appends a "## Implementation (commit <sha>)" section.
+   */
+  implementation?: AdrImplementation;
 }
 
 export interface AdrResult {
@@ -114,7 +129,7 @@ export function renderAdr(
   const section = (heading: string, body: string | undefined): string =>
     `## ${heading}\n\n${body?.trim() || NA}\n`;
 
-  return [
+  const parts: string[] = [
     `# ${num}. ${input.title}`,
     ``,
     `Date: ${date}`,
@@ -124,7 +139,28 @@ export function renderAdr(
     section("Decision", input.chosen),
     section("Consequences", input.consequences),
     section("Options considered", input.alternatives),
-  ].join("\n");
+  ];
+
+  // S2.2 — append implementation section when diff stat is captured.
+  if (input.implementation) {
+    const { sha, stats, commitUrl } = input.implementation;
+    const shortSha = sha.slice(0, 7);
+
+    // Cap stats at MAX_STAT_LINES lines (same cap as getDiffStat, but re-applied
+    // here for safety if the caller supplies stats directly).
+    const MAX_LINES = 50;
+    const statLines = stats.split("\n");
+    const cappedStats =
+      statLines.length > MAX_LINES
+        ? [...statLines.slice(0, MAX_LINES), `... (${statLines.length - MAX_LINES} more lines truncated)`].join("\n")
+        : stats;
+
+    const urlLine = commitUrl ? `\nCommit: ${commitUrl}` : "";
+
+    parts.push(`## Implementation (commit ${shortSha})\n\n${cappedStats}${urlLine}\n`);
+  }
+
+  return parts.join("\n");
 }
 
 // ---------------------------------------------------------------------------
