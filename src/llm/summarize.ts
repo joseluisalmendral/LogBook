@@ -33,6 +33,12 @@ export interface SummarizeOptions {
   paths: ProjectPaths;
   /** Override output path. Default: <paths.dataDir>/evidence/summaries/<id>.md */
   outPath?: string;
+  /**
+   * Optional streaming callback. When provided, the LLM adapter MAY invoke it for each
+   * text chunk as it arrives. The file is still written atomically from the full buffered
+   * text at the end — byte-identity is preserved regardless of streaming mode.
+   */
+  onChunk?: (chunk: string) => void;
 }
 
 export interface SummarizeMilestoneResult {
@@ -106,7 +112,7 @@ function summaryPath(paths: ProjectPaths, id: string): string {
 export async function summarizeMilestone(
   opts: SummarizeOptions & { milestoneId: string }
 ): Promise<SummarizeMilestoneResult> {
-  const { router, paths, milestoneId, outPath } = opts;
+  const { router, paths, milestoneId, outPath, onChunk } = opts;
 
   // 1. Read events
   let ctx: Awaited<ReturnType<typeof readContext>>;
@@ -156,13 +162,14 @@ export async function summarizeMilestone(
     "Focus on: decisions made, errors encountered + fixes, lessons learned, overall arc.",
   ].join("\n");
 
-  // 5. Call router
+  // 5. Call router (thread onChunk through for streaming support)
   const callResult = await router.call({
     task: "summarize.milestone",
     systemPrompt: SYSTEM_PROMPT,
     userPrompt,
     maxTokens: MAX_TOKENS,
     temperature: TEMPERATURE,
+    ...(onChunk !== undefined ? { onChunk } : {}),
   });
 
   if (!callResult.ok || callResult.text === undefined) {
@@ -195,7 +202,7 @@ export async function summarizeMilestone(
 export async function summarizeProject(
   opts: SummarizeOptions
 ): Promise<SummarizeMilestoneResult> {
-  const { router, paths, outPath } = opts;
+  const { router, paths, outPath, onChunk } = opts;
 
   // 1. Read events
   let ctx: Awaited<ReturnType<typeof readContext>>;
@@ -251,13 +258,14 @@ export async function summarizeProject(
     milestoneBlocks.join("\n\n"),
   ].join("\n");
 
-  // 4. Call router
+  // 4. Call router (thread onChunk through for streaming support)
   const callResult = await router.call({
     task: "summarize.project",
     systemPrompt: SYSTEM_PROMPT,
     userPrompt,
     maxTokens: MAX_TOKENS,
     temperature: TEMPERATURE,
+    ...(onChunk !== undefined ? { onChunk } : {}),
   });
 
   if (!callResult.ok || callResult.text === undefined) {
