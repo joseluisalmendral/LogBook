@@ -528,6 +528,15 @@ logbook providers test [--provider <alias>] [--task <name>] [--json]
 
 **Description.** Send a `ping` to the configured provider and validate the round-trip. Default task name is `providers.test`.
 
+**`--task <name>`** selects the routing entry by task name (uses `by_task` resolution from `providers.json`). Useful for verifying that a specific task routes to the intended provider:
+
+```sh
+logbook providers test --task teaching-script --json
+logbook providers test --task summarize --json
+```
+
+Omitting `--task` is equivalent to `--task providers.test`, which falls through to `default_provider`. This is the backward-compatible default.
+
 **Mock mode.** `LOGBOOK_LLM_MOCK=1` returns `pong` deterministically — used in CI to assert zero real LLM calls.
 
 **Output (success).** `ok: true | provider | model | latencyMs | text`.
