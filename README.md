@@ -1,6 +1,19 @@
+<pre>
+ ▌  ██╗                     ██████╗                 ██╗     
+ ▌  ██║                     ██╔══██╗                ██║     
+ ▌  ██║      █████╗  █████╗ ██████╔╝ █████╗  █████╗ ██║ ██╗ 
+ ▌  ██║     ██╔══██╗██╔══██╗██╔══██╗██╔══██╗██╔══██╗█████╔╝ 
+ ▌  ███████╗╚█████╔╝╚██████║██████╔╝╚█████╔╝╚█████╔╝██╔═██╗ 
+ ▌  ╚══════╝ ╚════╝  ╚═══██║╚═════╝  ╚════╝  ╚════╝ ╚═╝ ╚═╝ 
+ ▌                   █████╔╝                                
+ ▌  ──────────────────────────────────  captain's log · v1.2.0
+</pre>
+
 # LogBook
 
 A local CLI that documents AI-built projects via Claude Code hooks, MCP tools, and pedagogical exports.
+
+> The banner above is the actual TUI header — run `logbook` (zero-arg, on a TTY) to see it animated. The version line below the dashes updates automatically with each release.
 
 LogBook captures decisions, errors, fixes, lessons, and resources as they happen — automatically through Claude Code hooks and MCP tool calls, or manually via CLI commands. It renders them into deterministic markdown, Nygard ADRs, LLM-backed teaching scripts, and self-contained HTML you can hand to a class.
 
