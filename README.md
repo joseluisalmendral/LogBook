@@ -6,7 +6,7 @@ LogBook captures decisions, errors, fixes, lessons, and resources as they happen
 
 ## Status
 
-**v1.1.0** — 1501 tests green (1076 unit + 400 integration + 25 e2e). Multi-provider LLM, Mermaid diagrams, PDF export, annotations, speaker notes. Not yet published to npm — install via local clone + `pnpm link --global`. See [`docs/01-getting-started.md`](./docs/01-getting-started.md) for full instructions.
+**v1.2.0** — 1575 tests green. Streaming LLM responses, MCP test-clock injection, doctor bundle soft warning, plus everything from v1.1 (multi-provider, Mermaid, PDF, annotations, speaker notes, animated TUI banner). Not yet published to npm or Homebrew — install via local clone + `pnpm link --global`. See [`docs/01-getting-started.md`](./docs/01-getting-started.md). Distribution via `brew install logbook` / `scoop install logbook` is planned for v1.3 — see [`docs/v1.3-roadmap.md`](./docs/v1.3-roadmap.md).
 
 ## Install
 
@@ -96,9 +96,9 @@ Quick reference:
 | `logbook providers list` | List configured LLM providers |
 | `logbook providers set <target> <provider>` | Configure routing |
 | `logbook providers test [--task <name>]` | Validate provider round-trip |
-| `logbook summarize milestone [--out <path>]` | LLM summary of a milestone |
+| `logbook summarize milestone [--out <path>] [--no-stream]` | LLM summary (streams to TTY by default in v1.2+) |
 | `logbook review` | TUI for curating pending suggestions |
-| `logbook doctor [--measure]` | Diagnose install health; measure token budget |
+| `logbook doctor [--measure]` | Diagnose install health; measure token budget + bundle sizes |
 | `logbook uninstall [--force]` | Remove all artifacts (data preserved) |
 
 ## Token budget

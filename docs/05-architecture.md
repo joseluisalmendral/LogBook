@@ -244,17 +244,64 @@ This separation is why the TUI is testable without `ink-testing-library` couplin
 
 ## TUI shell extension
 
-`src/tui/shell.ts` (iter6) follows the same pattern with 4 screens:
+`src/tui/shell.ts` (iter6) follows the same pattern with 5 screens:
 
 - `HomeScreen` — dashboard with menu.
 - `InstallWizardScreen` — 3-step guided install (preset → provider → confirm).
 - `ConfigureScreen` — settings menu.
+- `ProvidersScreen` (v1.1) — provider management (list / detail / routing / add).
 - `ReviewBridgeScreen` — mounts the existing iter3 `ReviewApp` as a child component, preserving the shell's chrome (breadcrumb + footer).
 - `DoingScreen` — in-flight overlay during long-running actions.
 
 Adding a new screen: extend the `ShellScreen` discriminated union in `src/tui/types.ts`, add the reducer transitions in `shell-flows.ts`, write the Ink component under `src/tui/screens/`, register in the `renderScreen` switch in `shell.ts`. TypeScript's exhaustiveness check on the switch catches missing screens at compile time.
 
 The `ReviewApp.onExit` prop was added non-breakingly in iter6 (`src/review/tui.ts`) so the shell can be notified when review finishes. Iter3 callers that don't pass `onExit` continue to work.
+
+### Banner module (v1.2)
+
+`src/tui/banner.ts` holds the 8-line mixed-case ANSI Shadow LogBook artwork as a frozen `BANNER_LINES` tuple. Trailing whitespace on every line is **load-bearing** (column alignment for the `g` descender on row 7); `.editorconfig` sets `trim_trailing_whitespace = false` for this file, and an inline snapshot test catches any accidental mutation.
+
+Version substitution uses a **named import** of `package.json`:
+
+```typescript
+import { version as PKG_VERSION } from "../../package.json";
+```
+
+The named import lets esbuild tree-shake everything except the `version` string out of the bundle (default import would inline the full package.json — ~5 KB hit).
+
+`src/tui/components/banner.ts` is the Ink component. Renders cyan-bold body + dim subtitle. Animation: `setInterval(80ms)` × 8 lines = 640 ms total, one `setState` per tick, proper `useEffect` cleanup on unmount or completion. Auto-skips when `NODE_ENV=test` or `LOGBOOK_NO_ANIMATION=1`.
+
+## LLM streaming pipeline (v1.2)
+
+`src/llm/vercel-sdk.ts` exposes two parallel code paths: `generateText` (non-streaming) and `streamText` (streaming). The selection happens at adapter level: if the caller passes an `onChunk?: (chunk: string) => void` callback through `LlmProviderCallInput`, the streaming path is used; otherwise the original non-streaming path runs (back-compat preserved).
+
+The flow:
+
+1. `src/cli/commands/summarize/{milestone,project}.ts` decides whether streaming is active. Conditions: stdout is a TTY, `--no-stream` flag absent, `NODE_ENV !== "test"`, `--json` not set.
+2. If active, the CLI builds an `onChunk` that writes each delta directly to `process.stdout`.
+3. `src/llm/summarize.ts` accepts the callback in `SummarizeOptions` and threads it through `provider-router.ts` → adapter.
+4. The adapter calls `streamText` (Vercel AI SDK), iterates `textStream`, accumulates chunks in memory AND invokes `onChunk(chunk)`.
+5. After the stream completes, the full text is returned to `summarize.ts`, which writes it atomically to disk via the existing block-upsert path. **Bytes on disk are identical to the non-streaming path**.
+
+The mock adapter (`src/llm/mock.ts`) splits its canned response into multiple chunks when `onChunk` is present so streaming tests don't need a live LLM.
+
+## MCP clock injection (v1.2)
+
+`src/mcp/server.ts` exports a pure helper `parseMcpClockOffset(env: NodeJS.ProcessEnv): number` that reads the **test-only** env var `LOGBOOK_MCP_CLOCK_OFFSET_MS` and returns an integer (defaulting to 0 on NaN / unset).
+
+At server boot, the offset is wired into the `SlidingWindowLimiter` constructor via `clock: () => Date.now() + offset`. Production behavior is unchanged when the env var is unset (offset = 0). If offset is non-zero, the server emits a single stderr WARN line at boot.
+
+The env var is **never** documented in user-facing materials. It is exclusively for deterministic integration tests of the server's boot behavior. (The per-call rate-limit timing race was NOT fixable via this offset — that's covered by unit tests with an injected clock in `tests/unit/rate-limit-clock.test.ts` from v1.1 SG-4.)
+
+## Doctor bundle measurement (v1.2)
+
+`src/cli/commands/doctor.ts` exports `classifyBundle(actualBytes, capBytes)` returning `"ok" | "warn" | "fail" | "not_built"`. Soft threshold formula:
+
+```
+soft = cap >= 200 KB ? cap - 20 KB : floor(cap × 0.95)
+```
+
+`BUNDLE_CAPS` is inlined as a constant. ANSI codes are inlined as string literals (no chalk dep). `--json` returns a structured array of bundle entries. The doctor command **never fails on over-cap** — this is a diagnostic, not a gate. The hard gate lives in `tests/integration/cli-bundle-size.test.ts`.
 
 ## Token budget enforcement
 

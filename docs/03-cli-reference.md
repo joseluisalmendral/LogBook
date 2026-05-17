@@ -91,7 +91,7 @@ logbook status [--json]
 logbook doctor [--measure] [--json]
 ```
 
-**Description.** Diagnose install health and measure context cost.
+**Description.** Diagnose install health, measure context cost, and report bundle sizes.
 
 **Args.**
 
@@ -115,7 +115,31 @@ statusline              — 0 (UI element)
 sessionStart            — 120 (conservative max per design §6)
 ```
 
-**Exit codes.** `0` on success.
+**Bundle size report (v1.2+).** Always included in the output (with or without `--measure`).
+
+```
+Bundle sizes:
+  cli              399.83 KB   ⚠ warn  (cap 400, soft 380)
+  hook              29.10 KB   ✓ ok    (cap 50, soft 47)
+  mcp               44.46 KB   ✓ ok    (cap 100, soft 95)
+  export-html      364.51 KB   ✓ ok    (cap 400, soft 380)
+  export-pdf         4.25 KB   ✓ ok    (cap 80, soft 76)
+```
+
+Statuses:
+
+| Status | Meaning |
+|--------|---------|
+| `ok`        | size < soft threshold |
+| `warn`      | soft ≤ size < cap (approaching limit) |
+| `fail`      | size ≥ cap (over limit — but exit code is still 0; this is diagnostic) |
+| `not_built` | file does not exist yet — run `pnpm build` |
+
+Soft threshold formula: `cap - 20 KB` for caps ≥ 200 KB; `floor(cap × 0.95)` for smaller caps.
+
+With `--json`, each bundle entry has shape `{ name, path, sizeBytes, capBytes, status }`. Color codes are stripped when stdout is not a TTY or `NO_COLOR=1` is set.
+
+**Exit codes.** `0` on success (diagnostic command — never fails because of an over-cap bundle).
 
 **When to use.** Whenever something doesn't behave as expected. Also the CI gate for the 500-token budget.
 
@@ -435,7 +459,7 @@ logbook build [--out <dir>] [--safe] [--json]
 ### `logbook summarize milestone [id|last]`
 
 ```sh
-logbook summarize milestone last [--out <path>] [--json]
+logbook summarize milestone last [--out <path>] [--no-stream] [--json]
 ```
 
 **Description.** LLM-backed summary of a milestone's events. Default target is the last milestone recorded.
@@ -446,11 +470,19 @@ logbook summarize milestone last [--out <path>] [--json]
 |------|-------|
 | `[id]` | Milestone ULID or `last` (default). Positional. |
 | `--out` | Override output path (default: `logbook/evidence/summaries/<id>.md`). |
+| `--no-stream` | Disable token-by-token streaming output on stdout. Forces the non-streaming code path even on a TTY. Useful when piping output. |
 | `--json` | Emit `{ ok, summaryPath, bytes }` or `{ ok:false, error }`. |
+
+**Streaming (v1.2+).** When stdout is a TTY and `--no-stream` is not set, the summary tokens are written to stdout as they arrive from the provider (via Vercel AI SDK `streamText`). This is purely a UX affordance — the final file written to `--out` is byte-identical to the non-streaming path. Streaming is auto-disabled in:
+
+- Non-TTY stdout (pipes, redirects)
+- `NODE_ENV=test`
+- When `--no-stream` is set
+- When `--json` is set (so the JSON shape isn't polluted)
 
 **Side effects.** Writes a markdown file. Uses the LLM router (`src/llm/provider-router.ts`) which respects `tasks > phase > default` resolution from `.logbook/providers.json`.
 
-**Mock mode.** Setting `LOGBOOK_LLM_MOCK=1` injects a deterministic stub. Used in CI so tests never hit live APIs.
+**Mock mode.** Setting `LOGBOOK_LLM_MOCK=1` injects a deterministic stub. Used in CI so tests never hit live APIs. When streaming is active, the mock adapter splits its canned response into chunks for realism.
 
 **Exit codes.** `0` on `ok:true`, `1` on `ok:false` (message to stderr).
 
@@ -460,7 +492,7 @@ logbook summarize milestone last [--out <path>] [--json]
 logbook summarize project [--out <path>] [--json]
 ```
 
-**Description.** LLM-backed summary of the full project arc. Same router rules and `--json` shape as `summarize milestone`. Default output: `logbook/evidence/summaries/project.md`.
+**Description.** LLM-backed summary of the full project arc. Same router rules, `--json` shape, and streaming behaviour as `summarize milestone` (see above). Default output: `logbook/evidence/summaries/project.md`. Also accepts `--no-stream` to force the non-streaming code path.
 
 ### `logbook teaching-script [id|last]`
 

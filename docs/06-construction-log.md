@@ -247,6 +247,37 @@ Uninstall reverses the steps symmetrically. The manifest records `createdHooksSt
 
 **Final state.** 1501 passing tests (1309 unit + 167 integration + 25 e2e). All 18 slices: PASS. All 8 byte-identity gates: GREEN. Token budget: ≤495/500 (PASS). CLI bundle: 390.99 KB (PASS, 9 KB headroom). Hook p95: 141ms (PASS). PDF bundle: 4.25 KB (PASS). 5 bundles total.
 
+**Post-release polish (commit `0d4f848`).** An animated TUI banner was added to the HomeScreen — 8-line mixed-case ANSI Shadow LogBook artwork with a 640 ms line-reveal animation, cyan-bold body + dim subtitle, version line that pulls from `package.json` via a named import (so esbuild tree-shakes the rest of the JSON out of the bundle). `.editorconfig` rule protects the load-bearing trailing whitespace on each banner line. 28 new tests covering geometry, version substitution, env-driven animation skip, and Ink rendering. The roadmap doc `docs/v1.1-roadmap.md` was cherry-picked from `feat/v1.1-roadmap` into main as historical record (commit `7212128`).
+
+### Iter8 — v1.2 release (feat/v1.2, 1575 tests, +70 from v1.1.0 banner-touch + flake removal)
+
+**Mission.** Ship LogBook **v1.2** — three focused in-tree improvements, no distribution work (deferred to v1.3 by user time-constraint decision).
+
+**Slices.** 3 implementation slices via condensed SDD pipeline (design → apply × 3 → verify → archive). Strict TDD per slice.
+
+| Slice | Deliverable |
+|-------|-------------|
+| SG-A | Streaming LLM via Vercel AI SDK `streamText`; new `onChunk?` callback through router/adapter/summarize; `--no-stream` CLI flag |
+| SG-B | MCP clock injection via env var `LOGBOOK_MCP_CLOCK_OFFSET_MS` (TEST-ONLY); `parseMcpClockOffset` pure helper |
+| SG-C | Doctor bundle soft warning at 380 KB threshold; `classifyBundle` + inline `BUNDLE_CAPS`; `--json` structured output |
+
+**Key architectural decisions.**
+
+- **Streaming as opt-in via callback.** Adding `streamText` could have been a separate adapter method; instead the adapter input gained an optional `onChunk?: (chunk: string) => void`. When the callback is present, the streaming path runs; when absent, the existing `generateText` path is unchanged. Zero signature break, full back-compat. The CLI computes the activation condition (`TTY && !--no-stream && NODE_ENV !== "test" && !--json`) and only passes `onChunk` when it should fire.
+- **Byte-identity preservation under streaming.** Streaming writes tokens to stdout for UX, but the final file is written atomically once the stream completes — same code path as non-streaming. Tests assert byte-identical output across both modes. No risk of partially-written marker blocks.
+- **Honest assessment of clock injection limits.** SG-B was advertised as "kills the mcp-rate-limit flake at the root". During verify it became clear the env var only shifts time at boot — the per-call timing race within the test still runs in real wall-clock. Two integration tests were **removed** (commit `310bb3a`) because they had the race; the rate-limit logic is covered deterministically by `tests/unit/rate-limit-clock.test.ts` from v1.1 SG-4. The remaining clock-offset integration tests (B7, B7b) only verify boot-time behavior, which is race-free.
+- **Doctor as diagnostic, not gate.** SG-C's bundle measurement never causes doctor to exit non-zero. The hard cap is enforced by `tests/integration/cli-bundle-size.test.ts`, which runs in CI. The doctor command exists to surface drift early — and indeed it now fires its own soft warning on the CLI bundle (399.83 KB > 380 KB), validating the feature end-to-end.
+- **Inline everything to stay under the cap.** The CLI bundle was at 391 KB pre-v1.2 with 9 KB headroom. SG-A added ~2.8 KB. SG-C had to fit in the remaining ~6 KB. Achieved by: inline `BUNDLE_CAPS` constant (no separate types file), ANSI codes hardcoded (no chalk/kleur dep), helpers as named exports in `doctor.ts` (a separate `doctor-bundle-helpers.ts` added ~76 bytes of unavoidable tsup module-wrapper overhead).
+
+**Bugs caught by tests.**
+
+- **`vi.spyOn` doesn't work on `node:child_process.spawn` under vitest ESM mode.** Discovered in SG-A streaming tests when verifying that the non-streaming path doesn't call `spawn`. Workaround: replaced spy-based assertions with timing assertions (`< 50ms === no I/O`), which is a sound behavioral proxy.
+- **`NaN` from `parseInt(undefined)` in `parseMcpClockOffset`.** Initial implementation `Number(env["LOGBOOK_MCP_CLOCK_OFFSET_MS"])` returned `NaN` when the env var was unset. Unit test "returns 0 for NaN/garbage input" caught this immediately; final implementation uses an explicit `Number.isFinite` check with a 0 fallback.
+
+**Final state.** 1575 passing tests (1309 + 167 + 25 + 74 new across SG-A/B/C and post-release banner work). All 8 byte-identity gates: GREEN. Token budget: 493/500 (unchanged from v1.1). CLI bundle: **399.83 KB** (PASS, but only 170 bytes headroom — v1.3 must refactor). MCP bundle: 44.46 KB. Other bundles unchanged. Tagged `v1.2.0`, squash-merged to main as commit `cf54c5c`.
+
+**Deferred to v1.3.** Distribution via Homebrew tap + Scoop bucket; `logbook self-update`; update-check on startup; `SECURITY.md`; `docs/privacy.md`; CLI bundle refactor to reclaim headroom. The plan and required credentials are in [`docs/v1.3-roadmap.md`](./v1.3-roadmap.md).
+
 ---
 
 ## Test-driven discoveries — case studies

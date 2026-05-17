@@ -51,7 +51,9 @@ After a week's work, run the dashboard:
 logbook
 ```
 
-You land on the home screen showing: preset, manifest size, token budget bar, recent events. From the menu:
+The first thing you see is the animated LogBook banner (cyan ASCII art, 640 ms reveal) followed by the home screen showing: preset, manifest size, token budget bar, recent events. The banner version tag (`captain's log · v1.2.0`) updates automatically with each release. Set `LOGBOOK_NO_ANIMATION=1` to skip the reveal.
+
+From the menu:
 
 - Press `[r]` for review — promotes pending suggestions to canonical events, discards noise, tags `teachingValue` (high/medium/low).
 - Press `[b]` for build — regenerates `logbook/docs/index.md`, `timeline.md`, `errors-and-lessons.md` deterministically.
@@ -143,6 +145,8 @@ logbook teaching-script last
 ```
 
 LLM-backed. Reads the milestone's bracketed events, produces a structured teaching script: overview, key decisions, common pitfalls, lessons to emphasize, discussion prompts. Output lands in `logbook/teaching-scripts/`.
+
+The companion command `logbook summarize milestone last` streams tokens to your terminal in real-time as the model generates them (v1.2+). Pass `--no-stream` if you're piping output to a script. The final markdown file is byte-identical regardless of streaming mode.
 
 You can target any milestone by ULID:
 
