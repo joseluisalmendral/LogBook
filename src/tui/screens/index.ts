@@ -1,6 +1,6 @@
 /**
  * Barrel re-export for src/tui/screens.
- * Exports all 5 screen renderer components used by the shell TUI (iter6 T4).
+ * Exports all 6 screen renderer components used by the shell TUI (iter6 T4).
  */
 
 export { HomeScreen } from "./home.js";
@@ -17,3 +17,6 @@ export type { ReviewBridgeScreenProps } from "./review-bridge.js";
 
 export { DoingScreen } from "./doing.js";
 export type { DoingScreenProps } from "./doing.js";
+
+export { ProvidersScreen } from "./providers.js";
+export type { ProvidersScreenProps } from "./providers.js";

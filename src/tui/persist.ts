@@ -29,9 +29,12 @@ import { bootstrapClaudeCodeInstallers } from "../connectors/claude-code/artifac
 import { runInstall } from "../core/install-engine.js";
 import { runUninstall } from "../core/uninstall-engine.js";
 import { runAllGenerators } from "../generate/index.js";
+import { createRouter } from "../llm/provider-router.js";
+import { backupOnce } from "../core/backup.js";
 import type { ProjectPaths } from "../core/paths.js";
 import type { ShellSnapshot, ShellAction } from "./types.js";
 import type { TokenBreakdown } from "../core/token-measure.js";
+import type { ProvidersConfig, ProviderEntry } from "../types/providers.js";
 
 // ---------------------------------------------------------------------------
 // Public: buildSnapshot
@@ -264,6 +267,153 @@ export async function runToggleDisabledAction(
     writeState(ctx.paths.statePath, state);
     const msg = state.disabled ? "Hooks disabled" : "Hooks enabled";
     ctx.dispatch({ type: "doing.ok", message: msg });
+    const snap = await buildSnapshot(ctx.paths);
+    ctx.dispatch({ type: "snapshot.refresh", snapshot: snap });
+  } catch (err) {
+    ctx.dispatch({ type: "doing.err", message: errorMessage(err) });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Providers helpers (shared between action handlers)
+// ---------------------------------------------------------------------------
+
+const DEFAULT_PROVIDERS_CONFIG: ProvidersConfig = {
+  default_provider: "anthropic-claude-sdk",
+  providers: {
+    "anthropic-claude-sdk": {
+      kind: "anthropic",
+      model: "claude-sonnet-4-5",
+      api_key_env: "ANTHROPIC_API_KEY",
+    },
+  },
+  by_task: {},
+  by_phase: {},
+};
+
+function loadProvidersConfig(providersPath: string): ProvidersConfig {
+  if (!fs.existsSync(providersPath)) return structuredClone(DEFAULT_PROVIDERS_CONFIG);
+  try {
+    const raw = fs.readFileSync(providersPath, "utf-8");
+    return JSON.parse(raw) as ProvidersConfig;
+  } catch {
+    return structuredClone(DEFAULT_PROVIDERS_CONFIG);
+  }
+}
+
+function saveProvidersConfig(providersPath: string, cfg: ProvidersConfig): void {
+  const dir = path.dirname(providersPath);
+  fs.mkdirSync(dir, { recursive: true });
+  const tmp = `${providersPath}.tmp`;
+  fs.writeFileSync(tmp, JSON.stringify(cfg, null, 2) + "\n", "utf-8");
+  fs.renameSync(tmp, providersPath);
+}
+
+// ---------------------------------------------------------------------------
+// Providers action handlers
+// ---------------------------------------------------------------------------
+
+/**
+ * Test a provider: ping via the router with LOGBOOK_LLM_MOCK support.
+ */
+export async function runProviderTestAction(
+  ctx: ActionContext,
+  opts: { providerId: string },
+): Promise<void> {
+  ctx.dispatch({ type: "doing.start", label: `Testing provider ${opts.providerId}...`, returnTo: "providers" });
+  try {
+    const isMock = process.env["LOGBOOK_LLM_MOCK"] === "1";
+    const routerOpts = {
+      providersPath: ctx.paths.providersPath,
+      ...(isMock && { mockAdapter: () => Promise.resolve("pong") }),
+      ...(isMock && { sleep: async () => {} }),
+    };
+    const router = createRouter(routerOpts);
+    const result = await router.call({
+      task: "providers.test",
+      systemPrompt: "Respond with exactly: pong",
+      userPrompt: "ping",
+      maxTokens: 50,
+      temperature: 0,
+    });
+    if (result.ok) {
+      ctx.dispatch({ type: "doing.ok", message: `ok — ${result.provider}/${result.model} (${result.latencyMs}ms)` });
+    } else {
+      ctx.dispatch({ type: "doing.err", message: `error: ${result.error?.code ?? "unknown"} — ${result.error?.message ?? ""}` });
+    }
+    const snap = await buildSnapshot(ctx.paths);
+    ctx.dispatch({ type: "snapshot.refresh", snapshot: snap });
+  } catch (err) {
+    ctx.dispatch({ type: "doing.err", message: errorMessage(err) });
+  }
+}
+
+/**
+ * Remove a provider from providers.json with backup.
+ */
+export async function runProviderRemoveAction(
+  ctx: ActionContext,
+  opts: { providerId: string },
+): Promise<void> {
+  ctx.dispatch({ type: "doing.start", label: `Removing provider ${opts.providerId}...`, returnTo: "providers" });
+  try {
+    backupOnce(ctx.paths.providersPath, {
+      backupsDir: ctx.paths.backupsDir,
+      projectRoot: ctx.paths.root,
+      now: () => new Date().toISOString(),
+    });
+    const cfg = loadProvidersConfig(ctx.paths.providersPath);
+    if (!(opts.providerId in cfg.providers)) {
+      ctx.dispatch({ type: "doing.err", message: `Provider not found: ${opts.providerId}` });
+      return;
+    }
+    delete cfg.providers[opts.providerId];
+    // If removed provider was default, reset to first remaining or empty
+    if (cfg.default_provider === opts.providerId) {
+      const remaining = Object.keys(cfg.providers);
+      cfg.default_provider = remaining[0] ?? "";
+    }
+    saveProvidersConfig(ctx.paths.providersPath, cfg);
+    ctx.dispatch({ type: "doing.ok", message: `Removed provider: ${opts.providerId}` });
+    const snap = await buildSnapshot(ctx.paths);
+    ctx.dispatch({ type: "snapshot.refresh", snapshot: snap });
+  } catch (err) {
+    ctx.dispatch({ type: "doing.err", message: errorMessage(err) });
+  }
+}
+
+/**
+ * Add a new provider to providers.json.
+ */
+export async function runProviderAddAction(
+  ctx: ActionContext,
+  opts: {
+    name: string;
+    kind: ProviderEntry["kind"];
+    model: string;
+    envVar: string;
+  },
+): Promise<void> {
+  ctx.dispatch({ type: "doing.start", label: "Adding provider...", returnTo: "providers" });
+  try {
+    backupOnce(ctx.paths.providersPath, {
+      backupsDir: ctx.paths.backupsDir,
+      projectRoot: ctx.paths.root,
+      now: () => new Date().toISOString(),
+    });
+    const cfg = loadProvidersConfig(ctx.paths.providersPath);
+    const entry: ProviderEntry = {
+      kind: opts.kind,
+      model: opts.model,
+      api_key_env: opts.envVar,
+    };
+    cfg.providers[opts.name] = entry;
+    // If no default set, use this one
+    if (!cfg.default_provider) {
+      cfg.default_provider = opts.name;
+    }
+    saveProvidersConfig(ctx.paths.providersPath, cfg);
+    ctx.dispatch({ type: "doing.ok", message: `Added provider: ${opts.name}` });
     const snap = await buildSnapshot(ctx.paths);
     ctx.dispatch({ type: "snapshot.refresh", snapshot: snap });
   } catch (err) {

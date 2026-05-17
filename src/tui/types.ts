@@ -32,6 +32,30 @@ export interface InstallWizardChoices {
 // Screen discriminated union
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Providers screen sub-state shapes
+// ---------------------------------------------------------------------------
+
+export interface ProvidersAddWizardFields {
+  kind: string;    // provider kind: anthropic | openai | google | local | codex-cli
+  name: string;    // user-chosen alias
+  model: string;   // provider-specific model id
+  envVar: string;  // env var name for the API key
+}
+
+export type ProvidersScreen =
+  | { kind: "providers"; view: "list"; cursor: number; providerCount: number }
+  | { kind: "providers"; view: "detail"; selectedProviderId: string; cursor: number }
+  | { kind: "providers"; view: "routing"; cursor: number; routingCount: number }
+  | {
+      kind: "providers";
+      view: "add";
+      step: 1 | 2 | 3;
+      fields: ProvidersAddWizardFields;
+      cursor: number;
+    }
+  | { kind: "providers"; view: "confirm-remove"; providerId: string; cursor: number };
+
 export type ShellScreen =
   | { kind: "home"; cursor: number }
   | {
@@ -42,6 +66,7 @@ export type ShellScreen =
     }
   | { kind: "configure"; cursor: number }
   | { kind: "review"; nested: ReviewState }
+  | ProvidersScreen
   | {
       kind: "doing";
       label: string;
@@ -53,7 +78,17 @@ export type ShellScreen =
        * Used to pass wizard choices (e.g. preset) through the doing transition
        * so the action handler can read them without re-deriving from state.
        */
-      opts?: { preset?: Preset; safe?: boolean };
+      opts?: {
+        preset?: Preset;
+        safe?: boolean;
+        /** Provider add wizard fields forwarded through doing screen. */
+        providerAdd?: {
+          name: string;
+          kind: string;
+          model: string;
+          envVar: string;
+        };
+      };
     }
   | { kind: "exiting" };
 
@@ -107,4 +142,16 @@ export type ShellAction =
   | { type: "review.update"; nested: ReviewState }
   | { type: "modal.confirm.show"; message: string; onConfirmAction: ShellAction }
   | { type: "modal.confirm.resolve"; confirmed: boolean }
+  // Providers screen actions
+  | { type: "providers.list.select" }
+  | { type: "providers.list.routing" }
+  | { type: "providers.list.back" }
+  | { type: "providers.add.start" }
+  | { type: "providers.add.next" }
+  | { type: "providers.add.cancel" }
+  | { type: "providers.add.setField"; field: keyof ProvidersAddWizardFields; value: string }
+  | { type: "providers.add.commit" }
+  | { type: "providers.test.invoke"; providerId: string }
+  | { type: "providers.remove.request"; providerId: string }
+  | { type: "providers.remove.confirm"; confirmed: boolean }
   | { type: "exit" };

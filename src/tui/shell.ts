@@ -30,6 +30,9 @@ import {
   runExportInstructorPackAction,
   runDoctorAction,
   runToggleDisabledAction,
+  runProviderTestAction,
+  runProviderRemoveAction,
+  runProviderAddAction,
 } from "./persist.js";
 import {
   HomeScreen,
@@ -37,6 +40,7 @@ import {
   ConfigureScreen,
   ReviewBridgeScreen,
   DoingScreen,
+  ProvidersScreen,
 } from "./screens/index.js";
 import { resolveProjectRoot, makePaths } from "../core/paths.js";
 import type { ShellSnapshot, ShellState, ShellAction, ShellScreen } from "./types.js";
@@ -63,6 +67,9 @@ export interface ShellHandlers {
   runExportInstructorPack?: (ctx: ActionContext, opts?: { safe?: boolean }) => Promise<void>;
   runDoctor?: (ctx: ActionContext) => Promise<void>;
   runToggleDisabled?: (ctx: ActionContext, currentDisabled: boolean) => Promise<void>;
+  runProviderTest?: (ctx: ActionContext, opts: { providerId: string }) => Promise<void>;
+  runProviderRemove?: (ctx: ActionContext, opts: { providerId: string }) => Promise<void>;
+  runProviderAdd?: (ctx: ActionContext, opts: { name: string; kind: string; model: string; envVar: string }) => Promise<void>;
 }
 
 // ---------------------------------------------------------------------------
@@ -185,6 +192,35 @@ function resolveHandler(
     return;
   }
 
+  if (label.startsWith("Testing provider ")) {
+    // Extract provider id from label: "Testing provider <id>..."
+    const providerId = label.slice("Testing provider ".length).replace(/\.\.\.$/, "");
+    const fn = handlers.runProviderTest ?? runProviderTestAction;
+    void fn(ctx, { providerId });
+    return;
+  }
+
+  if (label.startsWith("Removing provider ")) {
+    const providerId = label.slice("Removing provider ".length).replace(/\.\.\.$/, "");
+    const fn = handlers.runProviderRemove ?? runProviderRemoveAction;
+    void fn(ctx, { providerId });
+    return;
+  }
+
+  if (label === "Adding provider...") {
+    const screen = state.screen;
+    // Read wizard fields forwarded via doing screen opts.providerAdd.
+    // These were set by the providers.add.commit reducer case.
+    const providerAdd = screen.kind === "doing" ? screen.opts?.providerAdd : undefined;
+    if (providerAdd) {
+      const fn = handlers.runProviderAdd ?? runProviderAddAction;
+      void fn(ctx, providerAdd as { name: string; kind: import("../types/providers.js").ProviderEntry["kind"]; model: string; envVar: string });
+    } else {
+      dispatch({ type: "doing.err", message: "Missing provider fields — cannot add" });
+    }
+    return;
+  }
+
   // Unknown label → dispatch doing.err
   dispatch({ type: "doing.err", message: `Unknown action: ${label}` });
 }
@@ -279,6 +315,9 @@ function renderScreen(
 
     case "review":
       return React.createElement(ReviewBridgeScreen, { state, dispatch });
+
+    case "providers":
+      return React.createElement(ProvidersScreen, { state, dispatch });
 
     case "doing":
       return React.createElement(DoingScreen, { state, dispatch });
