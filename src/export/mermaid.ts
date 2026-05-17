@@ -1,18 +1,26 @@
 /**
- * Mermaid diagram pre-processing pipeline (S2.1).
+ * Mermaid diagram pre-processing pipeline (S2.1 + SG2c refactor).
  *
  * Scans markdown for ```mermaid fenced code blocks, renders each to SVG via
  * the @mermaid-js/mermaid-cli (mmdc) subprocess, sanitizes the SVG, and
- * replaces each fence with an inline <div class="mermaid"><svg>…</svg></div>.
+ * replaces each fence.
  *
- * This module MUST be called BEFORE the unified/remark/rehype pipeline so that
- * the injected raw HTML div survives. The HTML pipeline must include rehype-raw
- * (after remark-rehype) to pass the raw HTML through to the output.
+ * Two modes:
+ * 1. renderMermaidFences (public, backward-compat):
+ *    Replaces fences with inline <div class="mermaid"><svg>…</svg></div>.
+ *    Used in unit tests — they assert the returned markdown string shape.
+ *
+ * 2. preprocessMermaidPlaceholders (internal, used by html.ts / instructor-pack.ts):
+ *    Replaces fences with unique HTML comment markers
+ *    <!-- LOGBOOK_MERMAID_PLACEHOLDER_<n> --> and returns the SVG array.
+ *    The HTML pipeline then does a post-process string-replace AFTER rehype-stringify.
+ *    This avoids rehype-raw (and its parse5 dep), saving ~318 KB from the bundle.
  *
  * Mock seam: set LOGBOOK_MERMAID_MOCK=1 (or pass opts.mock=true) to skip the
  * mmdc subprocess. Used in all CI/unit/integration tests.
  *
  * Design §6.1 + D4 (build-time SVG render; defense-in-depth sanitization).
+ * SG2c refactor: drops rehype-raw + parse5 (~318 KB bundle saving).
  *
  * Dependencies:
  *  - @mermaid-js/mermaid-cli — devDependency (subprocess only, never bundled)
@@ -35,6 +43,13 @@ import { sanitizeSvg } from "./safe.js";
  * Uses the `g` flag to match all occurrences in a document.
  */
 const MERMAID_FENCE_RE = /```mermaid\n([\s\S]*?)\n```/g;
+
+/**
+ * Placeholder format used by preprocessMermaidPlaceholders.
+ * HTML comments survive the remark/rehype pipeline and are emitted verbatim
+ * by rehype-stringify. Post-process replaces them with the actual SVG divs.
+ */
+const PLACEHOLDER_PREFIX = "LOGBOOK_MERMAID_PLACEHOLDER_";
 
 /**
  * Mock SVG returned when LOGBOOK_MERMAID_MOCK=1 or opts.mock=true.
@@ -91,6 +106,98 @@ export async function renderMermaidFences(
   // Replace fences in order (counter-based replacer).
   let idx = 0;
   return markdown.replace(MERMAID_FENCE_RE, () => renders[idx++] as string);
+}
+
+// ---------------------------------------------------------------------------
+// Placeholder-based API (SG2c refactor — avoids rehype-raw + parse5)
+// ---------------------------------------------------------------------------
+
+/**
+ * Result returned by preprocessMermaidPlaceholders.
+ */
+export interface MermaidPlaceholderResult {
+  /** Markdown with each ```mermaid fence replaced by an HTML comment placeholder. */
+  markdown: string;
+  /** Array of sanitized SVG strings, indexed by placeholder number. */
+  svgs: string[];
+}
+
+/**
+ * Phase 1: replace ```mermaid fences with unique HTML comment placeholders.
+ *
+ * HTML comments survive the remark → rehype-stringify pipeline verbatim (they
+ * are treated as raw HTML blocks by remark-parse and kept as-is). After the
+ * unified pipeline runs, call injectMermaidSvgs() to swap them back.
+ *
+ * This avoids the need for rehype-raw (+ its parse5 dep) entirely.
+ *
+ * @param markdown  Input markdown string.
+ * @param opts      Optional: pass mock=true to force mock mode.
+ * @returns         { markdown, svgs } — transformed markdown + rendered SVGs.
+ */
+export async function preprocessMermaidPlaceholders(
+  markdown: string,
+  opts?: { mock?: boolean }
+): Promise<MermaidPlaceholderResult> {
+  const useMock =
+    opts?.mock === true ||
+    process.env["LOGBOOK_MERMAID_MOCK"] === "1";
+
+  // Collect all fences first.
+  const fences: Array<{ match: string; body: string }> = [];
+  for (const m of markdown.matchAll(MERMAID_FENCE_RE)) {
+    fences.push({ match: m[0], body: m[1] as string });
+  }
+
+  if (fences.length === 0) {
+    return { markdown, svgs: [] };
+  }
+
+  // Render each fence to a sanitized SVG string.
+  const svgs: string[] = [];
+  for (const fence of fences) {
+    const rawSvg = useMock ? MOCK_SVG : await renderSingleMermaid(fence.body);
+    svgs.push(sanitizeSvg(rawSvg));
+  }
+
+  // Replace fences with placeholder comments, indexed by position.
+  let idx = 0;
+  const transformed = markdown.replace(
+    MERMAID_FENCE_RE,
+    () => `<!-- ${PLACEHOLDER_PREFIX}${idx++} -->`
+  );
+
+  return { markdown: transformed, svgs };
+}
+
+/**
+ * Phase 2: replace placeholder comments in an HTML string with the actual SVG divs.
+ *
+ * Call this AFTER rehype-stringify has serialized the unified AST. Each
+ * <!-- LOGBOOK_MERMAID_PLACEHOLDER_<n> --> comment is replaced by:
+ *   <div class="mermaid">{sanitizedSvg}</div>
+ *
+ * Placeholders that appear inside markdown code blocks (<code> elements) are
+ * NOT replaced because the regex matches the raw comment string which would
+ * have been HTML-escaped by rehype-stringify inside <code> elements
+ * (becoming &lt;!-- ... --&gt;, not <!-- ... -->).
+ *
+ * @param html   HTML string from rehype-stringify.
+ * @param svgs   Sanitized SVG array from preprocessMermaidPlaceholders.
+ * @returns      HTML string with placeholders replaced by <div class="mermaid"> elements.
+ */
+export function injectMermaidSvgs(html: string, svgs: string[]): string {
+  if (svgs.length === 0) return html;
+
+  return html.replace(
+    /<!-- LOGBOOK_MERMAID_PLACEHOLDER_(\d+) -->/g,
+    (_match, idxStr: string) => {
+      const n = parseInt(idxStr, 10);
+      const svg = svgs[n];
+      if (svg === undefined) return _match; // safety: unknown index → leave as-is
+      return `<div class="mermaid">${svg}</div>`;
+    }
+  );
 }
 
 // ---------------------------------------------------------------------------

@@ -15,13 +15,12 @@ import { join, dirname } from "pathe";
 import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
-import rehypeRaw from "rehype-raw";
 import rehypeSlug from "rehype-slug";
 import rehypeStringify from "rehype-stringify";
 import { INLINE_CSS } from "./inline-css.js";
 import { assertNoExternalRefs } from "./sanitize-links.js";
 import { sanitizeForSafeExport, sanitizeCss } from "./safe.js";
-import { renderMermaidFences } from "./mermaid.js";
+import { preprocessMermaidPlaceholders, injectMermaidSvgs } from "./mermaid.js";
 import type { ProjectPaths } from "../core/paths.js";
 import type { ExportReport } from "../types/reports.js";
 
@@ -61,29 +60,31 @@ const SECTION_LABELS: Record<string, string> = {
  * Build a full self-contained HTML document from a Markdown body string.
  * Inlines the CSS. Returns the complete HTML string (not yet sanitized).
  *
- * Pipeline:
- * 1. renderMermaidFences — replace ```mermaid fences with <div class="mermaid"><svg>…</svg></div>
+ * Pipeline (SG2c refactor — placeholder pattern, no rehype-raw):
+ * 1. preprocessMermaidPlaceholders — replace ```mermaid fences with
+ *    <!-- LOGBOOK_MERMAID_PLACEHOLDER_<n> --> comments; stash rendered SVGs.
  * 2. remark-parse — parse markdown AST
- * 3. remark-rehype (allowDangerousHtml: true) — convert to hast (raw HTML preserved)
- * 4. rehype-raw — parse raw HTML nodes (required to pass the <div> through)
- * 5. rehype-slug — add id attributes to headings for anchor navigation
- * 6. rehype-stringify — serialize to HTML
+ * 3. remark-rehype — convert to hast (no allowDangerousHtml needed)
+ * 4. rehype-slug — add id attributes to headings for anchor navigation
+ * 5. rehype-stringify — serialize to HTML (comments preserved verbatim)
+ * 6. injectMermaidSvgs — replace placeholder comments with
+ *    <div class="mermaid"><svg>…</svg></div> via string-replace
  */
 async function markdownToHtml(markdown: string): Promise<string> {
-  // Pre-process: replace mermaid fences with inline SVG divs (raw HTML).
-  const preprocessed = await renderMermaidFences(markdown);
+  // Phase 1: extract mermaid fences → placeholders + SVG array.
+  const { markdown: withPlaceholders, svgs } =
+    await preprocessMermaidPlaceholders(markdown);
 
-  // allowDangerousHtml must be true so remark-rehype passes <div>…</div> raw
-  // HTML nodes through to the hast tree. rehype-raw then parses them properly.
   const processor = unified()
     .use(remarkParse)
-    .use(remarkRehype, { allowDangerousHtml: true })
-    .use(rehypeRaw)
+    .use(remarkRehype)
     .use(rehypeSlug)
     .use(rehypeStringify);
 
-  const file = await processor.process(preprocessed);
-  return String(file);
+  const file = await processor.process(withPlaceholders);
+
+  // Phase 2: inject sanitized SVG divs in place of comment placeholders.
+  return injectMermaidSvgs(String(file), svgs);
 }
 
 /**
