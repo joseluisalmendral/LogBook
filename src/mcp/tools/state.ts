@@ -51,8 +51,8 @@ function countPendingSuggestions(pendingPath: string): number {
 
 export const stateTool: ToolDef<StateInput, StateOutput> = {
   name: "logbook_state",
-  // ≤14 words; measured: 6 words / ~7 tokens
-  description: "Get current phase, session, pending.",
+  // ≤14 words; measured: 5 words / ~7 tokens (SG0: shortened from "Get current phase, session, pending.")
+  description: "Get phase, session, pending.",
 
   inputSchema: {
     type: "object",

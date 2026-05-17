@@ -177,17 +177,18 @@ function buildTeachingManifest(root: string): Manifest {
 // Token math helpers (mirrors doctor.ts logic — used to verify correctness)
 // ---------------------------------------------------------------------------
 
-// Known MCP descriptions (static constant from doctor.ts)
+// Known MCP descriptions (static constant from token-measure.ts)
+// SG0: logbook_lesson and logbook_state descriptions shortened to create token margin.
 const MCP_DESCRIPTIONS = [
   "Log an architectural decision.",
   "Log a didactic error.",
   "Link a fix to an error.",
-  "Log a lesson learned (human-authored).",
+  "Log a lesson learned.",                 // SG0: was "Log a lesson learned (human-authored)."
   "Log an external resource.",
   "Close a phase with a milestone.",
   "Switch active phase.",
   "Queue a suggestion for human review.",
-  "Get current phase, session, pending.",
+  "Get phase, session, pending.",          // SG0: was "Get current phase, session, pending."
 ];
 
 const EXPECTED_MCP_TOKENS = MCP_DESCRIPTIONS.reduce(
