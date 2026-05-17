@@ -23,6 +23,7 @@ import { appendJsonl } from "../../store/jsonl.js";
 import { openIndex, closeIndex } from "../../store/sqlite.js";
 import { generateUlid } from "../../util/ulid.js";
 import { writeAdrFile } from "../../generate/adr.js";
+import { getGitSha, getDiffStat, getRemoteUrl, buildCommitLink } from "../../connectors/git.js";
 
 /** Defensive comma-split: handles empty strings, single values, whitespace. */
 function splitComma(s: string | undefined): string[] {
@@ -80,6 +81,12 @@ export default defineCommand({
       required: false,
       description: "Comma-separated tags",
     },
+    "with-diff": {
+      type: "boolean",
+      required: false,
+      default: false,
+      description: "Capture git diff stat (file list) and append to ADR as Implementation section",
+    },
   },
   async run({ args }) {
     let root: string;
@@ -105,6 +112,31 @@ export default defineCommand({
     const consequences = args["consequences"] as string | undefined;
     const supersedes = args["supersedes"] as string | undefined;
     const tags = splitComma(args["tags"] as string | undefined);
+    const withDiff = args["with-diff"] === true;
+
+    // S2.2 — capture diff stat when --with-diff flag is set.
+    let implementation: import("../../generate/adr.js").AdrImplementation | undefined;
+    if (withDiff) {
+      const [sha, diffStats, remoteUrl] = await Promise.all([
+        getGitSha(root).catch(() => undefined),
+        getDiffStat(root).catch(() => undefined),
+        getRemoteUrl(root).catch(() => undefined),
+      ]);
+
+      if (sha !== undefined && diffStats !== undefined) {
+        const commitUrl = buildCommitLink(remoteUrl, sha);
+        implementation = {
+          sha,
+          stats: diffStats,
+          ...(commitUrl !== undefined && { commitUrl }),
+        };
+      } else {
+        // Warn but do not fail — ADR is still written without implementation section.
+        process.stderr.write(
+          `warning: --with-diff: could not capture git diff stat (not a git repo or no commits)\n`,
+        );
+      }
+    }
 
     // Build AdrInput without spreading undefined optional fields (exactOptionalPropertyTypes).
     const adrInput = {
@@ -115,6 +147,7 @@ export default defineCommand({
       ...(consequences !== undefined &&
         consequences !== "" && { consequences }),
       ...(options !== undefined && options !== "" && { alternatives: options }),
+      ...(implementation !== undefined && { implementation }),
     };
 
     let adrResult: Awaited<ReturnType<typeof writeAdrFile>>;
@@ -131,6 +164,14 @@ export default defineCommand({
     const ts = new Date().toISOString();
     const adrPath = nodePath.relative(root, adrResult.filepath);
 
+    // Best-effort gitSha (v1.1 S2.3): fresh subprocess for manual commands.
+    let gitSha: string | undefined;
+    try {
+      gitSha = await getGitSha(root);
+    } catch {
+      // Degrade silently — git unavailable or not a repo is fine.
+    }
+
     // Build event — TOP-LEVEL fields (T10b.D1 convention).
     const event: Record<string, unknown> = {
       id,
@@ -142,6 +183,7 @@ export default defineCommand({
       adrCounter: adrResult.counter,
       adrPath,
       tags,
+      ...(gitSha !== undefined && { gitSha }),
       ...(context !== undefined && context !== "" && { context }),
       ...(consequences !== undefined &&
         consequences !== "" && { consequences }),

@@ -12,14 +12,23 @@
  * timestamp at exactly `now - windowMs` is evicted, so a new call at that
  * exact moment is allowed). This means the window is half-open: [now-windowMs, now).
  */
+export interface SlidingWindowLimiterOptions {
+  /** Injectable clock for deterministic testing. Defaults to Date.now. */
+  clock?: () => number;
+}
+
 export class SlidingWindowLimiter {
   // Per-tool timestamp buckets (millisecond epoch timestamps).
   private readonly _windows = new Map<string, number[]>();
+  private readonly clock: () => number;
 
   constructor(
     private readonly maxCallsPerWindow: number,
     private readonly windowMs: number,
-  ) {}
+    options: SlidingWindowLimiterOptions = {},
+  ) {
+    this.clock = options.clock ?? Date.now.bind(Date);
+  }
 
   /**
    * Returns true if the call is within the rate limit for `toolName`,
@@ -27,7 +36,7 @@ export class SlidingWindowLimiter {
    * is exceeded (call is NOT recorded — rejected calls do not consume quota).
    */
   allow(toolName: string): boolean {
-    const now = Date.now();
+    const now = this.clock();
     const cutoff = now - this.windowMs;
 
     // Retrieve or create the timestamp bucket for this tool.

@@ -69,6 +69,9 @@ export default defineCommand({
 
     const paths = makePaths(root);
     const milestoneId = (args["id"] as string | undefined) ?? "last";
+    const outPathArg = typeof args["out"] === "string" && args["out"]
+      ? args["out"]
+      : undefined;
     const isMock = process.env["LOGBOOK_LLM_MOCK"] === "1";
 
     const router = createRouter({
@@ -77,7 +80,12 @@ export default defineCommand({
       ...(isMock && { sleep: async () => {} }),
     });
 
-    const result = await summarizeMilestone({ router, paths, milestoneId });
+    const result = await summarizeMilestone({
+      router,
+      paths,
+      milestoneId,
+      ...(outPathArg !== undefined && { outPath: outPathArg }),
+    });
 
     if (args["json"]) {
       process.stdout.write(JSON.stringify(result, null, 2) + "\n");

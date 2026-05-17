@@ -216,6 +216,39 @@ Uninstall reverses the steps symmetrically. The manifest records `createdHooksSt
 
 ---
 
+### Iter7 — v1.1 release (feat/v1.1, 1501 tests, +215 from iter6)
+
+**Mission.** Ship LogBook **v1.1** — expanding the MVP along four axes: multi-provider LLM expansion, pedagogical visual layer (Mermaid, ADR diffs, git SHA tagging), curation polish (animated TUI spinner, `rehype-slug` anchors, `--safe` on build), and PDF export + annotations.
+
+**Slices.** 18 implementation slices across 7 slice groups (SG0, SG4, SG1a/b/c, SG3, SG2a/b/c, SG6, SG5), plus SG-GATE docs and CHANGELOG. Methodology: SDD explore → propose → spec → design → tasks → apply (12 batches) → verify → archive. Strict TDD per slice across all 18.
+
+| Slice group | Slices | Key deliverable |
+|-------------|--------|----------------|
+| SG0 | 1 | Token budget margin: shorten MCP descriptions, add sync test |
+| SG4 | 2 | S4.1 animated spinner; S4.2 clock-injected rate limiter |
+| SG1a/b/c | 5 | Multi-provider: Gemini, Ollama, Codex CLI subprocess, Providers TUI, `--task` flag |
+| SG3 | 3 | `rehype-slug`, `logbook build --safe`, `summarize --out` |
+| SG2a/b/c | 4 | Git connector, `--with-diff` ADRs, CSS theming, Mermaid inline SVG |
+| SG6 | 2 | `logbook annotate`, speaker-notes marker family |
+| SG5 | 1 | `logbook export pdf` via `puppeteer-core` (optionalDependencies) |
+| SG-GATE | — | CHANGELOG, README v1.1 sections, docs updates |
+
+**Key architectural decisions.**
+
+- **Mermaid placeholder tokens.** The initial approach (HTML comment placeholders) was swallowed by the unified/remark pipeline. Switched to bare-text `LBMERMAID_N` tokens that survive remark-parse → remark-rehype → rehype-stringify. The `rehype-raw` dependency was added then removed in the same iteration (commit 3148538) — avoiding it kept the export bundle from ballooning (675 KB → 361 KB).
+- **PDF via `optionalDependencies`.** `puppeteer-core` declared as `optionalDependencies` (not `dependencies`) so that `pnpm install --no-optional` in the byte-identity CI job never installs Chrome. All PDF tests use `LOGBOOK_PUPPETEER_MOCK=1`. The pdf entry point uses `Function('p', 'return import(p)')` to defeat esbuild static analysis, keeping `pdf.cjs` at 4.25 KB with puppeteer-core externalized.
+- **Git SHA session caching.** `state.json` gains `gitSha?` and `gitShaCapturedAt?`. `SessionStart` captures once (5ms subprocess); all subsequent hook events read from state (0ms). Manual commands (`snapshot`, `decision`, `milestone`) call `getGitSha()` fresh at invocation time. This kept hook p95 under 141ms despite the new field.
+- **Codex CLI contract locked.** `stdin = prompt`, `stdout = JSON`, mock seam via `LOGBOOK_CODEX_MOCK=1`. The contract shape was locked before the apply phase; only the exact CLI flag names were verified at apply time (`exec --non-interactive --json`).
+
+**Bugs caught by tests.**
+
+- **`puppeteer-core.executablePath()` is async in v25+.** The initial `detectChromePath()` called it synchronously and got `ERR_INVALID_ARG_TYPE`. The test for the Chrome-detection failure case caught this before shipping.
+- **`noExternal: [/.*/]` overrides explicit `external` in tsup.** When building `pdf.cjs`, using `noExternal` with a wildcard caused esbuild to follow `puppeteer-core` imports and bundle them — making the output 40 MB. Caught by the integration test asserting `pdf.cjs < 80 KB`. Fixed by removing `noExternal` from the PDF entry's tsup config.
+
+**Final state.** 1501 passing tests (1309 unit + 167 integration + 25 e2e). All 18 slices: PASS. All 8 byte-identity gates: GREEN. Token budget: ≤495/500 (PASS). CLI bundle: 390.99 KB (PASS, 9 KB headroom). Hook p95: 141ms (PASS). PDF bundle: 4.25 KB (PASS). 5 bundles total.
+
+---
+
 ## Test-driven discoveries — case studies
 
 The HookInstaller re-serialize bug (Bug 1, iter4 T-FIX-HOOK) is the canonical example: a test caught a production-breaking bug that no review would have caught. Two more case studies follow.
@@ -276,6 +309,7 @@ Every SDD artifact for every iteration is persisted in Engram. The topic keys fo
 | `sdd/logbook-mvp-iter4/design` … `archive-report` | Teaching preset iteration. |
 | `sdd/logbook-mvp-iter5/explore` … `archive-report` | Instructor-pack + README. |
 | `sdd/logbook-mvp-iter6/design` … `archive-report` | TUI shell iteration. |
+| `sdd/logbook-v1.1/proposal` … `apply-progress` | v1.1 release — 18 slices, multi-provider + PDF + annotations. |
 
 To retrieve any artifact, use `mem_search(query: "<topic-key>")` then `mem_get_observation(id: <id>)`. The full apply-progress for each iteration is particularly instructive — it records the RED → GREEN → REFACTOR cycle slice by slice.
 

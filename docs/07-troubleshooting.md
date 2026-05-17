@@ -288,6 +288,74 @@ The `.claude/` artifacts will then be orphans — see step 1 above for manual cl
 
 ---
 
+## 11. `logbook export pdf` — Chrome not found
+
+**Symptom.** Running `logbook export pdf` exits with:
+
+```
+Error: PDF export requires Chrome or Chromium.
+Set CHROME_PATH=/path/to/chrome, or install Chrome:
+  macOS:  brew install --cask google-chrome
+  Linux:  apt install chromium-browser  (or equivalent)
+```
+
+**Diagnosis.** `logbook export pdf` looks for Chrome in this order:
+
+1. `CHROME_PATH` env var.
+2. `puppeteer-core`'s `executablePath()` — returns the path of a bundled Chrome if present (not present in LogBook's config since we externalize puppeteer-core).
+3. Fails fast with the message above.
+
+**Fix.**
+
+```sh
+# macOS
+brew install --cask google-chrome
+# Linux (Debian/Ubuntu)
+apt install chromium-browser
+# Or point to an existing Chrome installation:
+export CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+logbook export pdf --out my-docs.pdf
+```
+
+If you don't need PDF, use `logbook export instructor-pack` (HTML — no Chrome required).
+
+**Note on `puppeteer-core` install.** The module is an optional dependency. If you installed with `pnpm install --no-optional`, it is not present. Re-run `pnpm install` without that flag to restore it.
+
+---
+
+## 12. Codex CLI adapter — binary not found or JSON parse error
+
+**Symptom A.** Setting up a `codex-cli` provider and calling `logbook providers test` returns:
+
+```
+error.code: codex_not_found
+Install Codex CLI: https://github.com/openai/codex
+```
+
+**Diagnosis.** The Codex CLI subprocess adapter spawns `codex exec --non-interactive --json`. The `codex` binary was not found on `PATH`.
+
+**Fix.** Install the Codex CLI:
+
+```sh
+npm install -g @openai/codex    # or per the official Codex CLI docs
+which codex                     # confirm it is on PATH
+logbook providers test --task teaching-script --json
+```
+
+**Symptom B.** The test returns `error.code: codex_parse_error` or `error.code: codex_exit`.
+
+**Diagnosis.** The Codex CLI exited non-zero or produced non-JSON output. Possible causes: the model name is wrong, the API key is not configured in Codex CLI, or the CLI version changed its output format.
+
+**Fix.** Run Codex CLI directly to see the raw output:
+
+```sh
+echo "Hello, respond with just 'pong'." | codex exec --non-interactive --json
+```
+
+If this fails, check your Codex CLI configuration (API key, model). If `--non-interactive --json` flags are not recognized by your version, open an issue — LogBook's Codex adapter contract is locked to these flags.
+
+---
+
 ## Where to ask for help
 
 If your issue isn't covered here:

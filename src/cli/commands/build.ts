@@ -23,6 +23,11 @@ export default defineCommand({
       required: false,
       description: "Output directory (default: logbook/docs)",
     },
+    safe: {
+      type: "boolean",
+      default: false,
+      description: "Redact absolute paths, usernames, and emails before writing docs",
+    },
     json: {
       type: "boolean",
       default: false,
@@ -44,12 +49,13 @@ export default defineCommand({
     const outArg = typeof args["out"] === "string" && args["out"]
       ? args["out"]
       : undefined;
+    const safeArg = args["safe"] === true;
 
     let report: Awaited<ReturnType<typeof runAllGenerators>>;
     try {
       const genOpts = outArg !== undefined
-        ? { paths, outDir: outArg }
-        : { paths };
+        ? { paths, outDir: outArg, safe: safeArg }
+        : { paths, safe: safeArg };
       report = await runAllGenerators(genOpts);
     } catch (err) {
       process.stderr.write(

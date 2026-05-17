@@ -4,14 +4,14 @@
  * Tests the SlidingWindowLimiter enforced by the dispatcher:
  *  - 20 calls per tool per 1000ms allowed
  *  - 21st call in the same window → -32000 (rate_limited)
- *  - Window slides: after 1300ms, a new call succeeds
  *  - Per-tool isolation: lesson and error each have their own 20-count window;
  *    alternating 20 of each (40 total) all succeed
  *
- * Timing note: the sliding window implementation in rate-limit.ts uses timestamps
- * so these tests do rely on wall-clock timing. The 1300ms wait is deliberately
- * conservative (window is 1000ms) — bumped from 1100ms to give more headroom for
- * loaded CI runners (iter3 W-MONITOR-2 closed).
+ * Window-slide behaviour is covered deterministically (no sleep) in:
+ *   tests/unit/rate-limit-clock.test.ts
+ *
+ * This file retains only the subprocess-level assertions that need a real
+ * MCP server process (no wall-clock waits).
  */
 
 import { describe, it, expect, beforeAll } from "vitest";
@@ -182,34 +182,8 @@ describe("mcp-rate-limit", () => {
     }
   }, 30_000);
 
-  it("after 1300ms window slides and next call succeeds", async () => {
-    const dir = makeTmpProject();
-    const server = await spawnServer(dir);
-
-    try {
-      // Exhaust the window.
-      await Promise.all(
-        Array.from({ length: 20 }, (_, i) => callLesson(server.send, `exhaust-${i}`)),
-      );
-
-      // Verify limit is hit.
-      const rateLimited = await callLesson(server.send, "should-fail");
-      const rl = rateLimited as { error?: { code?: number } };
-      expect(rl.error?.code).toBe(-32000);
-
-      // Wait for the window to slide past.
-      // 1300ms (was 1100ms) — gives more headroom for loaded CI runners; closes iter3 W-MONITOR-2.
-      await new Promise((r) => setTimeout(r, 1300));
-
-      // Now the call should succeed.
-      const afterWait = await callLesson(server.send, "after-wait");
-      const aw = afterWait as { result?: unknown; error?: unknown };
-      expect(aw.error).toBeUndefined();
-      expect(aw.result).toBeDefined();
-    } finally {
-      await server.kill();
-    }
-  }, 15_000);
+  // NOTE: window-slide behaviour is tested deterministically in
+  //   tests/unit/rate-limit-clock.test.ts using injected clock (no sleep needed).
 
   it("per-tool isolation: 20 lesson + 20 error calls all succeed (separate windows)", async () => {
     const dir = makeTmpProject();

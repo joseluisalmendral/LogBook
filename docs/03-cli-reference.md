@@ -277,10 +277,13 @@ These mirror the MCP tools — the human entry point for the same domain.
 logbook decision --title "<t>" --chosen "<c>" \
                  [--status "Proposed"] [--context "<x>"] \
                  [--options "a,b,c"] [--consequences "<...>"] \
-                 [--supersedes <ulid>] [--tags "<a,b>"]
+                 [--supersedes <ulid>] [--tags "<a,b>"] \
+                 [--with-diff]
 ```
 
 **Description.** Record an architectural decision. Writes an ADR file under `logbook/decisions/NNNN-<slug>.md` using the Nygard format. The `adrCounter` in `state.json` is incremented atomically via `proper-lockfile`.
+
+**`--with-diff` (v1.1).** Captures the current `git HEAD` SHA and `git show HEAD --stat` output (up to 50 lines) into an `## Implementation (commit <sha>)` section appended to the ADR. Links the commit to GitHub/GitLab/Bitbucket if `remote.origin.url` is detectable. Degrades silently if git is absent.
 
 **Side effects.** Writes ADR markdown, appends `manual.decision` event, inserts a SQLite index row (best-effort).
 
@@ -347,6 +350,25 @@ logbook milestone --title "<t>" --description "<d>" \
 
 **Output.** `{ id }`.
 
+### `logbook annotate`
+
+```sh
+logbook annotate <event-id> --note "<text>"
+```
+
+**Description.** Attach a freeform annotation to any previously captured event. Appends a `manual.annotation` event to `events.jsonl` referencing the original event ULID.
+
+**Args.**
+
+| Arg / Flag | Notes |
+|-----------|-------|
+| `<event-id>` | ULID of the target event (positional, required). |
+| `--note` | Annotation text (required, max 2000 chars). |
+
+**Side effects.** Scans `events.jsonl` to confirm the target event exists, then appends a `manual.annotation` event. Exits `1` if the event is not found or the note is empty.
+
+**Output.** `{ id, relatedEventId, note }`.
+
 ---
 
 ## Curation commands
@@ -388,20 +410,22 @@ logbook promote 01HXYZ... --teaching high
 ### `logbook build`
 
 ```sh
-logbook build [--out <dir>] [--json]
+logbook build [--out <dir>] [--safe] [--json]
 ```
 
-**Description.** Run all 3 deterministic generators against `events.jsonl`. Writes:
+**Description.** Run all deterministic generators against `events.jsonl`. Writes:
 
 - `logbook/docs/index.md`
 - `logbook/docs/timeline.md`
 - `logbook/docs/errors-and-lessons.md`
+- `logbook/docs/commits.md` (cross-index of git SHAs linked to events, v1.1)
 
 **Args.**
 
 | Flag | Notes |
 |------|-------|
 | `--out` | Override the output directory (default: `logbook/docs`). |
+| `--safe` | Apply `sanitizeForSafeExport()` to generated content — same redaction as `export --safe` (v1.1). |
 | `--json` | Emit the build report as JSON. |
 
 **Side effects.** Idempotent. Content outside `<!-- logbook:generated -->` markers is preserved literally. SQLite is not used by `build` — JSONL is the only source.
@@ -453,10 +477,10 @@ logbook teaching-script last [--out <dir>] [--json]
 ### `logbook export html`
 
 ```sh
-logbook export html [--out <path>] [--safe] [--json]
+logbook export html [--out <path>] [--safe] [--theme <path.css>] [--speaker-mode] [--json]
 ```
 
-**Description.** Convert the 3 generated docs into a single self-contained HTML file. Inlined CSS; zero external references (asserted by `src/export/sanitize-links.ts`).
+**Description.** Convert the generated docs into a single self-contained HTML file. Inlined CSS; zero external references; working TOC anchor navigation via `rehype-slug` (v1.1); Mermaid diagrams rendered inline (v1.1).
 
 **Args.**
 
@@ -464,6 +488,8 @@ logbook export html [--out <path>] [--safe] [--json]
 |------|-------|
 | `--out` | Default: `logbook/exports/index.html`. |
 | `--safe` | Redact absolute paths, usernames, and emails before rendering. Produces `safe-report.md` with the substitution log. |
+| `--theme <path>` | Path to a custom CSS file. Replaces the default inline stylesheet. Sanitized via `sanitizeCss()` (strips `@import`, external `url()`, angle brackets). |
+| `--speaker-mode` | Render `<!-- logbook:speaker start/end -->` blocks as `<div class="speaker-note">` instead of stripping them (default: strip). |
 | `--json` | Emit `ExportReport` as JSON. |
 
 **Implementation note.** The heavy unified/remark/rehype chain is loaded lazily via a non-literal `require()` path so it does not inflate the cold-start CLI bundle (iter3 MONITOR-2 closure). See `src/cli/commands/export/html.ts:31-38`.
@@ -471,14 +497,40 @@ logbook export html [--out <path>] [--safe] [--json]
 ### `logbook export instructor-pack`
 
 ```sh
-logbook export instructor-pack [--out <path>] [--safe] [--json]
+logbook export instructor-pack [--out <path>] [--safe] [--theme <path.css>] [--speaker-mode] [--json]
 ```
 
-**Description.** Bundle docs + ADRs + teaching scripts into a single self-contained HTML for instructor distribution. Same `--safe` semantics as `export html`. Default output: `logbook/exports/instructor-pack.html`.
+**Description.** Bundle docs + ADRs + teaching scripts into a single self-contained HTML for instructor distribution. Same `--safe` and `--theme` semantics as `export html`. Default output: `logbook/exports/instructor-pack.html`.
 
-**Contains.** Table of contents, cross-document links rewritten, generated TOC anchors, no external references.
+**Contains.** Table of contents, cross-document links rewritten, generated TOC anchors (via `rehype-slug`), no external references, Mermaid diagrams rendered inline.
 
-**Known limitation.** Anchor navigation (`#section`) is non-functional pending a post-MVP `rehype-slug` integration. Documented in [`06-construction-log.md`](./06-construction-log.md) as iter5 warning W2.
+**`--speaker-mode`.** When set, renders speaker-note blocks (delimited by `<!-- logbook:speaker start/end -->`) as visible `<div class="speaker-note">` callouts. Default strips them.
+
+### `logbook export pdf`
+
+```sh
+logbook export pdf [--out <path>] [--safe] [--theme <path.css>] [--json]
+```
+
+**Description.** Export the instructor-pack HTML as a PDF via Chrome/Chromium (headless). Requires Chrome to be installed — see Chrome detection below.
+
+**Args.**
+
+| Flag | Notes |
+|------|-------|
+| `--out` | Default: `logbook/exports/instructor-pack.pdf`. |
+| `--safe` | Apply safe-mode redaction before generating HTML. |
+| `--theme` | Path to a custom CSS file (sanitized via `sanitizeCss()`). |
+| `--json` | Emit `ExportReport` as JSON. |
+
+**Chrome detection.** Looks for Chrome in this order:
+1. `CHROME_PATH` env var.
+2. `puppeteer-core`'s `executablePath()`.
+3. Fail-fast with platform-specific install instructions if none found.
+
+**Exit codes.** `0` on success, `1` if Chrome is unavailable or the PDF write fails.
+
+**Note.** `puppeteer-core` is an optional dependency. `pnpm install` without `--no-optional` installs it; bare `pnpm install --no-optional` (used in byte-identity CI) skips it. The `logbook export pdf` command fails fast with a helpful message if the module is not installed.
 
 ---
 
@@ -516,6 +568,17 @@ logbook providers set phase:debugging openai-codex
 
 **Description.** Set a routing rule. `<target>` is `task:<name>` or `phase:<name>`. If the provider alias doesn't yet exist in `providers.json`, a placeholder entry is auto-created (kind `anthropic`, env `ANTHROPIC_API_KEY`).
 
+**Supported provider kinds (v1.1).**
+
+| Kind | Adapter | Auth |
+|------|---------|------|
+| `anthropic` | `@anthropic-ai/claude-agent-sdk` or `@ai-sdk/anthropic` | `ANTHROPIC_API_KEY` or Claude Code session |
+| `openai` | `@ai-sdk/openai` | `OPENAI_API_KEY` |
+| `azure` | `@ai-sdk/openai` | `OPENAI_API_KEY` + `base_url` in config |
+| `google` | `@ai-sdk/google` | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| `local` | `@ai-sdk/openai` with custom `baseURL` | None (requires `ollama serve` on `:11434`) |
+| `codex-cli` | Subprocess (`src/llm/codex-cli.ts`) | Codex binary config |
+
 **Side effects.** Atomic write via temp-file + rename. A backup of `providers.json` is taken in `.logbook/backups/` (idempotent — sentinel if file absent).
 
 **Output.** `{ key, provider, model? }`.
@@ -527,6 +590,15 @@ logbook providers test [--provider <alias>] [--task <name>] [--json]
 ```
 
 **Description.** Send a `ping` to the configured provider and validate the round-trip. Default task name is `providers.test`.
+
+**`--task <name>`** selects the routing entry by task name (uses `by_task` resolution from `providers.json`). Useful for verifying that a specific task routes to the intended provider:
+
+```sh
+logbook providers test --task teaching-script --json
+logbook providers test --task summarize --json
+```
+
+Omitting `--task` is equivalent to `--task providers.test`, which falls through to `default_provider`. This is the backward-compatible default.
 
 **Mock mode.** `LOGBOOK_LLM_MOCK=1` returns `pong` deterministically — used in CI to assert zero real LLM calls.
 

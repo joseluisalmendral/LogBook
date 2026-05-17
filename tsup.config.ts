@@ -108,4 +108,53 @@ export default defineConfig([
     // Re-add native module exclusion on top of noExternal (external wins).
     external: ["better-sqlite3"],
   },
+  {
+    // PDF export bundle (S5.1) — thin orchestrator around puppeteer-core.
+    //
+    // pdf.ts does NOT statically import instructor-pack.ts.
+    // The instructor-pack pipeline (unified/remark/rehype) is loaded lazily at
+    // runtime from dist/export/html.cjs via a non-literal require().
+    // As a result, this bundle only contains the thin orchestration logic
+    // and the STUB_PDF constant — expected size ≤80 KB.
+    //
+    // puppeteer-core is externalized (optionalDependency, not bundled).
+    // pathe is the only small runtime dep — bundled via noExternal fallback.
+    //
+    // CLI lazy-loads this via: require(join(__dirname, "../../export/pdf.cjs"))
+    // Entry: src/export/pdf.ts → dist/export/pdf.cjs
+    // clean: false — preserves all prior build outputs.
+    entry: { "export/pdf": "src/export/pdf.ts" },
+    format: ["cjs"],
+    target: "node22",
+    outDir: "dist",
+    bundle: true,
+    clean: false,
+    dts: false,
+    sourcemap: false,
+    minify: false,
+    treeshake: true,
+    splitting: false,
+    // Do NOT use noExternal: [/.*/] here — it would override the external list
+    // and inline puppeteer-core (4 MB) into the bundle.
+    //
+    // Instead, explicitly externalize the heavy/optional/native deps.
+    // pathe is the only runtime dep used directly in pdf.ts — tsup CJS
+    // handles ESM interop for it automatically via the bundle transform.
+    external: [
+      "better-sqlite3",
+      "puppeteer-core",
+      // Externalize all unified/remark/rehype chain (loaded lazily via html.cjs)
+      "unified",
+      "remark-parse",
+      "remark-rehype",
+      "rehype-slug",
+      "rehype-stringify",
+      // AI SDKs (not used in pdf.ts, but defensive)
+      "ai",
+      "@ai-sdk/anthropic",
+      "@ai-sdk/openai",
+      "@ai-sdk/google",
+      "@anthropic-ai/claude-agent-sdk",
+    ],
+  },
 ]);

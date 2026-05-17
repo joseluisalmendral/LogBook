@@ -18,6 +18,7 @@ import type {
   ShellAction,
   ShellScreen,
   InstallWizardChoices,
+  ProvidersAddWizardFields,
 } from "./types.js";
 import type { ReviewState } from "../types/review.js";
 
@@ -60,6 +61,25 @@ export const HOME_MENU_LEN = HOME_ACTIONS.length;         // 10
 export const CONFIGURE_MENU_LEN = CONFIGURE_ACTIONS.length; // 7
 export const INSTALL_STEP1_LEN = 3; // minimal | standard | teaching
 export const INSTALL_STEP2_LEN = 3; // claude-agent-sdk | api-key | disabled
+
+// Providers screen list actions (for key-hint display in ProvidersScreen)
+export const PROVIDERS_LIST_ACTIONS = [
+  "select-provider",    // Enter → detail
+  "routing",            // R → routing
+  "add",                // A → add wizard
+  "back",               // Q / Esc → back to configure
+] as const;
+
+// Kind choices for providers add wizard step 1
+export const PROVIDERS_KIND_OPTIONS = [
+  "anthropic",
+  "openai",
+  "google",
+  "local",
+  "codex-cli",
+] as const;
+
+export const PROVIDERS_KIND_LEN = PROVIDERS_KIND_OPTIONS.length; // 5
 
 // Preset options for install step 1 (cursor → value)
 const PRESET_OPTIONS = ["minimal", "standard", "teaching"] as const;
@@ -141,6 +161,41 @@ export function reduce(state: ShellState, action: ShellAction): ShellState {
               cursor: Math.max(0, Math.min(screen.cursor + delta, CONFIGURE_MENU_LEN - 1)),
             },
           };
+
+        case "providers": {
+          const view = screen.view;
+          if (view === "list") {
+            const maxIdx = screen.providerCount > 0 ? screen.providerCount - 1 : 0;
+            return {
+              ...state,
+              screen: {
+                ...screen,
+                cursor: Math.max(0, Math.min(screen.cursor + delta, maxIdx)),
+              },
+            };
+          }
+          if (view === "routing") {
+            const maxIdx = screen.routingCount > 0 ? screen.routingCount - 1 : 0;
+            return {
+              ...state,
+              screen: {
+                ...screen,
+                cursor: Math.max(0, Math.min(screen.cursor + delta, maxIdx)),
+              },
+            };
+          }
+          if (view === "add" && screen.step === 1) {
+            return {
+              ...state,
+              screen: {
+                ...screen,
+                cursor: Math.max(0, Math.min(screen.cursor + delta, PROVIDERS_KIND_LEN - 1)),
+              },
+            };
+          }
+          // detail / confirm-remove: no cursor nav
+          return state;
+        }
 
         // review, doing, exiting: navigate is a no-op
         default:
@@ -307,10 +362,21 @@ export function reduce(state: ShellState, action: ShellAction): ShellState {
                 ...state,
                 screen: { kind: "install", step: 1, choices: {}, cursor: 0 },
               };
+            case "manage-providers":
+              // Navigate to providers screen (list view) — read providers on entry in T5.
+              return {
+                ...state,
+                screen: {
+                  kind: "providers",
+                  view: "list",
+                  cursor: 0,
+                  providerCount: 0, // will be refreshed on render in T5
+                },
+              };
             case "back":
               return { ...state, screen: { kind: "home", cursor: 0 } };
             default:
-              // Other configure options (toggle-disabled, manage-providers, etc.)
+              // Other configure options (toggle-disabled, etc.)
               // trigger doing transitions via persist.ts handlers in T5.
               return {
                 ...state,
@@ -346,6 +412,27 @@ export function reduce(state: ShellState, action: ShellAction): ShellState {
 
         case "review":
           return { ...state, screen: { kind: "home", cursor: 0 } };
+
+        case "providers": {
+          const view = screen.view;
+          if (view === "list") {
+            // back from list → configure
+            return { ...state, screen: { kind: "configure", cursor: 0 } };
+          }
+          if (view === "detail" || view === "routing" || view === "add" || view === "confirm-remove") {
+            // back from sub-views → list
+            return {
+              ...state,
+              screen: {
+                kind: "providers",
+                view: "list",
+                cursor: 0,
+                providerCount: 0,
+              },
+            };
+          }
+          return state;
+        }
 
         case "install": {
           const { step, choices } = screen;
@@ -408,6 +495,16 @@ export function reduce(state: ShellState, action: ShellAction): ShellState {
           return { ...state, screen: { kind: "install", step: 1, choices: {}, cursor: 0 } };
         case "review":
           return { ...state, screen: { kind: "review", nested: emptyReviewState() } };
+        case "providers":
+          return {
+            ...state,
+            screen: {
+              kind: "providers",
+              view: "list",
+              cursor: 0,
+              providerCount: 0,
+            },
+          };
         case "doing":
           // go to doing requires using doing.start instead
           return state;
@@ -549,6 +646,16 @@ export function reduce(state: ShellState, action: ShellAction): ShellState {
           return { ...state, screen: { kind: "install", step: 1, choices: {}, cursor: 0 } };
         case "review":
           return { ...state, screen: { kind: "review", nested: emptyReviewState() } };
+        case "providers":
+          return {
+            ...state,
+            screen: {
+              kind: "providers",
+              view: "list",
+              cursor: 0,
+              providerCount: 0,
+            },
+          };
         default:
           return { ...state, screen: { kind: "home", cursor: 0 } };
       }
@@ -590,6 +697,210 @@ export function reduce(state: ShellState, action: ShellAction): ShellState {
     case "modal.confirm.resolve":
       // Implementation deferred to T5.
       return state;
+
+    // -------------------------------------------------------------------------
+    // providers.list.select — select current cursor item → navigate to detail
+    // In T5 the actual provider id is resolved from the cursor + loaded config.
+    // For the pure reducer we use the cursor index as a placeholder id.
+    // -------------------------------------------------------------------------
+    case "providers.list.select": {
+      const screen = state.screen;
+      if (screen.kind !== "providers" || screen.view !== "list") return state;
+      return {
+        ...state,
+        screen: {
+          kind: "providers",
+          view: "detail",
+          selectedProviderId: `provider-${screen.cursor}`,
+          cursor: 0,
+        },
+      };
+    }
+
+    // -------------------------------------------------------------------------
+    // providers.list.routing — open the routing view
+    // -------------------------------------------------------------------------
+    case "providers.list.routing": {
+      const screen = state.screen;
+      if (screen.kind !== "providers" || screen.view !== "list") return state;
+      return {
+        ...state,
+        screen: {
+          kind: "providers",
+          view: "routing",
+          cursor: 0,
+          routingCount: 0, // refreshed on render in T5
+        },
+      };
+    }
+
+    // -------------------------------------------------------------------------
+    // providers.list.back — back from providers list → configure (alias for back)
+    // -------------------------------------------------------------------------
+    case "providers.list.back": {
+      return { ...state, screen: { kind: "configure", cursor: 0 } };
+    }
+
+    // -------------------------------------------------------------------------
+    // providers.add.start — open the add wizard step 1
+    // -------------------------------------------------------------------------
+    case "providers.add.start": {
+      return {
+        ...state,
+        screen: {
+          kind: "providers",
+          view: "add",
+          step: 1,
+          fields: { kind: "", name: "", model: "", envVar: "" },
+          cursor: 0,
+        },
+      };
+    }
+
+    // -------------------------------------------------------------------------
+    // providers.add.next — advance wizard step (requires required fields)
+    // -------------------------------------------------------------------------
+    case "providers.add.next": {
+      const screen = state.screen;
+      if (screen.kind !== "providers" || screen.view !== "add") return state;
+      const { step, fields } = screen;
+
+      if (step === 1) {
+        if (!fields.kind || !fields.kind.trim()) return state; // require kind
+        return {
+          ...state,
+          screen: { ...screen, step: 2, cursor: 0 },
+        };
+      }
+      if (step === 2) {
+        if (!fields.name || !fields.name.trim()) return state; // require name
+        if (!fields.model || !fields.model.trim()) return state; // require model
+        return {
+          ...state,
+          screen: { ...screen, step: 3, cursor: 0 },
+        };
+      }
+      // step 3: no-op (use commit to finalize)
+      return state;
+    }
+
+    // -------------------------------------------------------------------------
+    // providers.add.cancel — cancel wizard → back to list
+    // -------------------------------------------------------------------------
+    case "providers.add.cancel": {
+      return {
+        ...state,
+        screen: {
+          kind: "providers",
+          view: "list",
+          cursor: 0,
+          providerCount: 0,
+        },
+      };
+    }
+
+    // -------------------------------------------------------------------------
+    // providers.add.setField — update a wizard field immutably
+    // -------------------------------------------------------------------------
+    case "providers.add.setField": {
+      const screen = state.screen;
+      if (screen.kind !== "providers" || screen.view !== "add") return state;
+      const newFields: ProvidersAddWizardFields = {
+        ...screen.fields,
+        [action.field]: action.value,
+      };
+      return {
+        ...state,
+        screen: { ...screen, fields: newFields },
+      };
+    }
+
+    // -------------------------------------------------------------------------
+    // providers.add.commit — finalize add wizard → doing screen (step 3 only)
+    // Requires envVar to be set. The actual write happens in T5 persist handler.
+    // Fields are forwarded via opts.providerAdd so resolveHandler can access them.
+    // -------------------------------------------------------------------------
+    case "providers.add.commit": {
+      const screen = state.screen;
+      if (screen.kind !== "providers" || screen.view !== "add") return state;
+      if (!screen.fields.envVar || !screen.fields.envVar.trim()) return state;
+      return {
+        ...state,
+        screen: {
+          kind: "doing",
+          label: "Adding provider...",
+          promise: "pending",
+          returnTo: "providers",
+          opts: {
+            providerAdd: {
+              name: screen.fields.name,
+              kind: screen.fields.kind,
+              model: screen.fields.model,
+              envVar: screen.fields.envVar,
+            },
+          },
+        },
+      };
+    }
+
+    // -------------------------------------------------------------------------
+    // providers.test.invoke — test a provider → doing screen
+    // -------------------------------------------------------------------------
+    case "providers.test.invoke": {
+      return {
+        ...state,
+        screen: {
+          kind: "doing",
+          label: `Testing provider ${action.providerId}...`,
+          promise: "pending",
+          returnTo: "providers",
+        },
+      };
+    }
+
+    // -------------------------------------------------------------------------
+    // providers.remove.request — confirm before remove
+    // -------------------------------------------------------------------------
+    case "providers.remove.request": {
+      return {
+        ...state,
+        screen: {
+          kind: "providers",
+          view: "confirm-remove",
+          providerId: action.providerId,
+          cursor: 0,
+        },
+      };
+    }
+
+    // -------------------------------------------------------------------------
+    // providers.remove.confirm — yes → doing, no → back to detail
+    // -------------------------------------------------------------------------
+    case "providers.remove.confirm": {
+      const screen = state.screen;
+      if (screen.kind !== "providers" || screen.view !== "confirm-remove") return state;
+      if (action.confirmed) {
+        return {
+          ...state,
+          screen: {
+            kind: "doing",
+            label: `Removing provider ${screen.providerId}...`,
+            promise: "pending",
+            returnTo: "providers",
+          },
+        };
+      }
+      // not confirmed → back to detail
+      return {
+        ...state,
+        screen: {
+          kind: "providers",
+          view: "detail",
+          selectedProviderId: screen.providerId,
+          cursor: 0,
+        },
+      };
+    }
 
     // -------------------------------------------------------------------------
     // exit — transition to exiting screen

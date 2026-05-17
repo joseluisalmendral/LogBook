@@ -166,7 +166,17 @@ The TUI walks pending suggestions and unclassified events. Promote what should b
 
 > Use the `logbook-curator` subagent to walk pending items.
 
-### Step 5 — export the instructor pack
+### Step 5 — annotate key moments (optional)
+
+If you want to add context to a specific decision or error that was auto-captured, annotate it:
+
+```sh
+logbook annotate 01HXYZ... --note "This was the pivotal tradeoff — revisit in step 7."
+```
+
+You can find the event ULID from `logbook/docs/timeline.md` or by scanning `events.jsonl`. Annotations are preserved through export and visible in the instructor pack.
+
+### Step 6 — export the instructor pack
 
 ```sh
 logbook export instructor-pack --safe
@@ -178,13 +188,33 @@ logbook export instructor-pack --safe
 - Usernames
 - Email addresses
 
-The output is a single HTML file with: project index, full timeline, all ADRs, all errors + lessons, all teaching scripts, generated TOC. No external network references.
+The output is a single HTML file with: project index, full timeline, all ADRs, all errors + lessons, all teaching scripts, generated TOC. Mermaid diagrams in your docs are rendered as inline SVG. No external network references.
 
-Distribute by attaching the HTML to your LMS, dropping it on a shared drive, or committing it to the tutorial repo as the canonical class material.
+For a custom look, pass a CSS theme:
 
-### Step 6 — students get one file
+```sh
+logbook export instructor-pack --safe --theme ./assets/class-theme.css
+```
 
-That's the deliverable. One HTML. No Node install, no Claude Code, no LogBook required on their side. Double-click → browser → full project history.
+For speaker-note blocks (use `<!-- logbook:speaker start/end -->` to add presenter notes inside any doc):
+
+```sh
+logbook export instructor-pack --safe --speaker-mode
+```
+
+### Step 7 — export as PDF (optional)
+
+If you want to distribute a PDF instead of HTML (requires Chrome):
+
+```sh
+logbook export pdf --safe --out ./class-material.pdf
+```
+
+See [`03-cli-reference.md`](./03-cli-reference.md#logbook-export-pdf) for Chrome installation notes.
+
+### Step 8 — students get one file
+
+That's the deliverable. One HTML (or PDF). No Node install, no Claude Code, no LogBook required on their side. Double-click → browser → full project history.
 
 ---
 

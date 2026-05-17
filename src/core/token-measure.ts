@@ -69,12 +69,12 @@ export const MCP_TOOL_DESCRIPTIONS: readonly string[] = [
   "Log an architectural decision.",         // logbook_decision
   "Log a didactic error.",                  // logbook_error
   "Link a fix to an error.",               // logbook_fix
-  "Log a lesson learned (human-authored).", // logbook_lesson
+  "Log a lesson learned.",                 // logbook_lesson  (SG0: shortened from "Log a lesson learned (human-authored).")
   "Log an external resource.",             // logbook_resource
   "Close a phase with a milestone.",       // logbook_milestone
   "Switch active phase.",                  // logbook_phase
   "Queue a suggestion for human review.",  // logbook_suggest
-  "Get current phase, session, pending.",  // logbook_state
+  "Get phase, session, pending.",          // logbook_state   (SG0: shortened from "Get current phase, session, pending.")
 ];
 
 // ---------------------------------------------------------------------------

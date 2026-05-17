@@ -33,8 +33,8 @@ interface LessonOutput {
 
 export const lessonTool: ToolDef<LessonInput, LessonOutput> = {
   name: "logbook_lesson",
-  // ≤14 words; measured: 6 words / ~7 tokens
-  description: "Log a lesson learned (human-authored).",
+  // ≤14 words; measured: 4 words / ~6 tokens (SG0: shortened from "Log a lesson learned (human-authored).")
+  description: "Log a lesson learned.",
 
   inputSchema: {
     type: "object",

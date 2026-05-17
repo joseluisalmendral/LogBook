@@ -16,9 +16,10 @@ import { normalizeClaudeEvent } from "../../normalize/event.js";
 import type { RawClaudeHookPayload } from "../../normalize/event.js";
 import { appendJsonl } from "../../store/jsonl.js";
 import { resolveProjectRoot, makePaths } from "../../core/paths.js";
-import { readState } from "../../core/state.js";
+import { readState, writeState } from "../../core/state.js";
 import { generateUlid } from "../../util/ulid.js";
 import { buildSessionStartSummary } from "../../hooks/session-start.js";
+import { getGitSha } from "../../connectors/git.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -147,14 +148,33 @@ export async function ingestClaudePayload(opts: IngestOptions): Promise<IngestRe
   const line = JSON.stringify(event);
   await appendJsonl(paths.eventsJsonl, line);
 
-  // 8. SessionStart dispatch — TWO side effects per design §6:
+  // 8. SessionStart dispatch — THREE side effects per design §6 + v1.1 S2.3:
   //    (a) JSONL append (audit) — already done in step 7.
   //    (b) stdout summary — print context memory for Claude Code's agent context injection.
+  //    (c) gitSha cache — capture HEAD SHA once and persist to state.json.
+  //        Subsequent hook events read gitSha from state (0ms, no subprocess).
   //
   //    This branch runs ONLY for SessionStart. All other events skip it.
   //    Never throws — the hook MUST exit 0. Failures degrade silently.
   let sessionStartSummary: string | undefined;
   if (parsed.hook_event_name === "SessionStart") {
+    // (c) Capture and cache gitSha — best-effort, silently degrades.
+    try {
+      const sha = await getGitSha(paths.root);
+      if (sha !== undefined) {
+        const currentState = readState(paths.statePath);
+        currentState.gitSha = sha;
+        currentState.gitShaCapturedAt = new Date().toISOString();
+        writeState(paths.statePath, currentState);
+      }
+    } catch {
+      // Degrade silently — hook must never exit non-zero.
+      if (process.env["LOGBOOK_HOOK_DEBUG"] === "1") {
+        process.stderr.write("[logbook] SessionStart gitSha capture failed\n");
+      }
+    }
+
+    // (b) Build and emit session context summary.
     try {
       const summaryResult = await buildSessionStartSummary({ paths });
       sessionStartSummary = summaryResult.summary;

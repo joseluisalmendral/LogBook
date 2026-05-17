@@ -1,5 +1,5 @@
 /**
- * Safe-export redaction module (T7).
+ * Safe-export redaction module (T7 + S2.4).
  *
  * Provides sanitizeForSafeExport — a pure string-in/string-out function that
  * redacts sensitive content before the markdown is passed to the rehype
@@ -162,6 +162,160 @@ export function sanitizeForSafeExport(
   if (redactTimes) {
     result = result.replace(RE_RFC3339_TIME, "");
   }
+
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// sanitizeCss (S2.4 / D6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Regex to strip ALL @import rules in their common forms:
+ *   @import url("...");
+ *   @import url('...');
+ *   @import url(...);
+ *   @import "...";
+ *   @import '...';
+ *
+ * The pattern is intentionally broad: any @import token followed by
+ * optional url(...) or quoted string, terminated by an optional semicolon.
+ * Uses the `g` flag to strip every occurrence.
+ */
+const RE_CSS_IMPORT = /@import\s+(url\()?["']?[^"')]*["']?\)?;?/g;
+
+/**
+ * Regex to match external url() references:
+ *   url(https://...)
+ *   url("https://...")
+ *   url('https://...')
+ *   url(http://...)
+ *   url(//...)  — protocol-relative
+ *
+ * Captures the outer url( and closing ) so we can replace the whole token
+ * with url().
+ */
+const RE_CSS_EXTERNAL_URL = /url\(\s*["']?(https?:|\/\/)[^"')]+["']?\s*\)/g;
+
+/**
+ * Strip < and > characters from CSS.
+ * Prevents the </style><script> HTML injection escape.
+ */
+const RE_ANGLE_BRACKETS = /[<>]/g;
+
+/**
+ * Sanitize a CSS string supplied via --theme for safe inlining.
+ *
+ * Passes:
+ *  1. Strip all @import rules (any form — prevents external font/stylesheet loading).
+ *  2. Replace external url() references with url() (prevents tracking pixels,
+ *     external fonts, and cursor files via http(s) or protocol-relative URLs).
+ *  3. Strip < and > characters (prevents </style><script> HTML injection).
+ *
+ * The function is PURE — no I/O, no side effects, returns a new string.
+ * It is idempotent: sanitizeCss(sanitizeCss(x)) === sanitizeCss(x).
+ *
+ * Threat model (D6): malicious theme attempts
+ *  (a) external font CDN — blocked by @import strip + url() replacement
+ *  (b) tracking pixel — blocked by url() replacement
+ *  (c) </style><script> escape — blocked by angle-bracket strip
+ *
+ * @param css  Raw CSS string from a user-supplied theme file.
+ * @returns    Sanitized CSS string safe for inlining in an HTML <style> block.
+ */
+// ---------------------------------------------------------------------------
+// sanitizeSvg (S2.1 / D4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Sanitize an SVG string produced by @mermaid-js/mermaid-cli (mmdc).
+ *
+ * Strips known-dangerous SVG patterns before the SVG is inlined into HTML:
+ *  1. <script>…</script> elements (XSS via script injection)
+ *  2. <foreignObject>…</foreignObject> elements (XSS via nested HTML)
+ *  3. <link …> elements (external stylesheet loading)
+ *  4. @import inside <style> blocks (external resource loading)
+ *  5. @font-face with external url() inside <style> blocks
+ *  6. <image href="http(s)://…"> and <image xlink:href="http(s)://…"> (tracking pixels)
+ *  7. <a href="http(s)://…">…</a> href attributes (link-out from SVG)
+ *  8. style="…url(http(s)://…)…" attributes (external background images, cursors)
+ *
+ * After stripping, callers MUST run assertNoExternalRefs() as defense-in-depth.
+ * If any external URL survives, assertNoExternalRefs will throw.
+ *
+ * The function is PURE — no I/O, no side effects, returns a new string.
+ * It is idempotent: sanitizeSvg(sanitizeSvg(x)) === sanitizeSvg(x).
+ *
+ * Design §5.1 + D4 (dual-layer sanitization: strip then assert).
+ *
+ * @param svg  Raw SVG string from mmdc output.
+ * @returns    Sanitized SVG string safe for inlining in HTML.
+ */
+export function sanitizeSvg(svg: string): string {
+  let result = svg;
+
+  // 1. Strip <script>…</script> (any case, any attributes, multi-line)
+  result = result.replace(/<script\b[\s\S]*?<\/script\s*>/gi, "");
+
+  // 2. Strip <foreignObject>…</foreignObject> (any case, multi-line)
+  result = result.replace(/<foreignObject\b[\s\S]*?<\/foreignObject\s*>/gi, "");
+
+  // 3. Strip <link …> self-closing or with slash
+  result = result.replace(/<link\b[^>]*\/?>/gi, "");
+
+  // 4 & 5. Process <style>…</style> blocks: strip @import and @font-face with external src
+  result = result.replace(
+    /<style\b([^>]*)>([\s\S]*?)<\/style\s*>/gi,
+    (_m, attrs: string, body: string) => {
+      // Strip @import lines (any form)
+      let cleaned = body.replace(/@import[^;]+;?/gi, "");
+      // Strip @font-face blocks containing external url()
+      cleaned = cleaned.replace(
+        /@font-face\s*\{[^}]*url\s*\(\s*["']?(?:https?:|\/\/)[^"')]*["']?\s*\)[^}]*\}/gi,
+        ""
+      );
+      return `<style${attrs}>${cleaned}</style>`;
+    }
+  );
+
+  // 6. Strip <image href|xlink:href="http(s)://…"> or "//…" (protocol-relative)
+  result = result.replace(
+    /<image\b[^>]*\b(?:xlink:)?href\s*=\s*["'](?:https?:|\/\/)[^"']*["'][^>]*\/?>/gi,
+    ""
+  );
+
+  // 7. Strip external href from <a> elements — keep text content, drop the <a> wrapper
+  result = result.replace(
+    /<a\b[^>]*\b(?:xlink:)?href\s*=\s*["'](?:https?:|\/\/)[^"']*["'][^>]*>([\s\S]*?)<\/a\s*>/gi,
+    "$1"
+  );
+
+  // 8a. Strip style="…url(http(s)://…)…" attributes (double-quoted)
+  result = result.replace(
+    /\sstyle\s*=\s*"[^"]*url\(\s*["']?(?:https?:|\/\/)[^"')]*["']?\s*\)[^"]*"/gi,
+    ""
+  );
+
+  // 8b. Strip style='…url(http(s)://…)…' attributes (single-quoted)
+  result = result.replace(
+    /\sstyle\s*=\s*'[^']*url\(\s*["']?(?:https?:|\/\/)[^"')]*["']?\s*\)[^']*'/gi,
+    ""
+  );
+
+  return result;
+}
+
+export function sanitizeCss(css: string): string {
+  let result = css;
+
+  // Pass 1: strip @import rules
+  result = result.replace(RE_CSS_IMPORT, "");
+
+  // Pass 2: replace external url() references with empty url()
+  result = result.replace(RE_CSS_EXTERNAL_URL, "url()");
+
+  // Pass 3: strip angle brackets
+  result = result.replace(RE_ANGLE_BRACKETS, "");
 
   return result;
 }

@@ -21,10 +21,18 @@ import { join, basename, dirname } from "pathe";
 import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
+import rehypeSlug from "rehype-slug";
 import rehypeStringify from "rehype-stringify";
 import { INLINE_CSS } from "./inline-css.js";
 import { assertNoExternalRefs } from "./sanitize-links.js";
-import { sanitizeForSafeExport } from "./safe.js";
+import { sanitizeForSafeExport, sanitizeCss } from "./safe.js";
+import { preprocessMermaidPlaceholders, injectMermaidSvgs } from "./mermaid.js";
+import {
+  stripSpeakerBlocks,
+  preprocessSpeakerPlaceholders,
+  injectSpeakerDivs,
+  type SpeakerBlock,
+} from "../generate/speaker-blocks.js";
 import type { ProjectPaths } from "../core/paths.js";
 import type { ExportReport } from "../types/reports.js";
 
@@ -38,6 +46,19 @@ export interface InstructorPackOptions {
   outFile?: string;
   /** Redact paths/users/emails before rendering. Default: false. */
   safe?: boolean;
+  /**
+   * Absolute or relative path to a custom CSS theme file (S2.4).
+   * When set, the file is read (UTF-8), run through sanitizeCss(), and used
+   * INSTEAD of INLINE_CSS. Throws if the file cannot be read.
+   */
+  themePath?: string;
+  /**
+   * Speaker mode (S6.2).
+   * When true, <!-- logbook:speaker start --> ... <!-- logbook:speaker end --> blocks
+   * are rendered as <div class="speaker-note">...</div> in the output HTML.
+   * When false (default), speaker blocks are stripped entirely.
+   */
+  speakerMode?: boolean;
 }
 
 /** A single section in the bundle (one source file). */
@@ -320,28 +341,58 @@ export function rewriteDocLinks(markdown: string): string {
 
 /**
  * Convert a markdown string to an HTML body fragment.
+ *
+ * Pipeline (SG2c refactor — placeholder pattern, no rehype-raw):
+ * 1. preprocessMermaidPlaceholders — replace ```mermaid fences with
+ *    LBMERMAID_<n> bare-text placeholders (renders as <p>LBMERMAID_<n></p>); stash rendered SVGs.
+ * 2. remark-parse — parse markdown AST
+ * 3. remark-rehype — convert to hast (no allowDangerousHtml needed)
+ * 4. rehype-slug — add id attributes to headings for anchor navigation
+ * 5. rehype-stringify — serialize to HTML (comments preserved verbatim)
+ * 6. injectMermaidSvgs — replace placeholder comments with
+ *    <div class="mermaid"><svg>…</svg></div> via string-replace
+ * 7. injectSpeakerDivs (if speakerBlocks provided) — replace <p>LBSPEAKER_N</p>
+ *    paragraphs with <div class="speaker-note">...</div>
  */
-async function markdownToHtml(markdown: string): Promise<string> {
+async function markdownToHtml(
+  markdown: string,
+  speakerBlocks?: SpeakerBlock[],
+): Promise<string> {
+  // Phase 1: extract mermaid fences → placeholders + SVG array.
+  const { markdown: withPlaceholders, svgs } =
+    await preprocessMermaidPlaceholders(markdown);
+
   const processor = unified()
     .use(remarkParse)
-    .use(remarkRehype, { allowDangerousHtml: false })
+    .use(remarkRehype)
+    .use(rehypeSlug)
     .use(rehypeStringify);
 
-  const file = await processor.process(markdown);
-  return String(file);
+  const file = await processor.process(withPlaceholders);
+
+  // Phase 2: inject sanitized SVG divs in place of comment placeholders.
+  let html = injectMermaidSvgs(String(file), svgs);
+
+  // Phase 3 (speaker mode): inject speaker note divs.
+  if (speakerBlocks && speakerBlocks.length > 0) {
+    html = injectSpeakerDivs(html, speakerBlocks);
+  }
+
+  return html;
 }
 
 /**
  * Wrap an HTML body fragment in a complete self-contained HTML document.
+ * @param css  The CSS string to inline (either INLINE_CSS or a sanitized theme).
  */
-function buildHtmlDocument(htmlBody: string, title: string): string {
+function buildHtmlDocument(htmlBody: string, title: string, css: string): string {
   return (
     `<!DOCTYPE html>\n` +
     `<html lang="en">\n` +
     `<head>\n` +
     `  <meta charset="utf-8">\n` +
     `  <title>${title}</title>\n` +
-    `  <style>${INLINE_CSS}</style>\n` +
+    `  <style>${css}</style>\n` +
     `</head>\n` +
     `<body>\n` +
     htmlBody +
@@ -374,6 +425,20 @@ export async function exportInstructorPack(
 ): Promise<ExportReport> {
   const start = Date.now();
   const { paths } = opts;
+
+  // S2.4 — load and sanitize custom theme if provided; otherwise use default.
+  let inlineCss = INLINE_CSS;
+  if (opts.themePath) {
+    let rawTheme: string;
+    try {
+      rawTheme = await readFile(opts.themePath, "utf8");
+    } catch (err) {
+      throw new Error(
+        `theme file could not be read: ${opts.themePath} — ${err instanceof Error ? err.message : String(err)}`
+      );
+    }
+    inlineCss = sanitizeCss(rawTheme);
+  }
 
   const outFile =
     opts.outFile ?? join(paths.dataDir, "exports", "instructor-pack.html");
@@ -428,11 +493,21 @@ export async function exportInstructorPack(
     combinedMarkdown = sanitizeForSafeExport(combinedMarkdown);
   }
 
+  // S6.2 — apply speaker block transformation before the unified pipeline.
+  let speakerBlocks: SpeakerBlock[] | undefined;
+  if (opts.speakerMode) {
+    const result = preprocessSpeakerPlaceholders(combinedMarkdown);
+    combinedMarkdown = result.markdown;
+    speakerBlocks = result.blocks;
+  } else {
+    combinedMarkdown = stripSpeakerBlocks(combinedMarkdown);
+  }
+
   // 6. Convert to HTML
-  const htmlBody = await markdownToHtml(combinedMarkdown);
+  const htmlBody = await markdownToHtml(combinedMarkdown, speakerBlocks);
 
   // 7. Build full document
-  const fullHtml = buildHtmlDocument(htmlBody, "LogBook — Instructor Pack");
+  const fullHtml = buildHtmlDocument(htmlBody, "LogBook — Instructor Pack", inlineCss);
 
   // 8. Assert no external refs
   assertNoExternalRefs(fullHtml);

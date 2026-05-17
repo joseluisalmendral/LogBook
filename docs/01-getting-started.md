@@ -112,29 +112,68 @@ Notes:
 
 LogBook works fully offline except for three commands: `logbook summarize milestone`, `logbook summarize project`, and `logbook teaching-script`. Those call a configured LLM provider.
 
-There are three resolution paths, tried in order:
+### Supported providers
 
-1. **`@anthropic-ai/claude-agent-sdk` with an active Claude Code subscription.** If your shell session is logged into Claude Code (Pro / Max / Team / Enterprise plan), LogBook uses the SDK credit. No API key required. This is the recommended path.
-2. **`ANTHROPIC_API_KEY` environment variable.** Set it in your shell or via direnv:
-   ```sh
-   export ANTHROPIC_API_KEY=sk-ant-...
-   ```
-   LogBook reads it lazily, only when an LLM call is needed.
-3. **Disabled.** If neither path resolves, `summarize` and `teaching-script` print a clear error and exit 1. All other commands continue to work.
+| Provider | Kind | Auth required | Notes |
+|----------|------|---------------|-------|
+| Anthropic (Claude) | `anthropic` | `ANTHROPIC_API_KEY` **or** Claude Code session | Recommended path. Claude Code Pro/Max/Team/Enterprise sessions use the SDK credit — no API key needed. |
+| OpenAI | `openai` | `OPENAI_API_KEY` | Standard API key. ChatGPT Plus subscription is **not** programmatic — it does not provide an API key. You need a separate API key from [platform.openai.com](https://platform.openai.com). |
+| Azure OpenAI | `azure` | `OPENAI_API_KEY` + `base_url` in config | Same `@ai-sdk/openai` under the hood; requires `base_url` set to your Azure endpoint. |
+| Google Gemini | `google` | `GOOGLE_GENERATIVE_AI_API_KEY` | API key from [aistudio.google.com](https://aistudio.google.com). Free tier available. Uses `@ai-sdk/google`. |
+| Ollama (local) | `local` | None (requires Ollama running on `:11434`) | No API key. Runs entirely offline. Start with `ollama serve`; pull a model with `ollama pull llama3.2`. The default base URL is `http://localhost:11434/v1`. |
+| Codex CLI | `codex-cli` | OpenAI API key (via Codex CLI config) | Subprocess adapter — delegates to the `codex` binary. Coming in v1.1-SG1b. |
 
-Test the configured provider end-to-end without spending tokens:
+### Auth resolution order
+
+When LogBook makes an LLM call, it resolves auth in this priority order:
+
+1. **Claude Code session** — if `CLAUDE_CODE_SESSION_ID` or `CLAUDECODE` env is set (you are inside a Claude Code session), LogBook uses `@anthropic-ai/claude-agent-sdk`. No API key needed. This is the zero-config path.
+2. **`ANTHROPIC_API_KEY`** — used for `anthropic` kind providers when present.
+3. **`OPENAI_API_KEY`** — used for `openai` and `azure` kind providers when present.
+4. **`GOOGLE_GENERATIVE_AI_API_KEY`** — used for `google` kind providers when present.
+5. **Ollama local** — `local` kind providers resolve without a key; the placeholder value `"ollama"` is passed to satisfy the SDK parameter but is not sent to any remote server.
+6. **Provider-specific env var** — the `api_key_env` field in `providers.json` is checked as a final fallback.
+7. **None** — `summarize` and `teaching-script` print `error.code: no_auth` and exit 1. All other commands continue to work.
+
+### Quick setup by provider
+
+**Anthropic (recommended if you have Claude Code):**
+No setup needed — works automatically inside a Claude Code session.
+
+**Anthropic API key:**
+```sh
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+**Google Gemini:**
+```sh
+export GOOGLE_GENERATIVE_AI_API_KEY=AIza...
+logbook providers set task:teaching-script gemini-default --model gemini-2.0-flash
+```
+
+**Ollama (local, no API key):**
+```sh
+ollama serve          # start the Ollama server (if not running as a service)
+ollama pull llama3.2  # pull the model you want
+logbook providers set task:teaching-script ollama-local --model llama3.2
+# providers.json entry: { "kind": "local", "base_url": "http://localhost:11434/v1", ... }
+```
+
+Test the configured provider end-to-end:
 
 ```sh
 logbook providers test --json
+# or test a specific routing entry:
+logbook providers test --task teaching-script --json
 ```
 
 A successful response prints `ok: true` with `provider`, `model`, and a `latencyMs`. A failure prints `ok: false` with the error code (most commonly `no_auth`).
 
-You can swap models per task in `.logbook/providers.json`:
+You can inspect or swap routing rules at any time:
 
 ```sh
-logbook providers set task:teaching-script anthropic-claude-sdk --model claude-opus-4-6
 logbook providers list
+logbook providers set task:teaching-script anthropic-claude-sdk --model claude-opus-4-6
 ```
 
 ## Common first-time gotchas

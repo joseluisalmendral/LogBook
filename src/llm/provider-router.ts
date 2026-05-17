@@ -119,12 +119,36 @@ function resolveAuth(providerEntry: ProviderEntry): LlmAuthResolution {
     return { kind: "api-key", envVar: "ANTHROPIC_API_KEY", value: anthropicKey };
   }
 
-  // 3. OPENAI_API_KEY → vercel-sdk with OpenAI (only for openai kind providers)
+  // 3a. OPENAI_API_KEY → vercel-sdk with OpenAI (only for openai/azure kind providers)
   if (providerEntry.kind === "openai" || providerEntry.kind === "azure") {
     const openaiKey = process.env["OPENAI_API_KEY"];
     if (openaiKey !== undefined && openaiKey !== "") {
       return { kind: "api-key", envVar: "OPENAI_API_KEY", value: openaiKey };
     }
+  }
+
+  // 3b. GOOGLE_GENERATIVE_AI_API_KEY → vercel-sdk with Google (only for google kind)
+  if (providerEntry.kind === "google") {
+    const googleKey = process.env["GOOGLE_GENERATIVE_AI_API_KEY"];
+    if (googleKey !== undefined && googleKey !== "") {
+      return { kind: "api-key", envVar: "GOOGLE_GENERATIVE_AI_API_KEY", value: googleKey };
+    }
+  }
+
+  // 3c. local kind (Ollama) — no real API key required; use placeholder if no env var
+  if (providerEntry.kind === "local") {
+    // Ollama runs locally — auth.value is passed as a placeholder to @ai-sdk/openai
+    // but is not sent over the network. We still resolve through api_key_env so the
+    // user can override if a remote Ollama instance requires a key.
+    const localKey = providerEntry.api_key_env ? process.env[providerEntry.api_key_env] : undefined;
+    const resolvedKey = localKey ?? "ollama";
+    return { kind: "api-key", envVar: providerEntry.api_key_env ?? "OLLAMA_API_KEY", value: resolvedKey };
+  }
+
+  // 3d. codex-cli kind — subprocess adapter, no API key used; resolve as "none"
+  // The codexCliAdapter handles auth independently (uses the codex CLI binary directly).
+  if (providerEntry.kind === "codex-cli") {
+    return { kind: "none" };
   }
 
   // 4. Inline key from providers.json (api_key_env points to env var)
@@ -236,7 +260,10 @@ export function createRouter(opts: CreateRouterOpts): LlmProviderRouter {
       // ------ 3. Resolve auth ----------------------------------------------
       const auth = resolveAuth(providerEntry);
 
-      if (auth.kind === "none" && opts.mockAdapter === undefined) {
+      // codex-cli does not use API key auth — its adapter handles the subprocess directly
+      const isAuthless = providerEntry.kind === "codex-cli";
+
+      if (auth.kind === "none" && opts.mockAdapter === undefined && !isAuthless) {
         return makeErrorResult(
           "no_auth",
           "No authentication available: set ANTHROPIC_API_KEY, OPENAI_API_KEY, or run inside Claude Code",
@@ -274,7 +301,7 @@ export function createRouter(opts: CreateRouterOpts): LlmProviderRouter {
         try {
           const callFn = opts.mockAdapter
             ? () => opts.mockAdapter!(adapterInput)
-            : () => selectAdapter(auth)(adapterInput);
+            : () => selectAdapter(auth, providerEntry)(adapterInput);
 
           const text = await withTimeout(callFn(), timeoutMs);
 
@@ -331,12 +358,26 @@ export function createRouter(opts: CreateRouterOpts): LlmProviderRouter {
 // ---------------------------------------------------------------------------
 
 /**
- * Selects the appropriate real SDK adapter based on auth resolution.
+ * Selects the appropriate real SDK adapter based on auth resolution and provider kind.
  * Note: this is NOT called when opts.mockAdapter is provided.
+ *
+ * Dispatch order:
+ *   1. codex-cli kind → codexCliAdapter (subprocess, bypasses Vercel SDK)
+ *   2. claude-agent-sdk auth → claudeSdkAdapter
+ *   3. api-key auth → vercelSdkAdapter
  */
 function selectAdapter(
-  auth: LlmAuthResolution
+  auth: LlmAuthResolution,
+  providerEntry?: ProviderEntry
 ): (input: LlmAdapterCallInput) => Promise<string> {
+  // codex-cli is a subprocess adapter — does not use Vercel SDK or claude-agent-sdk
+  if (providerEntry?.kind === "codex-cli") {
+    return async (input: LlmAdapterCallInput) => {
+      const { codexCliAdapter } = await import("./codex-cli.js");
+      return codexCliAdapter(input);
+    };
+  }
+
   if (auth.kind === "claude-agent-sdk") {
     return async (input: LlmAdapterCallInput) => {
       const { claudeSdkAdapter } = await import("./claude-sdk.js");

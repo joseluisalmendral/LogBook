@@ -16,6 +16,7 @@ import { resolveProjectRoot, makePaths } from "../../core/paths.js";
 import { appendJsonl } from "../../store/jsonl.js";
 import { openIndex, closeIndex } from "../../store/sqlite.js";
 import { generateUlid } from "../../util/ulid.js";
+import { getGitSha } from "../../connectors/git.js";
 
 /** Defensive comma-split: handles empty strings, single values, whitespace. */
 function splitComma(s: string | undefined): string[] {
@@ -83,6 +84,14 @@ export default defineCommand({
     const id = generateUlid();
     const ts = new Date().toISOString();
 
+    // Best-effort gitSha (v1.1 S2.3): fresh subprocess for manual commands.
+    let gitSha: string | undefined;
+    try {
+      gitSha = await getGitSha(root);
+    } catch {
+      // Degrade silently — git unavailable or not a repo is fine.
+    }
+
     // Build event — TOP-LEVEL fields (T10b.D1 convention).
     const event: Record<string, unknown> = {
       id,
@@ -93,6 +102,7 @@ export default defineCommand({
       sessionIds,
       decisionIds,
       tags,
+      ...(gitSha !== undefined && { gitSha }),
     };
 
     try {
