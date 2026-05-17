@@ -1,0 +1,28 @@
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+indent_style = space
+indent_size = 2
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Banner module — trailing whitespace on each banner line is load-bearing
+# (it aligns the g descender column in the ASCII art). Editors / linters
+# MUST NOT strip it.
+[src/tui/banner.ts]
+trim_trailing_whitespace = false
+
+# CRLF fixture content must keep its line endings byte-identical to disk.
+[tests/fixtures/crlf/**]
+end_of_line = crlf
+trim_trailing_whitespace = false
+
+[tests/fixtures/crlf-standard/**]
+end_of_line = crlf
+trim_trailing_whitespace = false
+
+[tests/fixtures/statusline/crlf-*.json]
+end_of_line = crlf
+trim_trailing_whitespace = false

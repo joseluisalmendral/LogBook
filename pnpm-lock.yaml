@@ -104,7 +104,7 @@ importers:
         version: 3.2.4(@types/debug@4.1.13)(@types/node@22.19.19)(jiti@1.21.7)(tsx@4.22.0)
     optionalDependencies:
       puppeteer-core:
-        specifier: ^25.0.2
+        specifier: 25.0.2
         version: 25.0.2
 
 packages:
@@ -3566,23 +3566,23 @@ snapshots:
       '@floating-ui/core': 1.7.5
       '@floating-ui/utils': 0.2.11
 
-  '@floating-ui/react-dom@2.1.8(react-dom@19.2.6(react@18.3.1))(react@19.2.6)':
+  '@floating-ui/react-dom@2.1.8(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@floating-ui/dom': 1.7.6
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
 
-  '@floating-ui/react@0.26.28(react-dom@19.2.6(react@18.3.1))(react@19.2.6)':
+  '@floating-ui/react@0.26.28(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@floating-ui/react-dom': 2.1.8(react-dom@19.2.6(react@18.3.1))(react@19.2.6)
+      '@floating-ui/react-dom': 2.1.8(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@floating-ui/utils': 0.2.11
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
       tabbable: 6.4.0
 
-  '@floating-ui/react@0.27.19(react-dom@19.2.6(react@18.3.1))(react@19.2.6)':
+  '@floating-ui/react@0.27.19(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@floating-ui/react-dom': 2.1.8(react-dom@19.2.6(react@18.3.1))(react@19.2.6)
+      '@floating-ui/react-dom': 2.1.8(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@floating-ui/utils': 0.2.11
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
@@ -3592,12 +3592,12 @@ snapshots:
 
   '@fortawesome/fontawesome-free@7.2.0': {}
 
-  '@headlessui/react@2.2.10(react-dom@19.2.6(react@18.3.1))(react@19.2.6)':
+  '@headlessui/react@2.2.10(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
-      '@floating-ui/react': 0.26.28(react-dom@19.2.6(react@18.3.1))(react@19.2.6)
-      '@react-aria/focus': 3.22.0(react-dom@19.2.6(react@18.3.1))(react@19.2.6)
-      '@react-aria/interactions': 3.28.0(react-dom@19.2.6(react@18.3.1))(react@19.2.6)
-      '@tanstack/react-virtual': 3.13.24(react-dom@19.2.6(react@18.3.1))(react@19.2.6)
+      '@floating-ui/react': 0.26.28(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@react-aria/focus': 3.22.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@react-aria/interactions': 3.28.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@tanstack/react-virtual': 3.13.24(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
       use-sync-external-store: 1.6.0(react@19.2.6)
@@ -3807,19 +3807,19 @@ snapshots:
       - supports-color
     optional: true
 
-  '@react-aria/focus@3.22.0(react-dom@19.2.6(react@18.3.1))(react@19.2.6)':
+  '@react-aria/focus@3.22.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@swc/helpers': 0.5.21
       react: 19.2.6
-      react-aria: 3.48.0(react-dom@19.2.6(react@18.3.1))(react@19.2.6)
+      react-aria: 3.48.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react-dom: 19.2.6(react@19.2.6)
 
-  '@react-aria/interactions@3.28.0(react-dom@19.2.6(react@18.3.1))(react@19.2.6)':
+  '@react-aria/interactions@3.28.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@react-types/shared': 3.34.0(react@19.2.6)
       '@swc/helpers': 0.5.21
       react: 19.2.6
-      react-aria: 3.48.0(react-dom@19.2.6(react@18.3.1))(react@19.2.6)
+      react-aria: 3.48.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react-dom: 19.2.6(react@19.2.6)
 
   '@react-types/shared@3.34.0(react@19.2.6)':
@@ -3909,7 +3909,7 @@ snapshots:
     dependencies:
       tslib: 2.8.1
 
-  '@tanstack/react-virtual@3.13.24(react-dom@19.2.6(react@18.3.1))(react@19.2.6)':
+  '@tanstack/react-virtual@3.13.24(react-dom@19.2.6(react@19.2.6))(react@19.2.6)':
     dependencies:
       '@tanstack/virtual-core': 3.14.0
       react: 19.2.6
@@ -4147,8 +4147,8 @@ snapshots:
 
   '@zenuml/core@3.49.0(@types/react@18.3.28)(tsx@4.22.0)':
     dependencies:
-      '@floating-ui/react': 0.27.19(react-dom@19.2.6(react@18.3.1))(react@19.2.6)
-      '@headlessui/react': 2.2.10(react-dom@19.2.6(react@18.3.1))(react@19.2.6)
+      '@floating-ui/react': 0.27.19(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      '@headlessui/react': 2.2.10(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       '@headlessui/tailwindcss': 0.2.2(tailwindcss@3.4.19(tsx@4.22.0))
       antlr4: 4.11.0
       class-variance-authority: 0.7.1
@@ -5829,7 +5829,7 @@ snapshots:
       minimist: 1.2.8
       strip-json-comments: 2.0.1
 
-  react-aria@3.48.0(react-dom@19.2.6(react@18.3.1))(react@19.2.6):
+  react-aria@3.48.0(react-dom@19.2.6(react@19.2.6))(react@19.2.6):
     dependencies:
       '@internationalized/date': 3.12.1
       '@internationalized/number': 3.6.6

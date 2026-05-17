@@ -5,6 +5,7 @@
  * Uses React.createElement (no JSX) to match src/review/tui.ts convention.
  *
  * Layout:
+ *   Banner (animated, line-reveal, cyan)
  *   Breadcrumb ["LogBook"]
  *   ─────────────────────────────────
  *   Project: /path/to/project  [standard]  [enabled]
@@ -21,6 +22,7 @@
 import React from "react";
 import { Box, Text } from "ink";
 import {
+  Banner,
   Breadcrumb,
   TokenBudgetBar,
   KeybindingsFooter,
@@ -107,6 +109,9 @@ export function HomeScreen({ state, dispatch: _dispatch }: HomeScreenProps): Rea
   return React.createElement(
     Box,
     { flexDirection: "column" },
+
+    // Banner (animated line-reveal; auto-skips in tests / no-anim env)
+    React.createElement(Banner, {}),
 
     // Breadcrumb
     React.createElement(Breadcrumb, { path: ["LogBook"] }),

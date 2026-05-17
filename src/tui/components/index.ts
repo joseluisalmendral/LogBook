@@ -14,3 +14,11 @@ export type { BreadcrumbProps } from "./breadcrumb.js";
 
 export { ModalConfirm } from "./modal-confirm.js";
 export type { ModalConfirmProps } from "./modal-confirm.js";
+
+export {
+  Banner,
+  shouldSkipBannerAnimation,
+  BANNER_ANIMATION_STEP_MS,
+  BANNER_LINE_COUNT,
+} from "./banner.js";
+export type { BannerProps } from "./banner.js";
