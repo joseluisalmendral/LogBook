@@ -61,6 +61,9 @@ export default defineCommand({
     }
 
     const paths = makePaths(root);
+    const outPathArg = typeof args["out"] === "string" && args["out"]
+      ? args["out"]
+      : undefined;
     const isMock = process.env["LOGBOOK_LLM_MOCK"] === "1";
 
     const router = createRouter({
@@ -69,7 +72,11 @@ export default defineCommand({
       ...(isMock && { sleep: async () => {} }),
     });
 
-    const result = await summarizeProject({ router, paths });
+    const result = await summarizeProject({
+      router,
+      paths,
+      ...(outPathArg !== undefined && { outPath: outPathArg }),
+    });
 
     if (args["json"]) {
       process.stdout.write(JSON.stringify(result, null, 2) + "\n");

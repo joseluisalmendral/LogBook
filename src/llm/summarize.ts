@@ -31,6 +31,8 @@ import { readContext, type RenderEvent } from "../generate/render-context.js";
 export interface SummarizeOptions {
   router: LlmProviderRouter;
   paths: ProjectPaths;
+  /** Override output path. Default: <paths.dataDir>/evidence/summaries/<id>.md */
+  outPath?: string;
 }
 
 export interface SummarizeMilestoneResult {
@@ -104,7 +106,7 @@ function summaryPath(paths: ProjectPaths, id: string): string {
 export async function summarizeMilestone(
   opts: SummarizeOptions & { milestoneId: string }
 ): Promise<SummarizeMilestoneResult> {
-  const { router, paths, milestoneId } = opts;
+  const { router, paths, milestoneId, outPath } = opts;
 
   // 1. Read events
   let ctx: Awaited<ReturnType<typeof readContext>>;
@@ -169,11 +171,11 @@ export async function summarizeMilestone(
     return { ok: false, error: `${errCode}: ${errMsg}` };
   }
 
-  // 6. Write output file atomically
-  const outPath = summaryPath(paths, resolvedId);
-  const bytes = atomicWrite(outPath, callResult.text);
+  // 6. Write output file atomically (use outPath override if provided)
+  const finalOutPath = outPath ?? summaryPath(paths, resolvedId);
+  const bytes = atomicWrite(finalOutPath, callResult.text);
 
-  return { ok: true, summaryPath: outPath, bytes };
+  return { ok: true, summaryPath: finalOutPath, bytes };
 }
 
 // ---------------------------------------------------------------------------
@@ -193,7 +195,7 @@ export async function summarizeMilestone(
 export async function summarizeProject(
   opts: SummarizeOptions
 ): Promise<SummarizeMilestoneResult> {
-  const { router, paths } = opts;
+  const { router, paths, outPath } = opts;
 
   // 1. Read events
   let ctx: Awaited<ReturnType<typeof readContext>>;
@@ -264,9 +266,9 @@ export async function summarizeProject(
     return { ok: false, error: `${errCode}: ${errMsg}` };
   }
 
-  // 5. Write output file atomically
-  const outPath = summaryPath(paths, "project");
-  const bytes = atomicWrite(outPath, callResult.text);
+  // 5. Write output file atomically (use outPath override if provided)
+  const finalOutPath = outPath ?? summaryPath(paths, "project");
+  const bytes = atomicWrite(finalOutPath, callResult.text);
 
-  return { ok: true, summaryPath: outPath, bytes };
+  return { ok: true, summaryPath: finalOutPath, bytes };
 }

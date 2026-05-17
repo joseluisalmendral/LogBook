@@ -21,6 +21,7 @@ import { join, basename, dirname } from "pathe";
 import { unified } from "unified";
 import remarkParse from "remark-parse";
 import remarkRehype from "remark-rehype";
+import rehypeSlug from "rehype-slug";
 import rehypeStringify from "rehype-stringify";
 import { INLINE_CSS } from "./inline-css.js";
 import { assertNoExternalRefs } from "./sanitize-links.js";
@@ -325,6 +326,7 @@ async function markdownToHtml(markdown: string): Promise<string> {
   const processor = unified()
     .use(remarkParse)
     .use(remarkRehype, { allowDangerousHtml: false })
+    .use(rehypeSlug)
     .use(rehypeStringify);
 
   const file = await processor.process(markdown);

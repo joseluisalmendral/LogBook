@@ -23,6 +23,7 @@ import { buildTimelineDoc } from "./timeline-doc.js";
 import { buildErrorsDoc } from "./errors-doc.js";
 import { readContext } from "./render-context.js";
 import { upsertGeneratedBlock } from "./blocks.js";
+import { sanitizeForSafeExport } from "../export/safe.js";
 import type { ProjectPaths } from "../core/paths.js";
 import type { BuildReport } from "../types/reports.js";
 
@@ -57,10 +58,13 @@ const GENERATORS: GeneratorSpec[] = [
  *
  * @param opts.paths  Project paths (from makePaths).
  * @param opts.outDir Output directory (default: <paths.dataDir>/docs).
+ * @param opts.safe   When true, run sanitizeForSafeExport on each generated body
+ *                    before upserting into the block marker. Default: false.
  */
 export async function runAllGenerators(opts: {
   paths: ProjectPaths;
   outDir?: string;
+  safe?: boolean;
 }): Promise<BuildReport> {
   const startMs = Date.now();
   const outDir = opts.outDir ?? join(opts.paths.dataDir, "docs");
@@ -73,7 +77,12 @@ export async function runAllGenerators(opts: {
 
   for (const spec of GENERATORS) {
     const file = join(outDir, spec.filename);
-    const body = spec.build(ctx);
+    let body = spec.build(ctx);
+
+    // Safe-export pass: redact before block upsert.
+    if (opts.safe) {
+      body = sanitizeForSafeExport(body);
+    }
 
     const { written } = await upsertGeneratedBlock({
       file,
