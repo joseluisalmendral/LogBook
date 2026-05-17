@@ -223,6 +223,88 @@ const RE_ANGLE_BRACKETS = /[<>]/g;
  * @param css  Raw CSS string from a user-supplied theme file.
  * @returns    Sanitized CSS string safe for inlining in an HTML <style> block.
  */
+// ---------------------------------------------------------------------------
+// sanitizeSvg (S2.1 / D4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Sanitize an SVG string produced by @mermaid-js/mermaid-cli (mmdc).
+ *
+ * Strips known-dangerous SVG patterns before the SVG is inlined into HTML:
+ *  1. <script>…</script> elements (XSS via script injection)
+ *  2. <foreignObject>…</foreignObject> elements (XSS via nested HTML)
+ *  3. <link …> elements (external stylesheet loading)
+ *  4. @import inside <style> blocks (external resource loading)
+ *  5. @font-face with external url() inside <style> blocks
+ *  6. <image href="http(s)://…"> and <image xlink:href="http(s)://…"> (tracking pixels)
+ *  7. <a href="http(s)://…">…</a> href attributes (link-out from SVG)
+ *  8. style="…url(http(s)://…)…" attributes (external background images, cursors)
+ *
+ * After stripping, callers MUST run assertNoExternalRefs() as defense-in-depth.
+ * If any external URL survives, assertNoExternalRefs will throw.
+ *
+ * The function is PURE — no I/O, no side effects, returns a new string.
+ * It is idempotent: sanitizeSvg(sanitizeSvg(x)) === sanitizeSvg(x).
+ *
+ * Design §5.1 + D4 (dual-layer sanitization: strip then assert).
+ *
+ * @param svg  Raw SVG string from mmdc output.
+ * @returns    Sanitized SVG string safe for inlining in HTML.
+ */
+export function sanitizeSvg(svg: string): string {
+  let result = svg;
+
+  // 1. Strip <script>…</script> (any case, any attributes, multi-line)
+  result = result.replace(/<script\b[\s\S]*?<\/script\s*>/gi, "");
+
+  // 2. Strip <foreignObject>…</foreignObject> (any case, multi-line)
+  result = result.replace(/<foreignObject\b[\s\S]*?<\/foreignObject\s*>/gi, "");
+
+  // 3. Strip <link …> self-closing or with slash
+  result = result.replace(/<link\b[^>]*\/?>/gi, "");
+
+  // 4 & 5. Process <style>…</style> blocks: strip @import and @font-face with external src
+  result = result.replace(
+    /<style\b([^>]*)>([\s\S]*?)<\/style\s*>/gi,
+    (_m, attrs: string, body: string) => {
+      // Strip @import lines (any form)
+      let cleaned = body.replace(/@import[^;]+;?/gi, "");
+      // Strip @font-face blocks containing external url()
+      cleaned = cleaned.replace(
+        /@font-face\s*\{[^}]*url\s*\(\s*["']?(?:https?:|\/\/)[^"')]*["']?\s*\)[^}]*\}/gi,
+        ""
+      );
+      return `<style${attrs}>${cleaned}</style>`;
+    }
+  );
+
+  // 6. Strip <image href|xlink:href="http(s)://…"> or "//…" (protocol-relative)
+  result = result.replace(
+    /<image\b[^>]*\b(?:xlink:)?href\s*=\s*["'](?:https?:|\/\/)[^"']*["'][^>]*\/?>/gi,
+    ""
+  );
+
+  // 7. Strip external href from <a> elements — keep text content, drop the <a> wrapper
+  result = result.replace(
+    /<a\b[^>]*\b(?:xlink:)?href\s*=\s*["'](?:https?:|\/\/)[^"']*["'][^>]*>([\s\S]*?)<\/a\s*>/gi,
+    "$1"
+  );
+
+  // 8a. Strip style="…url(http(s)://…)…" attributes (double-quoted)
+  result = result.replace(
+    /\sstyle\s*=\s*"[^"]*url\(\s*["']?(?:https?:|\/\/)[^"')]*["']?\s*\)[^"]*"/gi,
+    ""
+  );
+
+  // 8b. Strip style='…url(http(s)://…)…' attributes (single-quoted)
+  result = result.replace(
+    /\sstyle\s*=\s*'[^']*url\(\s*["']?(?:https?:|\/\/)[^"')]*["']?\s*\)[^']*'/gi,
+    ""
+  );
+
+  return result;
+}
+
 export function sanitizeCss(css: string): string {
   let result = css;
 

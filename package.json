@@ -31,6 +31,7 @@
     "pathe": "^2.0.3",
     "proper-lockfile": "^4.1.2",
     "react": "18.3.1",
+    "rehype-raw": "7.0.0",
     "rehype-slug": "6.0.0",
     "rehype-stringify": "10.0.1",
     "remark-parse": "11.0.0",
@@ -40,6 +41,7 @@
     "valibot": "^1.0.0"
   },
   "devDependencies": {
+    "@mermaid-js/mermaid-cli": "11.15.0",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.15.17",
     "@types/proper-lockfile": "^4.1.4",
