@@ -62,60 +62,118 @@ export function DoingScreen({ state, dispatch: _dispatch }: DoingScreenProps): R
     return () => clearInterval(id);
   }, [promise]);
 
-  // Pending state: show animated spinner + label
+  // Pending state: show animated spinner + label inside a yellow bordered box
   if (promise === "pending") {
     const spinnerChar = SPINNER_FRAMES[frameIndex] ?? SPINNER_FRAMES[0] ?? "●";
     return React.createElement(
       Box,
       { flexDirection: "column" },
-      React.createElement(Breadcrumb, { path: ["LogBook", "Working..."] }),
-      React.createElement(Text, { dimColor: true }, "─".repeat(60)),
+      React.createElement(Breadcrumb, { path: ["LogBook", "Working"] }),
+      React.createElement(Text, null, ""),
       React.createElement(
         Box,
-        { flexDirection: "row", gap: 1 },
-        React.createElement(Text, { color: "yellow" }, spinnerChar),
-        React.createElement(Text, { bold: true }, label),
+        {
+          flexDirection: "column",
+          borderStyle: "round",
+          borderColor: "yellow",
+          paddingX: 1,
+          paddingY: 0,
+        },
+        React.createElement(
+          Box,
+          { flexDirection: "row", gap: 1 },
+          React.createElement(Text, { color: "yellow", bold: true }, spinnerChar),
+          React.createElement(Text, { bold: true }, label),
+        ),
+        React.createElement(Text, { dimColor: true }, ""),
+        React.createElement(
+          Text,
+          { dimColor: true },
+          "Please wait — this usually takes a couple of seconds.",
+        ),
       ),
-      React.createElement(Text, { dimColor: true }, ""),
-      React.createElement(Text, { dimColor: true }, "Please wait..."),
     );
   }
 
-  // OK state: action completed successfully
+  // OK state: action completed successfully — green bordered box
   if (promise === "ok") {
     return React.createElement(
       Box,
       { flexDirection: "column" },
       React.createElement(Breadcrumb, { path: ["LogBook", "Done"] }),
-      React.createElement(Text, { dimColor: true }, "─".repeat(60)),
-      React.createElement(Text, { color: "green", bold: true }, `✓ ${label} — completed`),
-      message
-        ? React.createElement(
-            Box,
-            { flexDirection: "column", marginTop: 1 },
-            React.createElement(Text, null, message),
-          )
-        : null,
-      React.createElement(Text, { dimColor: true }, "─".repeat(60)),
-      React.createElement(Text, { dimColor: true }, "Press enter to dismiss."),
+      React.createElement(Text, null, ""),
+      React.createElement(
+        Box,
+        {
+          flexDirection: "column",
+          borderStyle: "round",
+          borderColor: "green",
+          paddingX: 1,
+          paddingY: 0,
+        },
+        React.createElement(
+          Box,
+          { flexDirection: "row", gap: 1 },
+          React.createElement(Text, { color: "green", bold: true }, "✓"),
+          React.createElement(Text, { bold: true }, `${label} completed`),
+        ),
+        message
+          ? React.createElement(
+              Box,
+              { flexDirection: "column", marginTop: 1 },
+              React.createElement(Text, null, message),
+            )
+          : null,
+      ),
+      React.createElement(Text, null, ""),
+      React.createElement(
+        Box,
+        { flexDirection: "row" },
+        React.createElement(Text, { bold: true, color: "green" }, "  ▶ "),
+        React.createElement(Text, null, "Press "),
+        React.createElement(Text, { bold: true, color: "cyan" }, "Enter"),
+        React.createElement(Text, null, " to continue"),
+      ),
     );
   }
 
-  // Error state: action failed
+  // Error state: action failed — red bordered box
   return React.createElement(
     Box,
     { flexDirection: "column" },
     React.createElement(Breadcrumb, { path: ["LogBook", "Error"] }),
-    React.createElement(Text, { dimColor: true }, "─".repeat(60)),
-    React.createElement(Text, { color: "red", bold: true }, `✗ ${label} — failed`),
-    message
-      ? React.createElement(
-          Box,
-          { flexDirection: "column", marginTop: 1 },
-          React.createElement(Text, { color: "red" }, message),
-        )
-      : null,
-    React.createElement(Text, { dimColor: true }, "─".repeat(60)),
-    React.createElement(Text, { dimColor: true }, "Press enter to dismiss."),
+    React.createElement(Text, null, ""),
+    React.createElement(
+      Box,
+      {
+        flexDirection: "column",
+        borderStyle: "round",
+        borderColor: "red",
+        paddingX: 1,
+        paddingY: 0,
+      },
+      React.createElement(
+        Box,
+        { flexDirection: "row", gap: 1 },
+        React.createElement(Text, { color: "red", bold: true }, "✗"),
+        React.createElement(Text, { bold: true }, `${label} failed`),
+      ),
+      message
+        ? React.createElement(
+            Box,
+            { flexDirection: "column", marginTop: 1 },
+            React.createElement(Text, { color: "red" }, message),
+          )
+        : null,
+    ),
+    React.createElement(Text, null, ""),
+    React.createElement(
+      Box,
+      { flexDirection: "row" },
+      React.createElement(Text, { bold: true, color: "red" }, "  ▶ "),
+      React.createElement(Text, null, "Press "),
+      React.createElement(Text, { bold: true, color: "cyan" }, "Enter"),
+      React.createElement(Text, null, " to dismiss"),
+    ),
   );
 }

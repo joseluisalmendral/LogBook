@@ -93,7 +93,7 @@ describe("install-wizard end-to-end keypress flow (regression coverage)", () => 
 
       await tick();
       const frame = instance.lastFrame();
-      expect(frame).toContain("Step 1 of 3");
+      expect(frame).toContain("[●] Preset");
       expect(frame).toContain("Choose a preset");
       instance.unmount();
     },
@@ -110,7 +110,7 @@ describe("install-wizard end-to-end keypress flow (regression coverage)", () => 
 
       await tick();
       // Sanity: we start on step 1
-      expect(instance.lastFrame()).toContain("Step 1 of 3");
+      expect(instance.lastFrame()).toContain("[●] Preset");
 
       // Press Enter (terminal Enter sends \r in raw mode)
       instance.stdin.write("\r");
@@ -120,7 +120,7 @@ describe("install-wizard end-to-end keypress flow (regression coverage)", () => 
       // mutate state. If this fails, the reducer reverted to the "save only,
       // require Tab to advance" behavior that confused the first user.
       const frame = instance.lastFrame();
-      expect(frame).toContain("Step 2 of 3");
+      expect(frame).toContain("[●] Provider");
       expect(frame).toContain("provider"); // step 2 chooses provider
       instance.unmount();
     },
@@ -139,13 +139,13 @@ describe("install-wizard end-to-end keypress flow (regression coverage)", () => 
       // Step 1 → step 2
       instance.stdin.write("\r");
       await tick();
-      expect(instance.lastFrame()).toContain("Step 2 of 3");
+      expect(instance.lastFrame()).toContain("[●] Provider");
 
       // Step 2 → step 3
       instance.stdin.write("\r");
       await tick();
       const frame = instance.lastFrame();
-      expect(frame).toContain("Step 3 of 3");
+      expect(frame).toContain("[●] Confirm");
       // Step 3 shows the chosen preset (verifies choices survived the
       // transition; if the reducer wiped choices on step change, this
       // would render "(none)" or similar)
@@ -186,6 +186,57 @@ describe("install-wizard end-to-end keypress flow (regression coverage)", () => 
   );
 
   it.skipIf(!inkTestingLibraryAvailable)(
+    "step 3 'i' key triggers install (regression: footer advertised 'i' but mapper ignored it)",
+    async () => {
+      const { ShellApp } = await import("../../src/tui/shell.js");
+      const snap = makeUninstalledSnapshot();
+      const instance = render!(
+        React.createElement(ShellApp, { initialSnapshot: snap }),
+      );
+
+      await tick();
+      // Navigate to step 3 via Enter twice
+      instance.stdin.write("\r");
+      await tick();
+      instance.stdin.write("\r");
+      await tick();
+      expect(instance.lastFrame()).toContain("Ready to install");
+
+      // Press 'i' — should trigger the install (transition to doing screen)
+      instance.stdin.write("i");
+      await tick();
+
+      const frame = instance.lastFrame();
+      // After 'i', screen should be in the doing state with the install label.
+      // The doing screen renders 'Installing...' or 'Working' in the breadcrumb.
+      expect(frame).toMatch(/Working|Installing/i);
+      instance.unmount();
+    },
+  );
+
+  it.skipIf(!inkTestingLibraryAvailable)(
+    "step 3 'd' (dry-run) also triggers the install action",
+    async () => {
+      const { ShellApp } = await import("../../src/tui/shell.js");
+      const snap = makeUninstalledSnapshot();
+      const instance = render!(
+        React.createElement(ShellApp, { initialSnapshot: snap }),
+      );
+
+      await tick();
+      instance.stdin.write("\r");
+      await tick();
+      instance.stdin.write("\r");
+      await tick();
+      // Press 'd' — same as 'i' for now (dry-run flag not yet wired)
+      instance.stdin.write("d");
+      await tick();
+      expect(instance.lastFrame()).toMatch(/Working|Installing/i);
+      instance.unmount();
+    },
+  );
+
+  it.skipIf(!inkTestingLibraryAvailable)(
     "Enter after j picks the cursored option (cursor + Enter integration)",
     async () => {
       const { ShellApp } = await import("../../src/tui/shell.js");
@@ -203,7 +254,7 @@ describe("install-wizard end-to-end keypress flow (regression coverage)", () => 
       await tick();
 
       const frame = instance.lastFrame();
-      expect(frame).toContain("Step 2 of 3");
+      expect(frame).toContain("[●] Provider");
 
       // Now advance to step 3 and confirm the preset was the cursored one.
       // Step 3 renders the preset with variable whitespace ("Preset:   standard"

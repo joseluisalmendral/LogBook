@@ -87,6 +87,53 @@ const STEP3_BINDINGS = [
 ];
 
 // ---------------------------------------------------------------------------
+// Helper: render the 3-step progress indicator at the top of the wizard
+// ---------------------------------------------------------------------------
+
+const STEP_TITLES: Record<1 | 2 | 3, string> = {
+  1: "Preset",
+  2: "Provider",
+  3: "Confirm",
+};
+
+/**
+ * Visual progress bar showing which wizard step the user is on.
+ * Rendered as a single line: `[●] Preset  →  [○] Provider  →  [○] Confirm`
+ * The current step is bold cyan; completed steps are dim green with a ✓.
+ */
+function renderStepProgress(currentStep: 1 | 2 | 3): React.ReactElement {
+  const cells: React.ReactNode[] = [];
+  for (const s of [1, 2, 3] as const) {
+    const isCurrent = s === currentStep;
+    const isDone = s < currentStep;
+    const marker = isDone ? "✓" : isCurrent ? "●" : "○";
+    const color = isDone ? "green" : isCurrent ? "cyan" : undefined;
+    cells.push(
+      React.createElement(
+        Text,
+        {
+          key: `step-${s}`,
+          ...(color !== undefined ? { color } : {}),
+          bold: isCurrent,
+          dimColor: !isCurrent && !isDone,
+        },
+        `[${marker}] ${STEP_TITLES[s]}`,
+      ),
+    );
+    if (s < 3) {
+      cells.push(
+        React.createElement(
+          Text,
+          { key: `sep-${s}`, dimColor: true },
+          "  →  ",
+        ),
+      );
+    }
+  }
+  return React.createElement(Box, { flexDirection: "row", marginBottom: 1 }, ...cells);
+}
+
+// ---------------------------------------------------------------------------
 // Helper: render option list with cursor highlight
 // ---------------------------------------------------------------------------
 
@@ -153,12 +200,27 @@ export function InstallWizardScreen({ state, dispatch: _dispatch }: InstallWizar
     return React.createElement(
       Box,
       { flexDirection: "column" },
-      React.createElement(Breadcrumb, { path: ["LogBook", "Install", "Step 1 of 3"] }),
-      React.createElement(Text, { dimColor: true }, "─".repeat(60)),
-      React.createElement(Text, { bold: true }, "Choose a preset:"),
-      React.createElement(Text, { dimColor: true }, ""),
-      ...renderOptionList(PRESET_OPTIONS, cursor, choices.preset),
-      React.createElement(Text, { dimColor: true }, "─".repeat(60)),
+      React.createElement(Breadcrumb, { path: ["LogBook", "Install"] }),
+      renderStepProgress(1),
+      React.createElement(
+        Box,
+        {
+          flexDirection: "column",
+          borderStyle: "round",
+          borderColor: "cyan",
+          paddingX: 1,
+          paddingY: 0,
+        },
+        React.createElement(Text, { bold: true }, "Choose a preset"),
+        React.createElement(
+          Text,
+          { dimColor: true },
+          "Each preset is a bundle of artifacts. You can change later via `logbook init`.",
+        ),
+        React.createElement(Text, null, ""),
+        ...renderOptionList(PRESET_OPTIONS, cursor, choices.preset),
+      ),
+      React.createElement(Text, null, ""),
       React.createElement(KeybindingsFooter, { bindings: STEP1_BINDINGS }),
     );
   }
@@ -168,17 +230,33 @@ export function InstallWizardScreen({ state, dispatch: _dispatch }: InstallWizar
     return React.createElement(
       Box,
       { flexDirection: "column" },
-      React.createElement(Breadcrumb, { path: ["LogBook", "Install", "Step 2 of 3"] }),
-      React.createElement(Text, { dimColor: true }, "─".repeat(60)),
+      React.createElement(Breadcrumb, { path: ["LogBook", "Install"] }),
+      renderStepProgress(2),
       React.createElement(
-        Text,
-        { bold: true },
-        `Preset: ${choices.preset ?? "(none)"}`,
+        Box,
+        {
+          flexDirection: "column",
+          borderStyle: "round",
+          borderColor: "cyan",
+          paddingX: 1,
+          paddingY: 0,
+        },
+        React.createElement(
+          Text,
+          { dimColor: true },
+          `✓ Preset: ${choices.preset ?? "(none)"}`,
+        ),
+        React.createElement(Text, null, ""),
+        React.createElement(Text, { bold: true }, "Choose how LogBook talks to the LLM"),
+        React.createElement(
+          Text,
+          { dimColor: true },
+          "Used by `summarize`, `teaching-script`. Doesn't affect event capture.",
+        ),
+        React.createElement(Text, null, ""),
+        ...renderOptionList(PROVIDER_OPTIONS, cursor, choices.provider),
       ),
-      React.createElement(Text, { bold: true }, "Choose a provider:"),
-      React.createElement(Text, { dimColor: true }, ""),
-      ...renderOptionList(PROVIDER_OPTIONS, cursor, choices.provider),
-      React.createElement(Text, { dimColor: true }, "─".repeat(60)),
+      React.createElement(Text, null, ""),
       React.createElement(KeybindingsFooter, { bindings: STEP2_BINDINGS }),
     );
   }
@@ -203,18 +281,65 @@ export function InstallWizardScreen({ state, dispatch: _dispatch }: InstallWizar
   return React.createElement(
     Box,
     { flexDirection: "column" },
-    React.createElement(Breadcrumb, { path: ["LogBook", "Install", "Step 3 of 3"] }),
-    React.createElement(Text, { dimColor: true }, "─".repeat(60)),
-    React.createElement(Text, { bold: true }, "Review and confirm:"),
-    React.createElement(Text, null, `  Preset:   ${presetLabel}`),
-    React.createElement(Text, null, `  Provider: ${providerLabel}`),
-    React.createElement(Text, { dimColor: true }, ""),
-    React.createElement(Text, { bold: true }, "Artifacts to install:"),
-    ...artifactNames.map((name, idx) =>
-      React.createElement(Text, { key: idx }, `  • ${name}`),
+    React.createElement(Breadcrumb, { path: ["LogBook", "Install"] }),
+    renderStepProgress(3),
+
+    // Selections box — green border, summary of what's about to happen
+    React.createElement(
+      Box,
+      {
+        flexDirection: "column",
+        borderStyle: "round",
+        borderColor: "green",
+        paddingX: 1,
+        paddingY: 0,
+      },
+      React.createElement(Text, { bold: true }, "Ready to install"),
+      React.createElement(Text, null, ""),
+      React.createElement(
+        Box,
+        { flexDirection: "row" },
+        React.createElement(Text, { dimColor: true }, "  Preset:    "),
+        React.createElement(Text, { bold: true, color: "cyan" }, presetLabel),
+      ),
+      React.createElement(
+        Box,
+        { flexDirection: "row" },
+        React.createElement(Text, { dimColor: true }, "  Provider:  "),
+        React.createElement(Text, { bold: true, color: "cyan" }, providerLabel),
+      ),
+      React.createElement(Text, null, ""),
+      React.createElement(
+        Text,
+        { dimColor: true },
+        `  ${artifactNames.length} artifacts will be installed:`,
+      ),
+      ...artifactNames.map((name, idx) =>
+        React.createElement(
+          Text,
+          { key: idx, dimColor: true },
+          `    • ${name}`,
+        ),
+      ),
     ),
-    React.createElement(Text, { dimColor: true }, "─".repeat(60)),
-    React.createElement(Text, { bold: true, color: "green" }, "  [i] Install    [d] Dry-run    [esc] Back"),
+
+    React.createElement(Text, null, ""),
+
+    // Action prompt — visually distinct, bright green
+    React.createElement(
+      Box,
+      { flexDirection: "row" },
+      React.createElement(Text, { bold: true, color: "green" }, "  ▶ "),
+      React.createElement(Text, { bold: true }, "Press "),
+      React.createElement(Text, { bold: true, color: "cyan" }, "i"),
+      React.createElement(Text, null, " or "),
+      React.createElement(Text, { bold: true, color: "cyan" }, "Enter"),
+      React.createElement(Text, null, " to install, "),
+      React.createElement(Text, { bold: true, color: "cyan" }, "esc"),
+      React.createElement(Text, null, " to go back"),
+    ),
+
+    React.createElement(Text, null, ""),
     React.createElement(KeybindingsFooter, { bindings: STEP3_BINDINGS }),
   );
 }

@@ -271,7 +271,7 @@ describe("InstallWizardScreen Ink render", () => {
   );
 
   it.skipIf(!inkTestingLibraryAvailable)(
-    "step 1: renders breadcrumb with Step 1 of 3",
+    "step 1: renders breadcrumb and step progress with Preset highlighted",
     async () => {
       const { render } = await import("ink-testing-library");
       const { InstallWizardScreen } = await import("../../src/tui/screens/install-wizard.js");
@@ -279,7 +279,14 @@ describe("InstallWizardScreen Ink render", () => {
         createElement(InstallWizardScreen, { state: makeInstallStep1State(), dispatch: noop }),
       );
       const frame = lastFrame() ?? "";
-      expect(frame).toContain("Step 1 of 3");
+      // New visual: breadcrumb "LogBook > Install" + 3-step progress
+      // ([●] Preset → [○] Provider → [○] Confirm).
+      expect(frame).toContain("Install");
+      expect(frame).toContain("Preset");
+      expect(frame).toContain("Provider");
+      expect(frame).toContain("Confirm");
+      // The "current" step marker for step 1
+      expect(frame).toContain("[●] Preset");
     },
   );
 });

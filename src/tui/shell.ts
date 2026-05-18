@@ -106,6 +106,14 @@ function keypressToAction(
   if (screen.kind === "install") {
     if (key.tab || input === "n") return { type: "wizard.next" };
     if (input === "p") return { type: "wizard.back" };
+    // Step 3 explicit confirm keys — matches the keybindings the footer
+    // advertises ("[i] Install [d] Dry-run [esc] Back"). Previously only
+    // Enter worked, which confused users who saw `i` in the footer.
+    // `d` (dry-run) currently triggers the same install action; dry-run
+    // semantics will land when the install action exposes a dry-run flag.
+    if (screen.step === 3 && (input === "i" || input === "d")) {
+      return { type: "select" };
+    }
   }
 
   // q on home → exit (design §9: confirm modal for home; direct for subscreens)
