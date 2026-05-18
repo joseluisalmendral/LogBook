@@ -51,10 +51,14 @@ describe("S10 Test 1 — byte-identity clean install/uninstall", () => {
     cpSync(FIXTURE, tmp, { recursive: true });
 
     // Snapshot BEFORE install.
-    // Exclude .logbook/ and logbook/ — these are data directories that are
-    // intentionally preserved by `logbook uninstall` per spec §24/§908.
+    // Exclude `.logbook/` and `logbook/` from the SNAPSHOT comparison — these
+    // are data directories that are intentionally preserved by `logbook
+    // uninstall` per spec §24/§908 (state.json, events/, journals).
+    //
     // The byte-identity guarantee is for SHARED CONFIG FILES only
-    // (.claude/settings.local.json, .gitignore, CLAUDE.md, etc.).
+    // (.claude/settings.local.json, .gitignore, CLAUDE.md, etc.). But we ALSO
+    // need to assert that LogBook's INTERNAL scratch files (manifest.json and
+    // backups/) are removed on uninstall — see the explicit assertions below.
     const SNAPSHOT_IGNORE = [".git", "node_modules", ".logbook", "logbook"];
     const before = await snapshotDir(tmp, { ignore: SNAPSHOT_IGNORE });
 
@@ -102,5 +106,18 @@ describe("S10 Test 1 — byte-identity clean install/uninstall", () => {
       diff,
       `Byte-identity FAILED — directory is NOT identical after install+uninstall:\n${JSON.stringify(diff, null, 2)}`,
     ).toEqual({ added: [], removed: [], changed: [] });
+
+    // Regression 2026-05-18: user screenshot showed `.logbook/backups/...`
+    // still on disk after `logbook uninstall`. The SNAPSHOT_IGNORE list above
+    // hid this from the byte-identity diff. Explicitly assert these internal
+    // scratch paths are gone post-uninstall.
+    expect(
+      existsSync(join(tmp, ".logbook/backups")),
+      ".logbook/backups/ should be removed by uninstall",
+    ).toBe(false);
+    expect(
+      existsSync(join(tmp, ".logbook/manifest.json")),
+      ".logbook/manifest.json should be removed by uninstall",
+    ).toBe(false);
   }, 60_000);
 });

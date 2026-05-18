@@ -232,6 +232,7 @@ export async function runUninstall(input: RunUninstallInput): Promise<RunUninsta
   if (!dryRun && manifest.artifacts.length === 0) {
     cleanupSentinelFiles(paths.root, manifest.backups);
     deleteManifestIfEmpty(paths.manifestPath);
+    cleanupInternalLogbookDir(paths);
   }
 
   return { removed, issues };
@@ -302,6 +303,39 @@ function deleteManifestIfEmpty(manifestPath: string): void {
     const m = readManifest(manifestPath);
     if (m !== null && m.artifacts.length === 0) {
       fs.rmSync(manifestPath, { force: true });
+    }
+  } catch {
+    // Best-effort.
+  }
+}
+
+/**
+ * After all artifacts are gone, sweep internal-only directories that have no
+ * value post-uninstall:
+ *
+ *   - `.logbook/backups/` — install-time snapshots used for rollback. Once the
+ *     install committed (i.e. we got far enough to be running uninstall now),
+ *     these are dead weight. Leaving them behind makes the project NOT
+ *     byte-identical and was the bug user reported on 2026-05-18 ("me deja
+ *     esto al hacer uninstall: .logbook/backups/...").
+ *
+ *   - `.logbook/` itself — IFF it is now empty. Preserves any user-facing data
+ *     (events/, state.json, journals) the spec promises to keep across
+ *     uninstalls. If `.logbook/` was created purely to hold artifacts that are
+ *     all gone now, the directory should not linger.
+ */
+function cleanupInternalLogbookDir(paths: ProjectPaths): void {
+  try {
+    fs.rmSync(paths.backupsDir, { recursive: true, force: true });
+  } catch {
+    // Best-effort.
+  }
+  try {
+    if (fs.existsSync(paths.logbookDir)) {
+      const remaining = fs.readdirSync(paths.logbookDir);
+      if (remaining.length === 0) {
+        fs.rmSync(paths.logbookDir, { recursive: true, force: true });
+      }
     }
   } catch {
     // Best-effort.

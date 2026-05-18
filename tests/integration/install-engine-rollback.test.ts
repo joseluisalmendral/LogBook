@@ -702,6 +702,65 @@ describe("runUninstall — sentinel-backup cleanup is built into the engine", ()
     expect(await writeAndUninstall("[]")).toBe(false);
   });
 
+  it("removes .logbook/backups/ entirely on clean uninstall", async () => {
+    // Regression 2026-05-18: user reported `.logbook/backups/...` files left
+    // on disk after `logbook uninstall`. Internal scratch — must be wiped.
+    const installer: ArtifactInstaller = {
+      kind: "hook" as const,
+      detect: async () => ({ status: "empty" as const }),
+      install: async () => makeFakeManifestArtifact("fake"),
+      uninstall: async () => {},
+      verify: async () => ({ ok: true }),
+    };
+    register(installer);
+
+    const paths = makePaths(projectRoot);
+    // Seed a backup file the way install would have.
+    fs.mkdirSync(paths.backupsDir, { recursive: true });
+    fs.writeFileSync(path.join(paths.backupsDir, "abc123-.gitignore"), "stale", "utf8");
+
+    writeManifest(paths.manifestPath, {
+      ...emptyManifest("minimal"),
+      artifacts: [makeFakeManifestArtifact("lb-hook-001")],
+    });
+
+    await runUninstall({ paths, dryRun: false });
+
+    expect(fs.existsSync(paths.backupsDir)).toBe(false);
+    expect(fs.existsSync(paths.manifestPath)).toBe(false);
+  });
+
+  it("removes empty .logbook/ directory but PRESERVES it if user data exists", async () => {
+    // Spec §24: state.json, events/, journals are preserved. The engine must
+    // delete .logbook/ ONLY when it would otherwise be empty.
+    const installer: ArtifactInstaller = {
+      kind: "hook" as const,
+      detect: async () => ({ status: "empty" as const }),
+      install: async () => makeFakeManifestArtifact("fake"),
+      uninstall: async () => {},
+      verify: async () => ({ ok: true }),
+    };
+    register(installer);
+
+    const paths = makePaths(projectRoot);
+    fs.mkdirSync(paths.backupsDir, { recursive: true });
+    // Pretend the user has accumulated events (data that must survive).
+    fs.writeFileSync(path.join(paths.logbookDir, "state.json"), '{"disabled":false}', "utf8");
+
+    writeManifest(paths.manifestPath, {
+      ...emptyManifest("minimal"),
+      artifacts: [makeFakeManifestArtifact("lb-hook-001")],
+    });
+
+    await runUninstall({ paths, dryRun: false });
+
+    // backups + manifest gone; .logbook/ stays because state.json lives there.
+    expect(fs.existsSync(paths.backupsDir)).toBe(false);
+    expect(fs.existsSync(paths.manifestPath)).toBe(false);
+    expect(fs.existsSync(paths.logbookDir)).toBe(true);
+    expect(fs.existsSync(path.join(paths.logbookDir, "state.json"))).toBe(true);
+  });
+
   it("dry-run does NOT delete sentinel files", async () => {
     const installer: ArtifactInstaller = {
       kind: "hook" as const,
