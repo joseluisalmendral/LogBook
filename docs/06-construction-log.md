@@ -300,6 +300,39 @@ The HookInstaller re-serialize bug (Bug 1, iter4 T-FIX-HOOK) is the canonical ex
 
 **Lesson.** The §37 promise is not just about happy-path behaviour. The byte-identity gate must hold even when install fails partway. That requires the manifest to be transactional with respect to backups.
 
+### Case study 3 — Wizard Enter "did nothing": the TDD coverage gap (2026-05-18, post-v1.2)
+
+**Symptom.** First real user of the TUI launched `logbook` on a non-installed project. The wizard appeared at step 1. They pressed Enter on a preset and saw no visible change. Quote: *"al hacer enter o espacio no funciona bien y no se selecciona nada"*. All 1575 tests were green.
+
+**Root cause.** The reducer's `select` action on the install screen set `choices.preset` but did NOT transition `step` to 2 (or reset the cursor). To advance, the user had to press Tab or `n` AFTER Enter — undocumented, unintuitive, no visual feedback that Enter had done anything because `renderOptionList` only marked the cursor position with `> `, not the chosen value with a checkmark.
+
+**Discovery path.** The user reported the bug verbally; no test signal. Investigation:
+
+- The 73 reducer tests in `tests/unit/shell-flows.test.ts` all asserted "after `select`, `state.screen.choices.preset === expected`". They passed BOTH for the correct (advance + save) and buggy (save-only) implementations because neither test cared what `state.screen.step` was.
+- The 23 screen render tests in `tests/unit/tui-screens.test.ts` mounted `<InstallWizardScreen state={...} />` with fixture states and verified rendering. None simulated the keypress pipeline; they tested static rendering, not flow.
+- No end-to-end test mounted the full `<ShellApp>` and pushed keystrokes through `ink-testing-library` to walk the wizard from step 1 to step 3.
+
+**Fix.** Commit `67c98dc`: reducer `select` on install advances the step and resets cursor. `renderOptionList` now accepts a `chosen` arg and renders `✓ ` (green) for the chosen value separately from `> ` (cyan) for the cursor.
+
+**Regression test added.** `tests/integration/tui-wizard-flow.test.ts` — 5 end-to-end tests using `ink-testing-library`:
+1. Mounts at wizard step 1 when not installed.
+2. **Enter on step 1 saves the preset AND advances to step 2** (the bug regression).
+3. Enter on step 2 advances to step 3 with both choices preserved.
+4. `j` moves the cursor (input capture sanity).
+5. Cursor + Enter together picks the cursored option.
+
+Test #2 in particular would have failed in CI on the day the bug was introduced.
+
+**Lesson.** **State-mutation tests are not flow tests.** Per-action reducer tests guarantee "given action X, state moves to Y" but cannot guarantee that the user's sequence of actions (tied to keystrokes via a UI library) ends in a useful place. Per-component render tests verify presentation, not interaction.
+
+**Convention going forward (TUI work).** Any new TUI feature that ships in a slice MUST include at least one test that:
+
+1. Mounts the full `<ShellApp>` via `ink-testing-library`.
+2. Writes the actual keypresses the user types (`\r` for Enter, `j`/`k` for navigation, `\t` for Tab, etc.).
+3. Asserts on `instance.lastFrame()` — what the user SEES at each step, not what the state object contains.
+
+Per-component and per-reducer tests remain valuable but MUST be paired with a flow test per user-visible feature. The TDD discipline was right; the test surface was incomplete.
+
 ## Architectural rhythm
 
 Four patterns thread through every iteration. If you internalize these, you can replicate the methodology.
