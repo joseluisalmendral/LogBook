@@ -356,6 +356,37 @@ If this fails, check your Codex CLI configuration (API key, model). If `--non-in
 
 ---
 
+## 13. A project's Skill / slash commands seem out of date
+
+**Symptom.** You pulled a new LogBook release and rebuilt (`git pull && pnpm build` in the LogBook repo), but a specific project still seems to use the old Skill rules, missing the slash command, or has a stale `<!-- logbook:augment -->` block in its `CLAUDE.md`.
+
+**Cause.** The Skill, slash commands, and the `CLAUDE.md` augment block are **copied** into the project at install time, not symlinked. They don't auto-update when the LogBook repo rebuilds. (The CLI binary, the MCP server, and the hook behavior **do** auto-update — those resolve through the global symlink.)
+
+See [`01-getting-started.md` § Keeping LogBook up to date](./01-getting-started.md#keeping-logbook-up-to-date) for the full two-layer mental model.
+
+**Diagnostic.** Run the doctor to see hash drift:
+
+```sh
+cd /to/project
+logbook doctor
+```
+
+It will list any artifact whose on-disk hash differs from the global binary's expected hash. Drift on `SKILL.md`, `lb-*.md`, or the `CLAUDE.md` augment block confirms the copy is stale.
+
+**Fix (today).** Uninstall + reinstall in the affected project. Your captured data is preserved (uninstall does NOT touch `logbook/` or `.logbook/`):
+
+```sh
+cd /to/project
+logbook uninstall --force
+logbook init --preset standard --yes
+```
+
+Run `logbook doctor` again afterwards to confirm zero drift.
+
+**Fix (v1.3+).** The planned `logbook self-update` subcommand will detect drift and refresh in place, no `uninstall` + `init` dance required. Tracked in [`v1.3-roadmap.md`](./v1.3-roadmap.md) §2.2.
+
+---
+
 ## Where to ask for help
 
 If your issue isn't covered here:

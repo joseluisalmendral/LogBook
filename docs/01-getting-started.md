@@ -55,6 +55,91 @@ node /abs/path/to/LogBook/dist/cli/index.cjs <command>
 
 You can alias this in your shell, but the global link is simpler.
 
+## Keeping LogBook up to date
+
+After the initial install, "how do I update?" has two answers depending on which layer of LogBook changed. The mental model: **the global binary updates automatically; per-project artifacts do not.**
+
+### Layer 1 — Global binary (symlink-backed, auto-updates)
+
+`pnpm link --global` creates a symlink, not a copy. The `logbook` command in your `$PATH` resolves at every invocation to `dist/cli/index.cjs` inside the cloned repo. The same is true of `dist/mcp/server.cjs`, which is what `.claude/mcp.json` in every installed project points at (via absolute path).
+
+This means **any rebuild of the LogBook repo immediately propagates to every project**, with zero per-project action:
+
+```sh
+cd /Users/.../LogBook-repo
+git pull                              # bring in upstream changes
+pnpm install --frozen-lockfile        # only if package.json moved
+pnpm build                            # rebuild dist/
+# done — `logbook` and the MCP server now run the new bytes everywhere
+```
+
+Things that auto-update through this path:
+
+| Change | How it propagates |
+|--------|-------------------|
+| Bug fix in CLI command logic | symlink → next `logbook <cmd>` invocation |
+| Bug fix in the MCP server | `.claude/mcp.json` absolute path → next Claude Code session start |
+| Improvement in the PostToolUse hook ingestor | hook entry calls the global binary → next tool call |
+| New CLI subcommand | symlink → available immediately |
+| Changes to preset definitions | `init` reads them from the global binary → applies to new installs |
+
+### Layer 2 — Per-project installed artifacts (copies, manual refresh)
+
+When you ran `logbook init` in a project, several files were **copied** into the project tree (not symlinked). Those copies stay frozen at the version that was current when you ran `init`.
+
+| File copied at install | Auto-updates? |
+|-----------------------|---------------|
+| `.claude/skills/logbook-auto-capture/SKILL.md` | ❌ no — it's a copy |
+| `.claude/skills/logbook-auto-capture/reference.md` | ❌ no — it's a copy |
+| `.claude/commands/lb-*.md` (8 slash commands) | ❌ no — they're copies |
+| `<!-- logbook:augment -->` block inside `CLAUDE.md` | ❌ no — it's pasted text |
+| `<!-- logbook:gitignore -->` lines in `.gitignore` | ❌ no — they're pasted lines |
+| Hook entry in `.claude/settings.local.json` | ⚠ the line is fixed but it invokes the global binary, so the *behavior* updates |
+| Server entry in `.claude/mcp.json` | ✅ the line is fixed but it points at the global `dist/mcp/server.cjs`, so the *behavior* updates |
+
+So if a release changes the Skill body or adds a new slash command, projects that were installed before that release **keep running the old Skill / old commands** until you refresh them.
+
+### Refreshing a project to the latest artifacts (today's workaround)
+
+Until `logbook self-update` lands in v1.3, the refresh path is:
+
+```sh
+cd /to/project
+logbook uninstall --force                       # removes artifacts; preserves your data
+logbook init --preset standard --yes            # reinstalls with the current artifacts
+```
+
+**Your captured data is safe.** Uninstall does NOT delete `logbook/` or `.logbook/`, so your events, ADRs, lessons, exports, and backups all survive the refresh. Only the *installed artifacts* (Skill, slash commands, CLAUDE.md block, hook entry, mcp.json entry, .gitignore lines) get torn down and rebuilt.
+
+If you want a completely clean slate including captured data: `logbook purge --force`.
+
+### Checking whether a project is stale
+
+```sh
+cd /to/project
+logbook doctor
+```
+
+The doctor reads `.logbook/install-manifest.json` (which records the content hashes captured at install time) and compares them to what the global binary expects today. Hash drift is reported per artifact. Today the doctor only *reports* drift; in v1.3 it gains an `--upgrade` flag to fix it in place.
+
+### Cheat sheet
+
+| You want to… | Run this |
+|-------------|----------|
+| Pull a new LogBook release into your dev clone | `cd /to/LogBook-repo && git pull && pnpm build` |
+| Update one project to the latest Skill / commands | `cd /to/project && logbook uninstall --force && logbook init --preset standard --yes` |
+| Check if a project's artifacts match the current LogBook version | `cd /to/project && logbook doctor` |
+| Drop LogBook entirely from a project, keep captured data | `logbook uninstall --force` |
+| Drop LogBook entirely from a project, delete captured data too | `logbook purge --force` |
+| Stop using LogBook globally | `pnpm uninstall --global logbook` (from any directory) |
+
+### What v1.3 changes
+
+The v1.3 release (see [`v1.3-roadmap.md`](./v1.3-roadmap.md)) addresses two friction points in this flow:
+
+1. **`brew install logbook` / `scoop install logbook`** replace the manual clone + link, putting the binary at a stable path (`/opt/homebrew/bin/logbook` or equivalent). This eliminates the "if I move the repo, projects break" failure mode caused by the absolute path in `.claude/mcp.json`.
+2. **`logbook self-update`** adds an in-place upgrade path that detects stale per-project artifacts and refreshes them without requiring `uninstall` + `init`. Pairs with a startup update-check that flags new releases.
+
 ## Your first 5 minutes
 
 Once the binary is installed, the loop is:
