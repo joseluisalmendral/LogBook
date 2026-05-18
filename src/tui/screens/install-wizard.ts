@@ -44,18 +44,21 @@ const PRESET_OPTIONS: Array<{ value: Preset; label: string; description: string 
 const PROVIDER_OPTIONS = [
   {
     value: "claude-agent-sdk" as const,
-    label: "claude-agent-sdk",
-    description: "Use the Claude Agent SDK (project-scoped config). Recommended.",
+    label: "Claude subscription (claude-agent-sdk)",
+    description:
+      "Uses your active Claude Code Pro/Max session — no API key needed, no extra tokens billed. Recommended if you already pay for Claude.",
   },
   {
     value: "api-key" as const,
-    label: "api-key",
-    description: "Use a raw Anthropic API key (env var ANTHROPIC_API_KEY).",
+    label: "API key (Anthropic / OpenAI / Gemini / others)",
+    description:
+      "Pay-as-you-go via a provider API key (set ANTHROPIC_API_KEY, OPENAI_API_KEY, GOOGLE_GENERATIVE_AI_API_KEY, etc. in your environment). Pick this if you don't have a Claude subscription or want a different provider.",
   },
   {
     value: "disabled" as const,
-    label: "disabled",
-    description: "Skip provider setup now; configure manually later.",
+    label: "Skip for now",
+    description:
+      "Install LogBook without setting a provider. Summarize/teaching-script commands will be disabled until you run `logbook providers set` later.",
   },
 ];
 
