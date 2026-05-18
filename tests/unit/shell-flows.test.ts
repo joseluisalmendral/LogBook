@@ -697,6 +697,59 @@ describe("doing transitions", () => {
     }
   });
 
+  // Regression: ShellApp's useEffect(..., [state.screen]) re-fired on every
+  // redundant doing.start dispatch, causing runInstallAction to be invoked
+  // repeatedly and tripping React's "Maximum update depth exceeded" guard.
+  // The reducer must return the SAME state reference when the doing/pending
+  // screen would not change materially.
+  it("doing.start → idempotent when already in doing/pending with same label/returnTo (preserves ref + opts)", () => {
+    const s: ShellState = {
+      snapshot: makeSnapshot(),
+      screen: {
+        kind: "doing",
+        label: "Installing...",
+        promise: "pending",
+        returnTo: "home",
+        opts: { preset: "teaching" },
+      },
+    };
+    const next = dispatch(s, {
+      type: "doing.start",
+      label: "Installing...",
+      returnTo: "home",
+    });
+    // Same reference — proves the reducer no-ops (effect deps unchanged).
+    expect(next).toBe(s);
+    expect(next.screen).toBe(s.screen);
+    // opts must survive (proves the no-op preserved wizard payload).
+    if (next.screen.kind === "doing") {
+      expect(next.screen.opts).toEqual({ preset: "teaching" });
+    }
+  });
+
+  it("doing.start → creates new state when label differs from current pending screen", () => {
+    const s: ShellState = {
+      snapshot: makeSnapshot(),
+      screen: {
+        kind: "doing",
+        label: "Running build...",
+        promise: "pending",
+        returnTo: "configure",
+      },
+    };
+    const next = dispatch(s, {
+      type: "doing.start",
+      label: "Building docs...",
+      returnTo: "home",
+    });
+    expect(next).not.toBe(s);
+    expect(next.screen.kind).toBe("doing");
+    if (next.screen.kind === "doing") {
+      expect(next.screen.label).toBe("Building docs...");
+      expect(next.screen.returnTo).toBe("home");
+    }
+  });
+
   it("doing.ok → updates promise to 'ok', message optional", () => {
     const next = dispatch(doingPendingState(), { type: "doing.ok", message: "Done!" });
     expect(next.screen.kind).toBe("doing");

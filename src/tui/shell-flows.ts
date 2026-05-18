@@ -596,8 +596,28 @@ export function reduce(state: ShellState, action: ShellAction): ShellState {
 
     // -------------------------------------------------------------------------
     // doing.start — transition to doing screen
+    //
+    // IDEMPOTENT: when the screen is already in doing/pending with the same
+    // label and returnTo, return the SAME state reference. This breaks an
+    // infinite re-render loop that occurred when an action dispatcher (e.g.
+    // the wizard's step-3 "select") put the screen into doing/pending AND the
+    // resolved handler (e.g. runInstallAction in persist.ts) redundantly
+    // re-dispatched doing.start on entry. Without idempotency, the reducer
+    // returned a new screen object on every redundant dispatch, ShellApp's
+    // useEffect(..., [state.screen]) re-fired, resolveHandler re-ran, and the
+    // handler re-dispatched doing.start → loop until React's "Maximum update
+    // depth exceeded" guard tripped.
     // -------------------------------------------------------------------------
-    case "doing.start":
+    case "doing.start": {
+      const cur = state.screen;
+      if (
+        cur.kind === "doing" &&
+        cur.promise === "pending" &&
+        cur.label === action.label &&
+        cur.returnTo === action.returnTo
+      ) {
+        return state;
+      }
       return {
         ...state,
         screen: {
@@ -607,6 +627,7 @@ export function reduce(state: ShellState, action: ShellAction): ShellState {
           returnTo: action.returnTo,
         },
       };
+    }
 
     // -------------------------------------------------------------------------
     // doing.ok — mark doing as successful
