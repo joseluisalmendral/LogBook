@@ -237,8 +237,13 @@ export function buildTeachingArtifacts(): Artifact[] {
   const teacherBody = readSubagentAsset("logbook-teacher");
 
   // Statusline command: invoke the CLI's state --inline subcommand.
-  // __dirname at runtime = dist/cli/ → the CLI bundle is dist/cli/index.cjs.
-  const cliAbsPath = path.resolve(__dirname, "index.cjs");
+  // Resolve the CLI binary path from a stable anchor that works whether
+  // this code is bundled into dist/cli/index.cjs (CJS) or into
+  // dist/tui/shell.mjs (ESM, called from the TUI install action). Both
+  // bundles share the same dist/ parent, so dist/cli/index.cjs is always
+  // at <distRoot>/cli/index.cjs regardless of which bundle is running.
+  const distRoot = path.resolve(__dirname, "..");
+  const cliAbsPath = path.resolve(distRoot, "cli/index.cjs");
   const statuslineCommand = `node ${cliAbsPath} state --inline`;
 
   return [

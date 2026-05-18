@@ -68,6 +68,35 @@ export default defineConfig([
     // Without this override, tsup would emit `.js` and Node would try to
     // parse it as CJS, breaking the dynamic import from CLI.
     outExtension: () => ({ js: ".mjs" }),
+    // ESM shim for __dirname / __filename. The CJS-only globals are undefined
+    // in ESM context; without this shim, calling buildArtifactsForPreset()
+    // from the shell crashes with "__dirname is not defined" (real bug seen
+    // in production on 2026-05-18).
+    //
+    // Strategy:
+    //   `define` replaces every `__dirname` / `__filename` token in source
+    //   with a globalThis access. `banner` sets those globals once at module
+    //   load by computing them from `import.meta.url`. Using globalThis
+    //   avoids esbuild's name-collision auto-rename (which silently broke a
+    //   plain `const __dirname = ...` banner because some bundled deps also
+    //   declared __dirname → esbuild alpha-renamed ours to $1).
+    //
+    // Geometry note: dist/tui/shell.mjs is a sibling of dist/cli/, dist/mcp/,
+    // dist/connectors/, dist/export/ under dist/. So path.resolve(__dirname,
+    // "..", ...) from this bundle yields the same paths as from dist/cli/.
+    // The single exception (path.resolve(__dirname, "index.cjs") in
+    // presets.ts) was refactored to use a distRoot-anchored path so it
+    // works from any sibling bundle.
+    define: {
+      __dirname: "globalThis.__LB_ESM_DIRNAME",
+      __filename: "globalThis.__LB_ESM_FILENAME",
+    },
+    banner: {
+      js: `import { fileURLToPath as __lbFileURLToPath } from 'node:url';
+import { dirname as __lbDirname } from 'node:path';
+globalThis.__LB_ESM_FILENAME = __lbFileURLToPath(import.meta.url);
+globalThis.__LB_ESM_DIRNAME = __lbDirname(globalThis.__LB_ESM_FILENAME);`,
+    },
     // Bundle Ink + React + dependencies into the shell bundle. They are
     // ESM-native and bundle cleanly when the output is ESM.
     external: [
