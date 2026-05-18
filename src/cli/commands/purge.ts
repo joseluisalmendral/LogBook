@@ -2,15 +2,14 @@
  * logbook purge — uninstall AND delete all LogBook data (DESTRUCTIVE).
  *
  * Requires --force. After uninstall, removes .logbook/ and logbook/ entirely.
+ * Sentinel-backup cleanup + manifest deletion are handled INSIDE runUninstall().
  */
 
 import * as fs from "node:fs";
-import * as path from "node:path";
 import { defineCommand } from "citty";
 import { resolveProjectRoot, makePaths } from "../../core/paths.js";
 import { bootstrapClaudeCodeInstallers } from "../../connectors/claude-code/artifacts/index.js";
 import { runUninstall } from "../../core/uninstall-engine.js";
-import { readManifest } from "../../core/manifest.js";
 
 export default defineCommand({
   meta: {
@@ -45,33 +44,19 @@ export default defineCommand({
     const paths = makePaths(root);
     bootstrapClaudeCodeInstallers();
 
-    // Capture manifest before uninstall for sentinel handling
-    const manifestBefore = readManifest(paths.manifestPath);
-
-    // Run uninstall (artifact removal)
+    // Run uninstall (artifact removal). Purge is "wipe everything" — it must
+    // remove all artifacts even when content has drifted, so we pass force.
+    // The engine handles sentinel-backup cleanup and manifest deletion.
     try {
-      await runUninstall({ paths, dryRun: false });
+      await runUninstall({ paths, dryRun: false, force: true });
     } catch {
       // Best-effort on purge — continue to delete data dirs regardless.
     }
 
-    // Handle sentinel backups
-    if (manifestBefore) {
-      for (const backup of manifestBefore.backups) {
-        if (backup.sha256 === "") {
-          const absPath = path.join(paths.root, backup.file_path);
-          try {
-            if (fs.existsSync(absPath)) {
-              fs.rmSync(absPath);
-            }
-          } catch {
-            // Best-effort.
-          }
-        }
-      }
-    }
-
-    // Delete manifest file if still present
+    // Defensive: if the engine left the manifest behind for any reason
+    // (e.g. it crashed mid-flight), purge force-deletes it. The engine's
+    // own logic only deletes when artifacts.length === 0, so this catches
+    // the partial-uninstall case where purge wants a clean slate anyway.
     try {
       if (fs.existsSync(paths.manifestPath)) {
         fs.rmSync(paths.manifestPath, { force: true });

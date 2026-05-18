@@ -424,3 +424,273 @@ describe("runUninstall — hash_mismatch preserves entry", () => {
     expect(result.removed).toHaveLength(0);
   });
 });
+
+// Regression: a user reported that `logbook uninstall --force` left logbook
+// content in modified files (CLAUDE.md augment block, .gitignore lines, etc).
+// Root cause: the engine skipped uninstall whenever verify reported
+// hash_mismatch, and --force was not threaded through from the CLI. Result:
+// any drift in installed content would leave the artifact orphaned on disk
+// forever. The fix routes --force into the engine; hash_mismatch with force
+// still calls installer.uninstall() (anchor-based removal, drift-safe).
+describe("runUninstall — force overrides hash_mismatch", () => {
+  it("with force=true and verify reports hash_mismatch, still calls installer.uninstall()", async () => {
+    const uninstallCalls: string[] = [];
+    const installer: ArtifactInstaller = {
+      kind: "hook" as const,
+      detect: async () => ({ status: "empty" as const }),
+      install: async () => makeFakeManifestArtifact("fake"),
+      uninstall: async (entry: ManifestArtifact) => {
+        uninstallCalls.push(entry.id);
+      },
+      verify: async () => ({ ok: false, reason: "hash_mismatch" as const }),
+    };
+    register(installer);
+
+    const paths = makePaths(projectRoot);
+    const manifest = {
+      ...emptyManifest("minimal"),
+      artifacts: [makeFakeManifestArtifact("lb-hook-001")],
+    };
+    writeManifest(paths.manifestPath, manifest);
+
+    const result = await runUninstall({ paths, dryRun: false, force: true });
+
+    // uninstall WAS called despite hash_mismatch
+    expect(uninstallCalls).toEqual(["lb-hook-001"]);
+    // No longer recorded as a blocking issue — surfaced as "removed-forced"
+    // in the report so the user can see it was a forced removal.
+    expect(result.removed).toEqual(["lb-hook-001"]);
+    // Manifest entry is gone
+    const after = readManifest(paths.manifestPath);
+    expect(after?.artifacts ?? []).toHaveLength(0);
+  });
+
+  it("with force=false (default), hash_mismatch still skips uninstall (back-compat)", async () => {
+    const uninstallCalls: string[] = [];
+    const installer: ArtifactInstaller = {
+      kind: "hook" as const,
+      detect: async () => ({ status: "empty" as const }),
+      install: async () => makeFakeManifestArtifact("fake"),
+      uninstall: async (entry: ManifestArtifact) => {
+        uninstallCalls.push(entry.id);
+      },
+      verify: async () => ({ ok: false, reason: "hash_mismatch" as const }),
+    };
+    register(installer);
+
+    const paths = makePaths(projectRoot);
+    const manifest = {
+      ...emptyManifest("minimal"),
+      artifacts: [makeFakeManifestArtifact("lb-hook-001")],
+    };
+    writeManifest(paths.manifestPath, manifest);
+
+    // No force passed
+    const result = await runUninstall({ paths, dryRun: false });
+
+    expect(uninstallCalls).toHaveLength(0);
+    expect(result.removed).toHaveLength(0);
+    expect(result.issues[0]!.status).toBe("hash-mismatch");
+    // The "drift" hint must be present in the note so users know about --force
+    expect(result.issues[0]!.note).toMatch(/--force/);
+  });
+
+  it("force surfaces 'removed-forced' status in the report row (not 'removed')", async () => {
+    const reportRows: import("../../src/core/uninstall-engine.js").UninstallReportRow[] = [];
+    const installer: ArtifactInstaller = {
+      kind: "hook" as const,
+      detect: async () => ({ status: "empty" as const }),
+      install: async () => makeFakeManifestArtifact("fake"),
+      uninstall: async () => {},
+      verify: async () => ({ ok: false, reason: "hash_mismatch" as const }),
+    };
+    register(installer);
+
+    const paths = makePaths(projectRoot);
+    const manifest = {
+      ...emptyManifest("minimal"),
+      artifacts: [makeFakeManifestArtifact("lb-hook-001")],
+    };
+    writeManifest(paths.manifestPath, manifest);
+
+    await runUninstall({
+      paths,
+      dryRun: false,
+      force: true,
+      onReport: (rows) => reportRows.push(...rows),
+    });
+
+    expect(reportRows).toHaveLength(1);
+    expect(reportRows[0]!.status).toBe("removed-forced");
+    expect(reportRows[0]!.note).toMatch(/drift/i);
+  });
+});
+
+// Regression: programmatic callers of runUninstall (TUI, tests, scripts) used
+// to get a partial uninstall — artifact bodies removed, but the SHARED FILES
+// LogBook created from scratch (.gitignore, .claude/settings.local.json) were
+// left on disk as empty husks (""  or "{}") and the manifest stayed behind.
+// The CLI worked around this with its own post-uninstall sentinel cleanup, but
+// the TUI did not have that code, so users uninstalling via the TUI got dirty
+// projects. The cleanup now lives INSIDE runUninstall, so every caller wins.
+describe("runUninstall — sentinel-backup cleanup is built into the engine", () => {
+  it("deletes files that LogBook created from scratch (sentinel sha256='')", async () => {
+    const installer: ArtifactInstaller = {
+      kind: "hook" as const,
+      detect: async () => ({ status: "empty" as const }),
+      install: async () => makeFakeManifestArtifact("fake"),
+      uninstall: async (_entry, ctx: InstallContext) => {
+        // Simulate what the real hook installer does: write a husk file.
+        const abs = path.join(ctx.projectRoot, ".claude/settings.local.json");
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.writeFileSync(abs, "{}\n", "utf8");
+      },
+      verify: async () => ({ ok: true }),
+    };
+    register(installer);
+
+    const paths = makePaths(projectRoot);
+    const manifest = {
+      ...emptyManifest("minimal"),
+      artifacts: [makeFakeManifestArtifact("lb-hook-001")],
+      backups: [
+        {
+          file_path: ".claude/settings.local.json",
+          backup_path: "",
+          sha256: "", // sentinel — file did not exist pre-install
+          taken_at: "2026-05-18T00:00:00Z",
+        },
+      ],
+    };
+    writeManifest(paths.manifestPath, manifest);
+
+    await runUninstall({ paths, dryRun: false });
+
+    // The husk file must be gone — even though the engine was called directly
+    // (no CLI wrapper to do the cleanup).
+    expect(fs.existsSync(path.join(projectRoot, ".claude/settings.local.json"))).toBe(false);
+    // Manifest file must also be gone.
+    expect(fs.existsSync(paths.manifestPath)).toBe(false);
+  });
+
+  it("PRESERVES a sentinel-backed file if the user added their own content (no data loss)", async () => {
+    const installer: ArtifactInstaller = {
+      kind: "hook" as const,
+      detect: async () => ({ status: "empty" as const }),
+      install: async () => makeFakeManifestArtifact("fake"),
+      uninstall: async (_entry, ctx: InstallContext) => {
+        // Simulate user-added content surviving uninstall: the installer leaves
+        // something meaningful on disk (e.g. a user-added key in settings.local.json).
+        const abs = path.join(ctx.projectRoot, ".claude/settings.local.json");
+        fs.mkdirSync(path.dirname(abs), { recursive: true });
+        fs.writeFileSync(abs, '{"userKey":"userValue"}\n', "utf8");
+      },
+      verify: async () => ({ ok: true }),
+    };
+    register(installer);
+
+    const paths = makePaths(projectRoot);
+    const manifest = {
+      ...emptyManifest("minimal"),
+      artifacts: [makeFakeManifestArtifact("lb-hook-001")],
+      backups: [
+        {
+          file_path: ".claude/settings.local.json",
+          backup_path: "",
+          sha256: "",
+          taken_at: "2026-05-18T00:00:00Z",
+        },
+      ],
+    };
+    writeManifest(paths.manifestPath, manifest);
+
+    await runUninstall({ paths, dryRun: false });
+
+    // File MUST survive — it has user content, even though LogBook originally created it.
+    const abs = path.join(projectRoot, ".claude/settings.local.json");
+    expect(fs.existsSync(abs)).toBe(true);
+    expect(fs.readFileSync(abs, "utf8")).toBe('{"userKey":"userValue"}\n');
+  });
+
+  it("looksEmpty heuristic handles whitespace-only and JSON {} / []", async () => {
+    // We exercise the heuristic via the public API: write three different
+    // husk variants and assert each gets deleted.
+    const writeAndUninstall = async (huskContent: string) => {
+      // Fresh project subdir per case
+      const sub = fs.mkdtempSync(path.join(projectRoot, "case-"));
+      fs.mkdirSync(path.join(sub, ".git"), { recursive: true });
+      fs.mkdirSync(path.join(sub, ".logbook"), { recursive: true });
+
+      const installer: ArtifactInstaller = {
+        kind: "hook" as const,
+        detect: async () => ({ status: "empty" as const }),
+        install: async () => makeFakeManifestArtifact("fake"),
+        uninstall: async (_entry, ctx: InstallContext) => {
+          const abs = path.join(ctx.projectRoot, "shared-file.txt");
+          fs.writeFileSync(abs, huskContent, "utf8");
+        },
+        verify: async () => ({ ok: true }),
+      };
+      clearRegistry();
+      register(installer);
+
+      const localPaths = makePaths(sub);
+      writeManifest(localPaths.manifestPath, {
+        ...emptyManifest("minimal"),
+        artifacts: [makeFakeManifestArtifact("lb-hook-001")],
+        backups: [
+          {
+            file_path: "shared-file.txt",
+            backup_path: "",
+            sha256: "",
+            taken_at: "2026-05-18T00:00:00Z",
+          },
+        ],
+      });
+
+      await runUninstall({ paths: localPaths, dryRun: false });
+      return fs.existsSync(path.join(sub, "shared-file.txt"));
+    };
+
+    // All these should be detected as empty and deleted.
+    expect(await writeAndUninstall("")).toBe(false);
+    expect(await writeAndUninstall("\n")).toBe(false);
+    expect(await writeAndUninstall("   \n  \t  \n")).toBe(false);
+    expect(await writeAndUninstall("{}")).toBe(false);
+    expect(await writeAndUninstall("{}\n")).toBe(false);
+    expect(await writeAndUninstall("  {  }  ")).toBe(false);
+    expect(await writeAndUninstall("[]")).toBe(false);
+  });
+
+  it("dry-run does NOT delete sentinel files", async () => {
+    const installer: ArtifactInstaller = {
+      kind: "hook" as const,
+      detect: async () => ({ status: "empty" as const }),
+      install: async () => makeFakeManifestArtifact("fake"),
+      uninstall: async () => {},
+      verify: async () => ({ ok: true }),
+    };
+    register(installer);
+
+    const paths = makePaths(projectRoot);
+    fs.writeFileSync(path.join(projectRoot, ".gitignore"), "", "utf8");
+    writeManifest(paths.manifestPath, {
+      ...emptyManifest("minimal"),
+      artifacts: [makeFakeManifestArtifact("lb-hook-001")],
+      backups: [
+        {
+          file_path: ".gitignore",
+          backup_path: "",
+          sha256: "",
+          taken_at: "2026-05-18T00:00:00Z",
+        },
+      ],
+    });
+
+    await runUninstall({ paths, dryRun: true });
+
+    // Dry-run must NEVER touch disk.
+    expect(fs.existsSync(path.join(projectRoot, ".gitignore"))).toBe(true);
+    expect(fs.existsSync(paths.manifestPath)).toBe(true);
+  });
+});

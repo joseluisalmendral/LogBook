@@ -2,17 +2,16 @@
  * logbook uninstall — remove LogBook artifacts (data preserved).
  *
  * Safety guard: --force is required unless --dry-run is used.
- * After uninstall, deletes the manifest file when all artifacts are gone.
- * Handles sentinel backups (empty sha256 = file did not exist pre-install).
+ *
+ * Sentinel-backup cleanup (delete files LogBook created from nothing) and
+ * manifest-file deletion are handled INSIDE runUninstall(). The CLI is a thin
+ * wrapper around the engine.
  */
 
-import * as fs from "node:fs";
-import * as path from "node:path";
 import { defineCommand } from "citty";
 import { resolveProjectRoot, makePaths } from "../../core/paths.js";
 import { bootstrapClaudeCodeInstallers } from "../../connectors/claude-code/artifacts/index.js";
 import { runUninstall } from "../../core/uninstall-engine.js";
-import { readManifest } from "../../core/manifest.js";
 import { renderTable } from "../render.js";
 
 export default defineCommand({
@@ -57,14 +56,11 @@ export default defineCommand({
     const paths = makePaths(root);
     bootstrapClaudeCodeInstallers();
 
-    // Capture manifest before uninstall (for sentinel handling)
-    const manifestBefore = readManifest(paths.manifestPath);
-
-    let result: Awaited<ReturnType<typeof runUninstall>>;
     try {
-      result = await runUninstall({
+      await runUninstall({
         paths,
         dryRun,
+        force,
         onReport(rows) {
           if (rows.length > 0) {
             const tableRows = rows.map((r) => [r.id, r.kind, r.filePath, r.status]);
@@ -92,37 +88,6 @@ export default defineCommand({
     if (dryRun) {
       process.stdout.write("Dry run — no files modified.\n");
       return;
-    }
-
-    // Post-uninstall cleanup:
-
-    // 1. Handle sentinel backups: files with empty sha256 did not exist before install
-    //    → delete them after uninstall.
-    if (manifestBefore) {
-      for (const backup of manifestBefore.backups) {
-        if (backup.sha256 === "") {
-          // Sentinel: file did not exist before install — delete it now.
-          const absPath = path.join(paths.root, backup.file_path);
-          try {
-            if (fs.existsSync(absPath)) {
-              fs.rmSync(absPath);
-            }
-          } catch {
-            // Best-effort; do not fail the uninstall.
-          }
-        }
-      }
-    }
-
-    // 2. After all artifacts are gone, delete manifest file.
-    //    The engine leaves an empty-artifact manifest on disk; we delete it here.
-    const manifestAfter = readManifest(paths.manifestPath);
-    if (manifestAfter !== null && manifestAfter.artifacts.length === 0) {
-      try {
-        fs.rmSync(paths.manifestPath, { force: true });
-      } catch {
-        // Best-effort.
-      }
     }
 
     process.stdout.write("LogBook uninstalled. Data preserved under .logbook/ and logbook/.\n");

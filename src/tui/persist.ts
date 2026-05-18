@@ -167,7 +167,7 @@ export async function runUninstallAction(ctx: ActionContext): Promise<void> {
   ctx.dispatch({ type: "doing.start", label: "Uninstalling...", returnTo: "home" });
   try {
     bootstrapClaudeCodeInstallers();
-    await runUninstall({ paths: ctx.paths, dryRun: false });
+    await runUninstall({ paths: ctx.paths, dryRun: false, force: true });
     ctx.dispatch({ type: "doing.ok", message: "Uninstall complete" });
     const snap = await buildSnapshot(ctx.paths);
     ctx.dispatch({ type: "snapshot.refresh", snapshot: snap });

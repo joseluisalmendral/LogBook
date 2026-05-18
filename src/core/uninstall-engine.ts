@@ -14,6 +14,7 @@
  * 7. Return final manifest state and issue list.
  */
 
+import * as fs from "node:fs";
 import * as path from "node:path";
 import type { ProjectPaths } from "./paths.js";
 import type { ManifestArtifact, Manifest } from "../types/manifest.js";
@@ -29,6 +30,18 @@ import { DryRunContext } from "./dryrun.js";
 export interface RunUninstallInput {
   paths: ProjectPaths;
   dryRun: boolean;
+  /**
+   * When true, override the hash-mismatch safety guard: the engine will still
+   * call `installer.uninstall()` for entries whose content has drifted since
+   * install. Each installer's `uninstall()` is anchor-based (block markers,
+   * line patterns, JSON keys by lb-* id) so removing a drifted entry is safe
+   * — but content the user added INSIDE a logbook block will be deleted along
+   * with the block. Set this from `--force` only.
+   *
+   * Default: false (drift-protected behaviour — preserve entries when hash
+   * mismatches, surface as an "issue" in the report).
+   */
+  force?: boolean;
   onReport?: (rows: UninstallReportRow[]) => void;
   now?: () => string;
   ulid?: () => string;
@@ -38,7 +51,14 @@ export interface UninstallReportRow {
   id: string;
   kind: string;
   filePath: string;
-  status: "removed" | "anchor-missing" | "hash-mismatch" | "file-missing" | "skipped-dry-run" | "unknown-kind";
+  status:
+    | "removed"
+    | "removed-forced"
+    | "anchor-missing"
+    | "hash-mismatch"
+    | "file-missing"
+    | "skipped-dry-run"
+    | "unknown-kind";
   note?: string;
 }
 
@@ -53,6 +73,7 @@ export interface RunUninstallResult {
 
 export async function runUninstall(input: RunUninstallInput): Promise<RunUninstallResult> {
   const { paths, dryRun } = input;
+  const force = input.force ?? false;
   const now = input.now ?? (() => new Date().toISOString());
   const ulid = input.ulid ?? generateUlid;
 
@@ -121,15 +142,35 @@ export async function runUninstall(input: RunUninstallInput): Promise<RunUninsta
       const status = mapVerifyReason(verifyResult.reason);
 
       if (verifyResult.reason === "hash_mismatch") {
-        // hash_mismatch → do NOT uninstall; preserve the entry in the manifest.
+        if (!force) {
+          // hash_mismatch without --force → preserve the entry in the manifest.
+          const row: UninstallReportRow = {
+            id: entry.id,
+            kind: entry.kind,
+            filePath: entry.file_path,
+            status,
+            note: "Content has been manually edited. Skipping uninstall to avoid data loss. Re-run with --force to override.",
+          };
+          issues.push(row);
+          reportRows.push(row);
+          continue;
+        }
+
+        // hash_mismatch with --force → uninstall anyway. Each installer's
+        // uninstall() locates the artifact via anchors (block markers, line
+        // patterns, JSON keys by lb-* id) so the removal is safe even when
+        // content has drifted. The user has explicitly opted in via --force.
+        await installer.uninstall(entry, installCtx);
+        manifest = removeArtifactById(manifest, entry.id);
+        removed.push(entry.id);
+
         const row: UninstallReportRow = {
           id: entry.id,
           kind: entry.kind,
           filePath: entry.file_path,
-          status,
-          note: "Content has been manually edited. Skipping uninstall to avoid data loss.",
+          status: "removed-forced",
+          note: "Content had drifted from install-time hash; removed because --force was passed.",
         };
-        issues.push(row);
         reportRows.push(row);
         continue;
       }
@@ -166,12 +207,105 @@ export async function runUninstall(input: RunUninstallInput): Promise<RunUninsta
   input.onReport?.(reportRows);
 
   // step 6: Write updated manifest (may be empty of artifacts).
-  // The caller (CLI) decides whether to delete the file when artifacts is empty.
   if (!dryRun) {
     writeManifest(paths.manifestPath, manifest);
   }
 
+  // step 7: Sentinel-backup cleanup + manifest deletion.
+  //
+  // Previously this lived in src/cli/commands/uninstall.ts and src/cli/commands/purge.ts —
+  // which meant the TUI (src/tui/persist.ts) and any other programmatic caller of
+  // runUninstall() got partial uninstall: artifact bodies removed, but the shared
+  // FILES that LogBook created (e.g. .gitignore, .claude/settings.local.json) were
+  // left on disk as empty husks (`""`, `"{}"`), and the manifest stayed around.
+  // User report 2026-05-18: "hice uninstall y los archivos siguen con lo que
+  // logbook les añadió".
+  //
+  // Pulling the cleanup INTO the engine guarantees every caller gets it. The CLI
+  // wrappers no longer need their own copy of this logic.
+  //
+  // Safety rule (stricter than the old CLI behavior, which deleted unconditionally):
+  // only delete a sentinel-backed file if its post-uninstall content is "empty"
+  // — i.e. whitespace-only OR an empty JSON container (`{}` / `[]`). If the user
+  // (or another tool) added content to the file we created, we leave the file
+  // alone. Losing user content is worse than leaving an empty husk.
+  if (!dryRun && manifest.artifacts.length === 0) {
+    cleanupSentinelFiles(paths.root, manifest.backups);
+    deleteManifestIfEmpty(paths.manifestPath);
+  }
+
   return { removed, issues };
+}
+
+// ---------------------------------------------------------------------------
+// Post-uninstall cleanup helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Decide whether the post-uninstall content of a shared file looks "empty enough"
+ * to safely delete. Strict: only deletes when LogBook is the only thing that ever
+ * touched the file.
+ *
+ *   - "" / whitespace → empty (gitignore that we created, etc.)
+ *   - "{}" / "[]" (with arbitrary whitespace) → empty JSON container
+ *   - anything else → preserve (assume user content)
+ */
+function looksEmpty(content: string): boolean {
+  const trimmed = content.trim();
+  if (trimmed === "") return true;
+  if (trimmed === "{}" || trimmed === "[]") return true;
+  // Try a JSON parse — handles things like '  {  }  \n'.
+  try {
+    const parsed = JSON.parse(trimmed) as unknown;
+    if (parsed === null) return true;
+    if (typeof parsed === "object" && Object.keys(parsed as object).length === 0) {
+      return true;
+    }
+  } catch {
+    // Not JSON. Already covered the whitespace case above.
+  }
+  return false;
+}
+
+function cleanupSentinelFiles(
+  projectRoot: string,
+  backups: ReadonlyArray<{ file_path: string; sha256: string }>,
+): void {
+  for (const backup of backups) {
+    if (backup.sha256 !== "") continue; // Not a sentinel — leave alone.
+    const absPath = path.join(projectRoot, backup.file_path);
+    let content: string;
+    try {
+      content = fs.readFileSync(absPath, "utf8");
+    } catch (err: unknown) {
+      if ((err as NodeJS.ErrnoException).code === "ENOENT") {
+        // Already gone — idempotent.
+        continue;
+      }
+      // Best-effort cleanup — don't fail the whole uninstall.
+      continue;
+    }
+    if (!looksEmpty(content)) continue;
+    try {
+      fs.rmSync(absPath, { force: true });
+    } catch {
+      // Best-effort.
+    }
+  }
+}
+
+function deleteManifestIfEmpty(manifestPath: string): void {
+  // We just wrote an empty-artifacts manifest at step 6. If the file now reflects
+  // that empty state, remove the file so the project is byte-identical to a
+  // never-installed project.
+  try {
+    const m = readManifest(manifestPath);
+    if (m !== null && m.artifacts.length === 0) {
+      fs.rmSync(manifestPath, { force: true });
+    }
+  } catch {
+    // Best-effort.
+  }
 }
 
 // ---------------------------------------------------------------------------
