@@ -35,6 +35,54 @@ export PATH="$(pnpm bin -g):$PATH"
 
 If `pnpm link --global` itself fails, check that you ran `pnpm build` first — the link points to `dist/cli/index.cjs` which must exist.
 
+### 1a. `ERR_PNPM_NO_GLOBAL_BIN_DIR` when running `pnpm link --global`
+
+**Symptom.** `pnpm link --global` fails with:
+
+```
+ERR_PNPM_NO_GLOBAL_BIN_DIR  Unable to find the global bin directory
+
+Run "pnpm setup" to create it automatically, or set the global-bin-dir
+setting, or the PNPM_HOME env variable. The global bin directory should
+be in the PATH.
+```
+
+**Diagnosis.** First-time pnpm install on this machine — pnpm has never provisioned its global bin directory (`~/Library/pnpm` on macOS, `~/.local/share/pnpm` on Linux) and the `PNPM_HOME` env var is unset.
+
+**Fix.**
+
+```sh
+pnpm setup                    # creates global bin dir + edits ~/.zshrc (or ~/.bashrc)
+source ~/.zshrc               # reload the shell config in THIS terminal
+# alternative: close and reopen the terminal entirely
+
+# now retry
+cd /path/to/LogBook
+pnpm link --global
+```
+
+**What `pnpm setup` actually does** (one-time, per machine):
+
+1. Creates the global bin directory (`~/Library/pnpm` on macOS).
+2. Appends two lines to your shell config (`~/.zshrc` on macOS default):
+   ```sh
+   export PNPM_HOME="/Users/<you>/Library/pnpm"
+   export PATH="$PNPM_HOME:$PATH"
+   ```
+3. Prints a "Next configuration changes were made..." confirmation.
+
+**The catch most people hit.** The two lines appended to `~/.zshrc` do NOT apply to the terminal session that ran `pnpm setup` — that shell already loaded `.zshrc` at startup. You must either `source ~/.zshrc` in the same terminal OR close it and open a new one. Forgetting this makes the next `pnpm link --global` fail with the exact same error.
+
+**Verify after fix.**
+
+```sh
+echo $PNPM_HOME                       # /Users/<you>/Library/pnpm
+echo $PATH | tr ':' '\n' | rg pnpm    # the pnpm bin dir should appear
+which pnpm                            # confirms pnpm itself is on PATH
+```
+
+If `source ~/.zshrc` does not apply the env vars (rare — happens inside some shell wrappers like zellij or certain tmux configs), closing and reopening the terminal tab is the most reliable workaround.
+
 ---
 
 ## 2. MCP server doesn't boot

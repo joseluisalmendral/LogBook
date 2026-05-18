@@ -34,6 +34,8 @@ pnpm build
 pnpm link --global
 ```
 
+**First-time pnpm users on this machine:** if `pnpm link --global` fails with `ERR_PNPM_NO_GLOBAL_BIN_DIR`, run `pnpm setup` first (one-time per machine — creates the global bin directory and adds `PNPM_HOME` to your shell rc), then `source ~/.zshrc` (or close + reopen the terminal), then retry the link. Full diagnostic in [`07-troubleshooting.md` §1a](./07-troubleshooting.md#1a-err_pnpm_no_global_bin_dir-when-running-pnpm-link---global).
+
 After the link, `which logbook` should resolve to your pnpm global bin.
 
 ### 2. Future: `pnpm add -g logbook`
