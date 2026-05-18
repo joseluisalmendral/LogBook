@@ -134,7 +134,7 @@ LogBook works fully offline except for three commands: `logbook summarize milest
 | Anthropic (Claude) | `anthropic` | `ANTHROPIC_API_KEY` **or** Claude Code session | Recommended path. Claude Code Pro/Max/Team/Enterprise sessions use the SDK credit — no API key needed. |
 | OpenAI | `openai` | `OPENAI_API_KEY` | Standard API key. ChatGPT Plus subscription is **not** programmatic — it does not provide an API key. You need a separate API key from [platform.openai.com](https://platform.openai.com). |
 | Azure OpenAI | `azure` | `OPENAI_API_KEY` + `base_url` in config | Same `@ai-sdk/openai` under the hood; requires `base_url` set to your Azure endpoint. |
-| Google Gemini | `google` | `GOOGLE_GENERATIVE_AI_API_KEY` | API key from [aistudio.google.com](https://aistudio.google.com). Free tier available. Uses `@ai-sdk/google`. |
+| Google Gemini | `google` | `GOOGLE_GENERATIVE_AI_API_KEY` | API key from [aistudio.google.com](https://aistudio.google.com). Free tier available without credit card, but ⚠ free-tier prompts are used by Google for model training (paid tier is not — see [`02-concepts.md` § Gemini API free tier](./02-concepts.md#gemini-api-free-tier--what-you-actually-get) for the full caveat). Uses `@ai-sdk/google`. |
 | Ollama (local) | `local` | None (requires Ollama running on `:11434`) | No API key. Runs entirely offline. Start with `ollama serve`; pull a model with `ollama pull llama3.2`. The default base URL is `http://localhost:11434/v1`. |
 | Codex CLI | `codex-cli` | OpenAI API key (via Codex CLI config) | Subprocess adapter — delegates to the `codex` binary. Coming in v1.1-SG1b. |
 

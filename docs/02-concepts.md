@@ -129,23 +129,39 @@ You can override this with `logbook providers set <target> <kind>` once installe
 | Your situation | Recommended provider | Why |
 |---|---|---|
 | You work inside Claude Code daily (Pro or Max subscription) | **Default — do nothing**. The `claude-agent-sdk` path picks up automatically when you launch `logbook` from a Claude Code session. | Zero setup. No double-charging for tokens you already pay for through the subscription. |
-| You want LogBook to work standalone, without Claude Code running | `anthropic` (API key) or `openai` (API key) | Both have generous free / paid tiers. Anthropic API has no free tier but pay-as-you-go is fine for LogBook's volume (~50K-150K tokens/day). OpenAI has a small free credit. |
-| Zero cost, willing to set up an API key | `google` (Gemini API) | Free tier: 1500 requests/day, 15 RPM. LogBook uses <1% of that. Get a key at <https://aistudio.google.com/apikey>. |
-| Zero cost, no internet for LLM, willing to run locally | `local` (Ollama) | Free, private, runs on `localhost:11434`. Slower and lower-quality output than the cloud models. |
+| You want LogBook to work standalone, without Claude Code running, on a paid tier | `anthropic` (API key) or `openai` (API key) | Pay-as-you-go is fine for LogBook's volume (~50K-150K tokens/day). Privacy guaranteed by paid-tier T&Cs. |
+| Zero cost, **non-sensitive content**, willing to set up an API key | `google` (Gemini API free tier) | Free tier exists. ⚠ **Privacy caveat below — read before using with student code or proprietary content.** |
+| Zero cost, no internet for LLM, willing to run locally | `local` (Ollama) | Free, fully local on `localhost:11434`. Slower and lower-quality output than the cloud models. **Most private option.** |
 | You have ChatGPT Plus + `codex` CLI installed | `codex-cli` | Subprocess to your local Codex CLI session. No API key, uses your subscription. Streaming not supported. |
 | You have Azure OpenAI Enterprise | `azure` | Use your Azure deployment credentials. |
 
+### Gemini API free tier — what you actually get
+
+Verified at <https://ai.google.dev/gemini-api/docs/pricing> on **2026-05-18**:
+
+- **Free tier exists** for these models (subject to change — check the page above for the current list): Gemini 3.1 Flash-Lite, Gemini 3 Flash Preview, Gemini 2.5 Pro, Gemini 2.5 Flash, Gemini 2.5 Flash-Lite, Gemini 2.0 Flash, Gemini 2.0 Flash-Lite.
+- **No credit card required** to get a free API key. Visit <https://aistudio.google.com/apikey>.
+- **Specific RPM / RPD / TPM limits are not published on a static page anymore.** Google moved them to a user-specific dashboard. Check yours at <https://aistudio.google.com/rate-limit>. Free tier tends to be in the range of "low double-digit RPM, hundreds-to-low-thousands RPD" depending on model, which is far above LogBook's volume.
+- ⚠ **CRITICAL — free tier content is used to train Google's models**. The pricing page states verbatim: *"Free Tier: Content used to improve our products — Yes"*. The paid tier explicitly says the opposite. This means: every prompt LogBook sends (which includes your project events, decisions, code snippets if `--with-diff`) can be used by Google to improve their models. Paid-tier API calls are not used for training.
+
+**Implications for the instructor use case**:
+
+- If you're using LogBook on a **public teaching project** or your **own teaching content** (no NDA, no student-attributable data), free tier is fine.
+- If you're using LogBook on **student code, proprietary projects, or anything under NDA**, do NOT use the free Gemini tier. Use the Claude subscription path, paid Anthropic/OpenAI API, or `local` (Ollama).
+- LogBook's `--safe` flag redacts paths/usernames/emails before send, but **does not redact code content or LLM prompts**. The privacy boundary is the provider, not the redaction layer.
+
 ### Cost reality check
 
-For a normal instructor (5-10 LLM calls per day, ~100K tokens/day):
+For a normal instructor (5-10 LLM calls per day, ~100K tokens/day) — figures as of 2026-05-18:
 
-- **Claude subscription** (Max $200/mo or Pro $20/mo): already paid, $0 additional.
-- **Anthropic API** (Claude 3.5 Sonnet): ~$0.30 / day. ~$10 / month if used every weekday.
-- **OpenAI API** (GPT-4o-mini): ~$0.05 / day.
-- **Gemini API** (Gemini 1.5 Flash, free tier): $0 (well within free tier).
-- **Ollama local**: $0, but slower.
+- **Claude subscription** (Max $200/mo or Pro $20/mo): already paid, $0 additional. Subscription terms prevail.
+- **Anthropic API** (Claude 3.5 Sonnet): ~$0.30 / day, ~$10 / month if used every weekday. Paid-tier privacy.
+- **OpenAI API** (GPT-4o-mini): ~$0.05 / day. Paid-tier privacy.
+- **Gemini API paid tier** (Gemini 2.5 Flash): ~$0.02 / day. Paid-tier privacy.
+- **Gemini API free tier**: $0. ⚠ Content used for training.
+- **Ollama local**: $0, slower, fully private (nothing leaves your machine).
 
-For most users the right answer is: **use the Claude subscription you already have, or get a free Gemini API key**. Both are zero marginal cost.
+For most users the right answer is: **use the Claude subscription you already have**, or **pay-as-you-go on Anthropic/OpenAI/Gemini paid tier** (cents per day). The free Gemini tier is fine only for non-sensitive content.
 
 ### Routing per task (advanced)
 
