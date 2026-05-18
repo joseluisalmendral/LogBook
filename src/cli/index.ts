@@ -103,7 +103,7 @@ async function maybeShell(): Promise<boolean> {
   if (!(process.stdin.isTTY && process.stdout.isTTY)) return false;
 
   try {
-    const { runShell } = await import("../tui/shell.js");
+    const { runShell } = await loadShellModule();
     await runShell();
     return true;
   } catch (err) {
@@ -113,6 +113,35 @@ async function maybeShell(): Promise<boolean> {
     // Fall through to runMain — citty prints help on no-args invocation
     return false;
   }
+}
+
+/**
+ * Load the TUI shell module from its sibling ESM bundle at runtime.
+ *
+ * The shell lives in dist/tui/shell.mjs (ESM) because Ink 5.x ships as ESM
+ * with top-level await. The CLI bundle is CJS, and Node 22 rejects
+ * require() on an ESM-with-TLA graph. So we resolve the shell as a file://
+ * URL and dynamic-import it.
+ *
+ * The Function('p','return import(p)') wrapper defeats esbuild's static
+ * analysis — without it, esbuild would follow the import and try to inline
+ * shell.ts (and Ink, and React) into the CJS bundle, reproducing the bug.
+ *
+ * Same pattern as src/export/pdf.ts:loadInstructorPackModule().
+ *
+ * @returns the shell module's `runShell` export
+ */
+async function loadShellModule(): Promise<{ runShell: () => Promise<void> }> {
+  const { resolve } = await import("node:path");
+  const { pathToFileURL } = await import("node:url");
+  // In the bundled CLI, __dirname resolves to dist/cli/ at runtime.
+  // The shell ESM bundle lives at dist/tui/shell.mjs.
+  const shellPath = resolve(__dirname, "../tui/shell.mjs");
+  const shellUrl = pathToFileURL(shellPath).href;
+  // eslint-disable-next-line @typescript-eslint/no-implied-eval
+  return (await (Function("p", "return import(p)")(shellUrl))) as {
+    runShell: () => Promise<void>;
+  };
 }
 
 (async () => {

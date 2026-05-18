@@ -20,11 +20,62 @@ export default defineConfig([
     // but the AI SDKs are kept out of the cold-start hot path — they only get
     // resolved from node_modules when `logbook summarize` / `providers test`
     // are invoked.
+    //
+    // ink + react: kept out of the CJS CLI bundle because Ink 5.x is ESM with
+    // top-level await. require()-ing an ESM-with-TLA graph fails on Node 22.
+    // The TUI shell lives in its own ESM bundle (dist/tui/shell.mjs) and is
+    // loaded at runtime via a Function() wrapper that defeats esbuild static
+    // analysis (see maybeShell() in src/cli/index.ts).
     external: [
       "better-sqlite3",
       "ai",
       "@ai-sdk/anthropic",
       "@ai-sdk/openai",
+      "@ai-sdk/google",
+      "@anthropic-ai/claude-agent-sdk",
+      "ink",
+      "react",
+      "react-dom",
+      "ink-testing-library",
+    ],
+  },
+  {
+    // TUI shell — ESM bundle, loaded at runtime from CLI via dynamic import.
+    //
+    // SEPARATE FROM CLI because Ink 5.x is ESM with top-level await. Node 22
+    // rejects `require()` on ESM-with-TLA graphs, so the shell cannot ride
+    // inside the CJS CLI bundle.
+    //
+    // CLI does: await (Function('p','return import(p)')(absoluteShellPath))
+    // The Function() wrapper defeats esbuild's static analysis so Ink does
+    // not get inlined into the CLI bundle.
+    //
+    // Entry: src/tui/shell.ts → dist/tui/shell.mjs
+    // clean: false — preserves the cli/index.cjs built above.
+    entry: { "tui/shell": "src/tui/shell.ts" },
+    format: ["esm"],
+    target: "node22",
+    outDir: "dist",
+    bundle: true,
+    clean: false,
+    dts: false,
+    sourcemap: false,
+    minify: false,
+    treeshake: true,
+    splitting: false,
+    // Force .mjs extension so Node treats this as ESM regardless of the
+    // package.json `type` field (which is "commonjs" — the default).
+    // Without this override, tsup would emit `.js` and Node would try to
+    // parse it as CJS, breaking the dynamic import from CLI.
+    outExtension: () => ({ js: ".mjs" }),
+    // Bundle Ink + React + dependencies into the shell bundle. They are
+    // ESM-native and bundle cleanly when the output is ESM.
+    external: [
+      "better-sqlite3",
+      "ai",
+      "@ai-sdk/anthropic",
+      "@ai-sdk/openai",
+      "@ai-sdk/google",
       "@anthropic-ai/claude-agent-sdk",
     ],
   },
