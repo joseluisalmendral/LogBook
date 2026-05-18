@@ -90,17 +90,29 @@ const STEP3_BINDINGS = [
 function renderOptionList(
   options: Array<{ value: string; label: string; description: string }>,
   cursor: number,
+  chosen?: string,
 ): React.ReactElement[] {
   return options.map((opt, idx) => {
-    const isSelected = idx === cursor;
-    const prefix = isSelected ? "> " : "  ";
-    const colorProp = isSelected ? { color: "cyan" as const } : {};
+    const isCursor = idx === cursor;
+    const isChosen = chosen !== undefined && opt.value === chosen;
+    // Three visual states:
+    //   "✓ " — the option has already been chosen (saved in choices)
+    //   "> " — the cursor is currently on this option
+    //   "  " — neither
+    // ✓ wins over > so a "previously chosen" option stays visible even when
+    // the cursor moves away.
+    const prefix = isChosen ? "✓ " : isCursor ? "> " : "  ";
+    const colorProp = isChosen
+      ? { color: "green" as const }
+      : isCursor
+        ? { color: "cyan" as const }
+        : {};
     return React.createElement(
       Box,
       { key: opt.value, flexDirection: "column", marginBottom: 0 },
       React.createElement(
         Text,
-        { bold: isSelected, ...colorProp },
+        { bold: isCursor || isChosen, ...colorProp },
         `${prefix}${opt.label}`,
       ),
       React.createElement(
@@ -142,7 +154,7 @@ export function InstallWizardScreen({ state, dispatch: _dispatch }: InstallWizar
       React.createElement(Text, { dimColor: true }, "─".repeat(60)),
       React.createElement(Text, { bold: true }, "Choose a preset:"),
       React.createElement(Text, { dimColor: true }, ""),
-      ...renderOptionList(PRESET_OPTIONS, cursor),
+      ...renderOptionList(PRESET_OPTIONS, cursor, choices.preset),
       React.createElement(Text, { dimColor: true }, "─".repeat(60)),
       React.createElement(KeybindingsFooter, { bindings: STEP1_BINDINGS }),
     );
@@ -162,7 +174,7 @@ export function InstallWizardScreen({ state, dispatch: _dispatch }: InstallWizar
       ),
       React.createElement(Text, { bold: true }, "Choose a provider:"),
       React.createElement(Text, { dimColor: true }, ""),
-      ...renderOptionList(PROVIDER_OPTIONS, cursor),
+      ...renderOptionList(PROVIDER_OPTIONS, cursor, choices.provider),
       React.createElement(Text, { dimColor: true }, "─".repeat(60)),
       React.createElement(KeybindingsFooter, { bindings: STEP2_BINDINGS }),
     );

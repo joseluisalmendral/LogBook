@@ -314,10 +314,15 @@ export function reduce(state: ShellState, action: ShellAction): ShellState {
           if (step === 1) {
             const preset = PRESET_OPTIONS[cursor];
             if (!preset) return state;
+            // Enter: save the choice AND advance to next step. The previous
+            // behavior (save only, require Tab to advance) was unintuitive —
+            // users pressed Enter expecting visible progress and got no feedback.
             return {
               ...state,
               screen: {
                 ...screen,
+                step: 2,
+                cursor: 0,
                 choices: { ...choices, preset },
               },
             };
@@ -326,10 +331,13 @@ export function reduce(state: ShellState, action: ShellAction): ShellState {
           if (step === 2) {
             const provider = PROVIDER_OPTIONS[cursor];
             if (!provider) return state;
+            // Enter: save the choice AND advance (same UX fix as step 1).
             return {
               ...state,
               screen: {
                 ...screen,
+                step: 3,
+                cursor: 0,
                 choices: { ...choices, provider },
               },
             };
