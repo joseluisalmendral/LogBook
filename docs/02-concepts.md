@@ -107,6 +107,62 @@ Spec §23 mandates a hard ceiling of 500 fixed-context tokens combined across al
 
 The 1-token margin in the teaching preset is intentional. New features must trim before they grow.
 
+## Choosing an LLM provider
+
+LogBook only uses an LLM for **four** commands: `summarize milestone`, `summarize project`, `teaching-script`, and `providers test`. Everything else (hooks, capture, build, export, etc.) runs without ever touching an LLM. So the "which provider" decision matters less than people assume — but here's the chooser if you need it.
+
+### The auth resolution order (automatic, no config required)
+
+When LogBook needs an LLM, it picks the first available path in this order:
+
+```
+1. Claude Code session active     → claude-agent-sdk (your subscription pays)
+2. ANTHROPIC_API_KEY set          → @ai-sdk/anthropic (API credits)
+3. OPENAI_API_KEY set             → @ai-sdk/openai (API credits)
+4. nothing                        → LLM disabled, those 4 commands error gracefully
+```
+
+You can override this with `logbook providers set <target> <kind>` once installed. The auth check is in `src/llm/provider-router.ts:108-120` if you want to read the implementation.
+
+### When to pick which
+
+| Your situation | Recommended provider | Why |
+|---|---|---|
+| You work inside Claude Code daily (Pro or Max subscription) | **Default — do nothing**. The `claude-agent-sdk` path picks up automatically when you launch `logbook` from a Claude Code session. | Zero setup. No double-charging for tokens you already pay for through the subscription. |
+| You want LogBook to work standalone, without Claude Code running | `anthropic` (API key) or `openai` (API key) | Both have generous free / paid tiers. Anthropic API has no free tier but pay-as-you-go is fine for LogBook's volume (~50K-150K tokens/day). OpenAI has a small free credit. |
+| Zero cost, willing to set up an API key | `google` (Gemini API) | Free tier: 1500 requests/day, 15 RPM. LogBook uses <1% of that. Get a key at <https://aistudio.google.com/apikey>. |
+| Zero cost, no internet for LLM, willing to run locally | `local` (Ollama) | Free, private, runs on `localhost:11434`. Slower and lower-quality output than the cloud models. |
+| You have ChatGPT Plus + `codex` CLI installed | `codex-cli` | Subprocess to your local Codex CLI session. No API key, uses your subscription. Streaming not supported. |
+| You have Azure OpenAI Enterprise | `azure` | Use your Azure deployment credentials. |
+
+### Cost reality check
+
+For a normal instructor (5-10 LLM calls per day, ~100K tokens/day):
+
+- **Claude subscription** (Max $200/mo or Pro $20/mo): already paid, $0 additional.
+- **Anthropic API** (Claude 3.5 Sonnet): ~$0.30 / day. ~$10 / month if used every weekday.
+- **OpenAI API** (GPT-4o-mini): ~$0.05 / day.
+- **Gemini API** (Gemini 1.5 Flash, free tier): $0 (well within free tier).
+- **Ollama local**: $0, but slower.
+
+For most users the right answer is: **use the Claude subscription you already have, or get a free Gemini API key**. Both are zero marginal cost.
+
+### Routing per task (advanced)
+
+You can mix providers — for example, use Claude for `teaching-script` (high-quality structured output) and Gemini for `summarize milestone` (cheap and fast). Configure via:
+
+```sh
+logbook providers set task:teaching-script anthropic-claude-sdk --model claude-opus-4-6
+logbook providers set task:summarize       google                 --model gemini-1.5-flash
+```
+
+The router resolves in this priority: `by_task[task] > by_phase[phase] > default_provider`. See [`03-cli-reference.md`](./03-cli-reference.md#logbook-providers-set) for the full grammar.
+
+### What is NOT supported (and why)
+
+- **ChatGPT Plus subscription as an API**. OpenAI does not expose the chat subscription programmatically. You need a separate API key from <https://platform.openai.com>. This is OpenAI's policy, not a LogBook limitation.
+- **Gemini CLI subprocess**. Considered for v1.3 and rejected — see [`v1.3-roadmap.md`](./v1.3-roadmap.md#section-7--provider-strategy-decisions-added-2026-05-18-evening) §7.2. The `google` adapter (API direct) covers the same model with simpler setup and streaming support.
+
 ## Byte-identity contract
 
 Spec §24.8 / §37 guarantee: install + uninstall leaves every shared file byte-identical to its pre-install state, even when other plugins have entries in `.claude/settings.local.json`, `CLAUDE.md`, `.claude/mcp.json`, or `.gitignore`. This is enforced by:
