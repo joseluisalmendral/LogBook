@@ -68,7 +68,7 @@ Once the binary is installed, the loop is:
    logbook init --preset standard --yes
    ```
 
-   The TUI wizard walks you through preset choice and confirmation. `init --yes --preset standard` does the same non-interactively.
+   The TUI launches with an animated LogBook banner (cyan ASCII art, 640 ms line-reveal) and then walks you through preset choice and confirmation. `init --yes --preset standard` does the same non-interactively, no banner. Set `LOGBOOK_NO_ANIMATION=1` if you want the banner to render instantly without the typing effect.
 
 3. Open the project in Claude Code. The MCP server `logbook-mcp` is registered project-scoped in `.claude/mcp.json`; the PostToolUse hook is registered in `.claude/settings.local.json`; the agent will pick both up on session start.
 
@@ -90,6 +90,21 @@ Once the binary is installed, the loop is:
    ```
 
    Outputs land in `logbook/exports/`.
+
+7. (Optional) Generate an LLM-backed summary of a milestone. Tokens stream to your terminal in real time as the model writes them (v1.2+); add `--no-stream` if you're piping the output:
+
+   ```sh
+   logbook summarize milestone last
+   ```
+
+8. (Optional) Check install health and bundle sizes at any time:
+
+   ```sh
+   logbook doctor              # quick overview
+   logbook doctor --measure    # full token + bundle breakdown
+   ```
+
+   See [`03-cli-reference.md`](./03-cli-reference.md#logbook-doctor) for the field reference.
 
 ## Choosing your preset
 
