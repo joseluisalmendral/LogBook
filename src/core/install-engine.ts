@@ -256,6 +256,23 @@ export async function runInstall(input: RunInstallInput): Promise<RunInstallResu
       continue;
     }
 
+    // Regression 2026-05-18: a user reported `.gitignore` with the LogBook block
+    // duplicated 3 times. Root cause — the manifest had been lost in a previous
+    // bad uninstall/purge cycle, so `detect()` could not match by id and
+    // returned "occupied-by-other". The engine then called install() anyway,
+    // and `appendLines` added the SAME lines a fourth time. Each install cycle
+    // without a manifest doubled the artifact count.
+    //
+    // Honor the installer's own intent (the comment in gitignore.detect already
+    // said "We coexist by NOT inserting again"): treat "occupied-by-other" as
+    // a hard skip. If another tool — or an orphaned LogBook install — has the
+    // slot, we DO NOT touch it. The user can clean orphans with `logbook
+    // uninstall --force` (or manually) before reinstalling.
+    if (detection.status === "occupied-by-other") {
+      skipped.push({ artifact, reason: "occupied-by-other" });
+      continue;
+    }
+
     try {
       const manifestArtifact = await installer.install(artifact, installCtxWithBackups);
       installed.push(manifestArtifact);

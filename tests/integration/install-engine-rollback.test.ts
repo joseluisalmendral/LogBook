@@ -526,6 +526,46 @@ describe("runUninstall — force overrides hash_mismatch", () => {
   });
 });
 
+// Regression 2026-05-18: user reported `.gitignore` with the LogBook block
+// duplicated 3 times. Root cause: manifest was lost between install cycles
+// (a previous bad uninstall/purge), so detect() returned "occupied-by-other"
+// instead of "occupied-by-logbook", and the install-engine called install()
+// anyway — appending the same lines repeatedly. The engine must HONOR the
+// installer's intent to skip when content is already on disk, regardless of
+// whether ownership can be proven via the manifest.
+describe("runInstall — occupied-by-other is a hard skip (prevents duplication)", () => {
+  it("does NOT call installer.install() when detect returns occupied-by-other", async () => {
+    const installCalls: string[] = [];
+    const installer: ArtifactInstaller = {
+      kind: "hook" as const,
+      detect: async () => ({
+        status: "occupied-by-other" as const,
+        fingerprint: "orphan-content",
+      }),
+      install: async (artifact: Artifact) => {
+        installCalls.push((artifact as FakeArtifact)._logbookId);
+        return makeFakeManifestArtifact("never-reached");
+      },
+      uninstall: async () => {},
+      verify: async () => ({ ok: true }),
+    };
+    register(installer);
+
+    const paths = makePaths(projectRoot);
+    const result = await runInstall({
+      paths,
+      preset: "minimal",
+      artifacts: [makeFakeArtifact("lb-hook-001")],
+      dryRun: false,
+    });
+
+    expect(installCalls).toHaveLength(0);
+    expect(result.installed).toHaveLength(0);
+    expect(result.skipped).toHaveLength(1);
+    expect(result.skipped[0]!.reason).toBe("occupied-by-other");
+  });
+});
+
 // Regression: programmatic callers of runUninstall (TUI, tests, scripts) used
 // to get a partial uninstall — artifact bodies removed, but the SHARED FILES
 // LogBook created from scratch (.gitignore, .claude/settings.local.json) were
