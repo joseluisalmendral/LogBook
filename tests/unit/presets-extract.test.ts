@@ -77,14 +77,12 @@ function summarize(artifacts: Artifact[]): ArtifactSummary[] {
 
 const MINIMAL_EXPECTED: ArtifactSummary[] = [
   { kind: "gitignore_entry", file_path: ".gitignore", marker: "# lb-gitignore-001" },
-  { kind: "gitignore_entry", file_path: ".gitignore", marker: "# lb-gitignore-settings-001" },
   { kind: "hook", hookEvent: "PostToolUse", _logbookId: "lb-hook-posttooluse-001" },
 ].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
 
 const STANDARD_EXPECTED: ArtifactSummary[] = [
   { kind: "augment_claudemd", file_path: "CLAUDE.md", _logbookId: "lb-claudemd-001" },
   { kind: "gitignore_entry", file_path: ".gitignore", marker: "# lb-gitignore-001" },
-  { kind: "gitignore_entry", file_path: ".gitignore", marker: "# lb-gitignore-settings-001" },
   { kind: "hook", hookEvent: "PostToolUse", _logbookId: "lb-hook-posttooluse-001" },
   { kind: "mcp_server", name: "logbook-mcp", _logbookId: "lb-mcp-001" },
   { kind: "slash_command", name: "lb-decision", file_path: ".claude/commands/lb-decision.md", _logbookId: "lb-cmd-lb-decision" },
@@ -102,7 +100,6 @@ const STANDARD_EXPECTED: ArtifactSummary[] = [
 const TEACHING_EXPECTED: ArtifactSummary[] = [
   { kind: "augment_claudemd", file_path: "CLAUDE.md", _logbookId: "lb-claudemd-001" },
   { kind: "gitignore_entry", file_path: ".gitignore", marker: "# lb-gitignore-001" },
-  { kind: "gitignore_entry", file_path: ".gitignore", marker: "# lb-gitignore-settings-001" },
   { kind: "hook", hookEvent: "PostToolUse", _logbookId: "lb-hook-posttooluse-001" },
   { kind: "hook", hookEvent: "SessionStart", _logbookId: "lb-hook-sessionstart-001" },
   { kind: "mcp_server", name: "logbook-mcp", _logbookId: "lb-mcp-001" },
@@ -126,9 +123,9 @@ const TEACHING_EXPECTED: ArtifactSummary[] = [
 // ---------------------------------------------------------------------------
 
 describe("buildArtifactsForPreset — extraction regression guard", () => {
-  test("minimal: returns exactly 3 artifacts (hook + 2 gitignore_entries)", () => {
+  test("minimal: returns exactly 2 artifacts (hook + gitignore_entry)", () => {
     const artifacts = buildArtifactsForPreset("minimal");
-    expect(artifacts).toHaveLength(3);
+    expect(artifacts).toHaveLength(2);
   });
 
   test("minimal: artifact shape matches frozen baseline", () => {
@@ -136,9 +133,9 @@ describe("buildArtifactsForPreset — extraction regression guard", () => {
     expect(summarize(artifacts)).toEqual(MINIMAL_EXPECTED);
   });
 
-  test("standard: returns exactly 15 artifacts", () => {
+  test("standard: returns exactly 14 artifacts", () => {
     const artifacts = buildArtifactsForPreset("standard");
-    expect(artifacts).toHaveLength(15);
+    expect(artifacts).toHaveLength(14);
   });
 
   test("standard: artifact shape matches frozen baseline", () => {
@@ -146,9 +143,9 @@ describe("buildArtifactsForPreset — extraction regression guard", () => {
     expect(summarize(artifacts)).toEqual(STANDARD_EXPECTED);
   });
 
-  test("teaching: returns exactly 19 artifacts", () => {
+  test("teaching: returns exactly 18 artifacts", () => {
     const artifacts = buildArtifactsForPreset("teaching");
-    expect(artifacts).toHaveLength(19);
+    expect(artifacts).toHaveLength(18);
   });
 
   test("teaching: artifact shape matches frozen baseline", () => {
@@ -163,30 +160,29 @@ describe("buildArtifactsForPreset — extraction regression guard", () => {
     expect(full).toHaveLength(teaching.length);
   });
 
-  test("unknown preset: falls back to minimal (3 artifacts)", () => {
+  test("unknown preset: falls back to minimal (2 artifacts)", () => {
     const artifacts = buildArtifactsForPreset("unknown-preset");
-    expect(artifacts).toHaveLength(3);
+    expect(artifacts).toHaveLength(2);
     expect(artifacts[0]!.kind).toBe("hook");
     expect(artifacts[1]!.kind).toBe("gitignore_entry");
-    expect(artifacts[2]!.kind).toBe("gitignore_entry");
   });
 
-  test("every preset installs a .claude/settings.local.json gitignore entry", () => {
-    // Regression 2026-05-18: user reported that uninstall flicker in
-    // .claude/settings.local.json kept appearing in `git status` because the
-    // file was not in .gitignore. We now install a separate gitignore_entry
-    // (`# lb-gitignore-settings-001`) for that path in every preset.
+  test("no preset installs a .claude/settings.local.json gitignore entry", () => {
+    // Reverted 2026-05-18 after user feedback: ignoring the whole file is too
+    // aggressive because the user may write unrelated keys they want to commit.
+    // git cannot ignore "just the LogBook lines" inside a JSON file. Users who
+    // want to ignore the full file can add it to their own .gitignore.
     for (const preset of ["minimal", "standard", "teaching", "full"]) {
       const artifacts = buildArtifactsForPreset(preset);
-      const entries = artifacts.filter((a) => a.kind === "gitignore_entry");
-      const hasSettings = entries.some(
+      const settingsEntry = artifacts.find(
         (a) =>
           a.kind === "gitignore_entry" &&
           a.lines.includes(".claude/settings.local.json"),
       );
-      expect(hasSettings, `${preset}: missing .claude/settings.local.json gitignore line`).toBe(
-        true,
-      );
+      expect(
+        settingsEntry,
+        `${preset} must not auto-ignore .claude/settings.local.json`,
+      ).toBeUndefined();
     }
   });
 

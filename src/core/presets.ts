@@ -101,28 +101,20 @@ function readSubagentAsset(name: string): string {
 }
 
 // ---------------------------------------------------------------------------
-// Gitignore line groups installed by every preset.
+// Gitignore line group installed by every preset.
 //
-// We install TWO independent gitignore_entry artifacts (each with its own
-// lb-* marker) instead of one fat block. Reason: each block can evolve, be
-// installed, and be removed independently. If a future logbook adds a third
-// block, existing installs keep their current blocks intact.
+// We install ONE block covering the directories LogBook OWNS in full:
+//   `.logbook/` (internal scratch + state) and `logbook/` (data dir).
 //
-// Block 1 — internal scratch dirs. Has been present since iter1; do not
-//   change the line set or the marker without an upgrade story (changing the
-//   marker would orphan all v1.0 installs).
-//
-// Block 2 — Claude Code's local settings file. LogBook always modifies this
-//   file (hook installer writes a PostToolUse entry). Without this gitignore
-//   line, every install AND every hook write would surface as a pending change
-//   in `git status`. The `.local.json` suffix is Claude Code's convention for
-//   "do not commit", so ignoring it is consistent with the broader ecosystem.
+// We DO NOT add `.claude/settings.local.json` here, even though LogBook
+// modifies it: that file is shared with Claude Code, the user, and other
+// tools, and git cannot ignore "just the LogBook lines" inside a JSON file.
+// Ignoring the whole file would hide unrelated edits the user might want to
+// commit. The trade-off goes to the user: they can `git add -p` to stage
+// selective changes, or add the path to their own `.gitignore` manually if
+// they want it fully ignored.
 // ---------------------------------------------------------------------------
 const GITIGNORE_DATA_DIRS_LINES = [".logbook/", "logbook/", "# lb-gitignore-001"];
-const GITIGNORE_CLAUDE_LOCAL_LINES = [
-  ".claude/settings.local.json",
-  "# lb-gitignore-settings-001",
-];
 
 // ---------------------------------------------------------------------------
 // The 8 slash command names in design §6 install order.
@@ -155,11 +147,6 @@ export function buildMinimalArtifacts(): Artifact[] {
       kind: "gitignore_entry",
       file_path: ".gitignore",
       lines: GITIGNORE_DATA_DIRS_LINES,
-    },
-    {
-      kind: "gitignore_entry",
-      file_path: ".gitignore",
-      lines: GITIGNORE_CLAUDE_LOCAL_LINES,
     },
   ];
 }
@@ -226,17 +213,11 @@ export function buildStandardArtifacts(): Artifact[] {
       body: readSkillAsset("reference.md"),
       _logbookId: "lb-skill-logbook-auto-capture-reference",
     },
-    // 14. gitignore_entry — internal scratch dirs (LAST batch per iter1 contract)
+    // 14. gitignore_entry (LAST — per iter1 install-order contract)
     {
       kind: "gitignore_entry",
       file_path: ".gitignore",
       lines: GITIGNORE_DATA_DIRS_LINES,
-    },
-    // 15. gitignore_entry — .claude/settings.local.json
-    {
-      kind: "gitignore_entry",
-      file_path: ".gitignore",
-      lines: GITIGNORE_CLAUDE_LOCAL_LINES,
     },
   ];
 }
