@@ -101,6 +101,30 @@ function readSubagentAsset(name: string): string {
 }
 
 // ---------------------------------------------------------------------------
+// Gitignore line groups installed by every preset.
+//
+// We install TWO independent gitignore_entry artifacts (each with its own
+// lb-* marker) instead of one fat block. Reason: each block can evolve, be
+// installed, and be removed independently. If a future logbook adds a third
+// block, existing installs keep their current blocks intact.
+//
+// Block 1 — internal scratch dirs. Has been present since iter1; do not
+//   change the line set or the marker without an upgrade story (changing the
+//   marker would orphan all v1.0 installs).
+//
+// Block 2 — Claude Code's local settings file. LogBook always modifies this
+//   file (hook installer writes a PostToolUse entry). Without this gitignore
+//   line, every install AND every hook write would surface as a pending change
+//   in `git status`. The `.local.json` suffix is Claude Code's convention for
+//   "do not commit", so ignoring it is consistent with the broader ecosystem.
+// ---------------------------------------------------------------------------
+const GITIGNORE_DATA_DIRS_LINES = [".logbook/", "logbook/", "# lb-gitignore-001"];
+const GITIGNORE_CLAUDE_LOCAL_LINES = [
+  ".claude/settings.local.json",
+  "# lb-gitignore-settings-001",
+];
+
+// ---------------------------------------------------------------------------
 // The 8 slash command names in design §6 install order.
 // ---------------------------------------------------------------------------
 const STANDARD_SLASH_NAMES = [
@@ -130,7 +154,12 @@ export function buildMinimalArtifacts(): Artifact[] {
     {
       kind: "gitignore_entry",
       file_path: ".gitignore",
-      lines: [".logbook/", "logbook/", "# lb-gitignore-001"],
+      lines: GITIGNORE_DATA_DIRS_LINES,
+    },
+    {
+      kind: "gitignore_entry",
+      file_path: ".gitignore",
+      lines: GITIGNORE_CLAUDE_LOCAL_LINES,
     },
   ];
 }
@@ -197,11 +226,17 @@ export function buildStandardArtifacts(): Artifact[] {
       body: readSkillAsset("reference.md"),
       _logbookId: "lb-skill-logbook-auto-capture-reference",
     },
-    // 14. gitignore_entry (LAST — per iter1 install-order contract)
+    // 14. gitignore_entry — internal scratch dirs (LAST batch per iter1 contract)
     {
       kind: "gitignore_entry",
       file_path: ".gitignore",
-      lines: [".logbook/", "logbook/", "# lb-gitignore-001"],
+      lines: GITIGNORE_DATA_DIRS_LINES,
+    },
+    // 15. gitignore_entry — .claude/settings.local.json
+    {
+      kind: "gitignore_entry",
+      file_path: ".gitignore",
+      lines: GITIGNORE_CLAUDE_LOCAL_LINES,
     },
   ];
 }
@@ -228,9 +263,19 @@ export function buildTeachingArtifacts(): Artifact[] {
   const hookPath = resolveHookPath();
   const standard = buildStandardArtifacts();
 
-  // Standard artifacts without the trailing gitignore_entry (we re-append it last).
-  const withoutGitignore = standard.slice(0, standard.length - 1);
-  const gitignoreEntry = standard[standard.length - 1]!;
+  // Standard artifacts without the trailing gitignore_entry batch.
+  // The standard preset emits gitignore entries LAST (per the iter1 install-
+  // order contract). Count any trailing gitignore_entry artifacts and split
+  // them off so we can re-append them after the teaching-specific additions.
+  let trailingGitignoreStart = standard.length;
+  while (
+    trailingGitignoreStart > 0 &&
+    standard[trailingGitignoreStart - 1]!.kind === "gitignore_entry"
+  ) {
+    trailingGitignoreStart--;
+  }
+  const withoutGitignore = standard.slice(0, trailingGitignoreStart);
+  const trailingGitignoreEntries = standard.slice(trailingGitignoreStart);
 
   // Subagent bodies from assets/subagents/
   const curatorBody = readSubagentAsset("logbook-curator");
@@ -277,8 +322,8 @@ export function buildTeachingArtifacts(): Artifact[] {
       command: `node ${hookPath}`,
       _logbookId: "lb-hook-sessionstart-001",
     },
-    // 17. gitignore_entry (LAST — per iter1 install-order contract)
-    gitignoreEntry,
+    // 17+. gitignore_entries (LAST — per iter1 install-order contract)
+    ...trailingGitignoreEntries,
   ];
 }
 
