@@ -360,13 +360,21 @@ export async function runShell(opts?: RunShellOptions): Promise<void> {
   if (opts?.initialSnapshot) {
     initialSnapshot = opts.initialSnapshot;
   } else {
-    // Resolve project root; gracefully handle missing root
-    let paths = null;
+    // Resolve project root. If the directory has no `.git` / `package.json` /
+    // `.claude` marker, fall back to `process.cwd()` so the install wizard
+    // can still run (regression 2026-05-21 audit, CRITICAL #4: when paths
+    // was null the side-effect bridge always dispatched
+    // `doing.err: "No project root"`, making the wizard's "i" / "d" install
+    // keys an instant failure on fresh directories).
+    //
+    // Falling back to cwd means: if the user runs `logbook` in a marker-less
+    // dir and proceeds through the wizard, LogBook will install there. This
+    // mirrors `logbook init --here` from the CLI.
+    let paths: ReturnType<typeof makePaths>;
     try {
-      const root = resolveProjectRoot();
-      paths = makePaths(root);
+      paths = makePaths(resolveProjectRoot());
     } catch {
-      // Not in a project — empty snapshot, shell shows install wizard
+      paths = makePaths(process.cwd());
     }
 
     initialSnapshot = await buildSnapshot(paths);

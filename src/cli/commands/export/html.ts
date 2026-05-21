@@ -82,10 +82,18 @@ export default defineCommand({
     }
 
     const paths = makePaths(root);
-    const outArg =
-      typeof args["out"] === "string" && args["out"]
-        ? args["out"]
-        : undefined;
+    let outArg: string | undefined;
+    try {
+      outArg = (await import("../../out-path.js")).resolveOutPath(
+        typeof args["out"] === "string" ? args["out"] : undefined,
+        paths.root,
+      );
+    } catch (err) {
+      process.stderr.write(
+        `error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    }
 
     // Lazy-load the export module — non-literal require() path means esbuild
     // skips inlining; the heavy unified/remark/rehype chain stays in

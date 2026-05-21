@@ -75,3 +75,67 @@ export function backupOnce(filePath: string, ctx: BackupContext): BackupRef {
   const relBackupPath = path.relative(projectRoot, backupAbs);
   return { file_path: relPath, backup_path: relBackupPath, sha256, taken_at };
 }
+
+/**
+ * Restore a single file from its `BackupRef`.
+ *
+ * Behaviour:
+ *   - `sha256 === ""` → sentinel: the file did not exist before install.
+ *     If the file is on disk now, delete it. Otherwise no-op.
+ *   - Otherwise → copy the backup file back over the target via a tmp+rename
+ *     so the restore is atomic. After restore, verify the on-disk sha256
+ *     matches the stored one; if not, throw — something tampered with the
+ *     backup.
+ *
+ * Used by `runInstall`'s rollback path when an installer throws after some
+ * shared files have already been mutated. Anchor-based `installer.uninstall`
+ * cannot guarantee byte-identity in that situation (the install may have
+ * written a malformed intermediate state) — restoring the original backup
+ * IS guaranteed to be byte-identical, which is what the §24.8 / §37 spec
+ * actually promises.
+ *
+ * Errors are returned by throwing — the caller is responsible for collecting
+ * and aggregating them so other restores still execute.
+ *
+ * @param backup        The BackupRef captured at install time.
+ * @param projectRoot   Absolute project root (BackupRef paths are relative).
+ */
+export function restoreFromBackup(
+  backup: BackupRef,
+  projectRoot: string,
+): void {
+  const targetAbs = path.resolve(projectRoot, backup.file_path);
+
+  // Sentinel: pre-install the file did not exist. Restore = make it not exist.
+  if (backup.sha256 === "") {
+    if (fs.existsSync(targetAbs)) {
+      fs.rmSync(targetAbs, { force: true });
+    }
+    return;
+  }
+
+  const backupAbs = path.resolve(projectRoot, backup.backup_path);
+  if (!fs.existsSync(backupAbs)) {
+    throw new Error(
+      `restoreFromBackup: backup file is missing on disk: ${backup.backup_path}. ` +
+        `Cannot restore ${backup.file_path} to its pre-install state.`,
+    );
+  }
+
+  // Atomic restore: write to tmp + rename, so a crash mid-copy never leaves
+  // the target half-written.
+  const tmpPath = `${targetAbs}.lb-restore.tmp`;
+  fs.mkdirSync(path.dirname(targetAbs), { recursive: true });
+  fs.copyFileSync(backupAbs, tmpPath);
+  fs.renameSync(tmpPath, targetAbs);
+
+  // Post-condition: verify the restored bytes match the stored sha256.
+  const restoredSha = sha256File(targetAbs);
+  if (restoredSha !== backup.sha256) {
+    throw new Error(
+      `restoreFromBackup: post-restore sha256 mismatch for ${backup.file_path}. ` +
+        `Expected ${backup.sha256}, got ${restoredSha}. ` +
+        `The backup file may have been tampered with.`,
+    );
+  }
+}

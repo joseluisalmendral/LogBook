@@ -229,7 +229,23 @@ export async function runUninstall(input: RunUninstallInput): Promise<RunUninsta
   // — i.e. whitespace-only OR an empty JSON container (`{}` / `[]`). If the user
   // (or another tool) added content to the file we created, we leave the file
   // alone. Losing user content is worse than leaving an empty husk.
-  if (!dryRun && manifest.artifacts.length === 0) {
+  if (!dryRun) {
+    // Sentinel cleanup runs on EVERY successful uninstall pass, even partial
+    // ones (e.g. one entry skipped on hash_mismatch without --force). The
+    // helpers below are safe under partial state:
+    //   - cleanupSentinelFiles only deletes files whose post-uninstall
+    //     content "looks empty" (see looksEmpty heuristic). A partial
+    //     uninstall leaves drifted content in place → the file looks
+    //     non-empty → NOT deleted. Correct.
+    //   - deleteManifestIfEmpty only deletes the manifest when artifacts
+    //     is empty. Already conditional.
+    //   - cleanupInternalLogbookDir deletes .logbook/backups/ always (it is
+    //     internal scratch with no post-uninstall value, even on partial
+    //     uninstall), and only removes .logbook/ itself when empty.
+    // Before this change (regression 2026-05-21 audit, WARNING #8) the
+    // whole block was gated on `artifacts.length === 0`, so a single
+    // hash_mismatch left `.logbook/backups/…` and the orphan manifest on
+    // disk forever.
     cleanupSentinelFiles(paths.root, manifest.backups);
     deleteManifestIfEmpty(paths.manifestPath);
     cleanupInternalLogbookDir(paths);

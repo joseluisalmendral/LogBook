@@ -249,13 +249,19 @@ export function reduce(state: ShellState, action: ShellAction): ShellState {
               };
 
             case "summarize":
+              // No TUI handler is wired yet — `logbook summarize` is a multi-
+              // subcommand CLI (project / milestone). Surface a clear
+              // explanation instead of "Unknown action" (regression
+              // 2026-05-21 audit, CRITICAL #2).
               return {
                 ...state,
                 screen: {
                   kind: "doing",
-                  label: "Summarizing...",
-                  promise: "pending",
+                  label: "Summarize (CLI only)",
+                  promise: "err",
                   returnTo: "home",
+                  message:
+                    "Summarize is CLI-only for now. Run `logbook summarize project` or `logbook summarize milestone <id>` from your terminal.",
                 },
               };
 
@@ -383,18 +389,64 @@ export function reduce(state: ShellState, action: ShellAction): ShellState {
               };
             case "back":
               return { ...state, screen: { kind: "home", cursor: 0 } };
-            default:
-              // Other configure options (toggle-disabled, etc.)
-              // trigger doing transitions via persist.ts handlers in T5.
+            case "toggle-disabled": {
+              // Pre-compute the label so resolveHandler routes via the
+              // existing "Enabling…" / "Disabling…" branch. The handler
+              // (runToggleDisabledAction) needs to know the current state
+              // anyway — we read it here from the snapshot. Regression
+              // 2026-05-21 audit, CRITICAL #1: this case used to fall to
+              // the default branch and produce label
+              // `"Running toggle-disabled..."`, which resolveHandler did
+              // not match → user got "Unknown action".
+              const isCurrentlyDisabled = state.snapshot.disabled ?? false;
+              const label = isCurrentlyDisabled
+                ? "Enabling hooks..."
+                : "Disabling hooks...";
               return {
                 ...state,
                 screen: {
                   kind: "doing",
-                  label: `Running ${action_name ?? "action"}...`,
+                  label,
                   promise: "pending",
                   returnTo: "configure",
                 },
               };
+            }
+            case "rerun-doctor":
+              // Reuse the home-screen doctor handler — the label MUST be
+              // "Running doctor..." so resolveHandler routes via
+              // `label.startsWith("Running doctor")`.
+              return {
+                ...state,
+                screen: {
+                  kind: "doing",
+                  label: "Running doctor...",
+                  promise: "pending",
+                  returnTo: "configure",
+                },
+              };
+            case "set-phase":
+            case "rename-session": {
+              // No TUI handler wired yet. Surface a clear explanation
+              // instead of "Unknown action" (regression 2026-05-21 audit,
+              // CRITICAL #1 — these used to fall to the default branch).
+              const cliHint =
+                action_name === "set-phase"
+                  ? "Run `logbook state` to inspect; phase changes go through the agent or `/lb-phase`."
+                  : "Run `logbook state --rename-session <id>` from your terminal.";
+              return {
+                ...state,
+                screen: {
+                  kind: "doing",
+                  label: `${action_name} (CLI only)`,
+                  promise: "err",
+                  returnTo: "configure",
+                  message: cliHint,
+                },
+              };
+            }
+            default:
+              return state;
           }
         }
 

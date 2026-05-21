@@ -87,9 +87,12 @@ describe("T12 — byte-identity statusline install/uninstall", () => {
         const settingsRaw = readFileSync(settingsPath, "utf8");
         const settings = JSON.parse(settingsRaw);
 
-        // statusLine key must be present
-        expect(typeof settings.statusLine).toBe("string");
-        expect(settings.statusLine).toContain("state --inline");
+        // statusLine key must be present as Claude-Code-compliant object
+        // (fix 2026-05-21 — bare string is rejected by Claude Code).
+        expect(typeof settings.statusLine).toBe("object");
+        expect((settings.statusLine as { command: string }).command).toContain(
+          "state --inline",
+        );
 
         // Pre-existing fake hooks must still be present (semantically).
         // T-FIX-HOOK: the SessionStart hook install now uses pure string-patch —
@@ -195,10 +198,11 @@ describe("T12 — byte-identity statusline install/uninstall", () => {
       );
       const parsedAfter = JSON.parse(settingsAfterInstall);
 
-      // statusLine must be a string command
-      expect(typeof parsedAfter.statusLine).toBe("string");
-      expect(parsedAfter.statusLine).toContain("node");
-      expect(parsedAfter.statusLine).toContain("state --inline");
+      // statusLine must be a Claude-Code-compliant object (fix 2026-05-21).
+      expect(typeof parsedAfter.statusLine).toBe("object");
+      const cmd = (parsedAfter.statusLine as { command: string }).command;
+      expect(cmd).toContain("node");
+      expect(cmd).toContain("state --inline");
 
       // hooks structure must still be intact
       const ptuHooks = parsedAfter?.hooks?.PostToolUse ?? [];
@@ -250,10 +254,12 @@ describe("T12 — byte-identity statusline install/uninstall", () => {
         "utf8",
       );
 
-      // Settings must be the same after second install (no duplicated statusLine)
+      // Settings must be the same after second install (no duplicated statusLine).
+      // The value is now an OBJECT (fix 2026-05-21), so structural equality
+      // is required — `toBe` (Object.is) would compare references and fail.
       const parsedFirst = JSON.parse(settingsAfterFirst);
       const parsedSecond = JSON.parse(settingsAfterSecond);
-      expect(parsedSecond.statusLine).toBe(parsedFirst.statusLine);
+      expect(parsedSecond.statusLine).toStrictEqual(parsedFirst.statusLine);
     },
     120_000,
   );

@@ -55,14 +55,25 @@ function makeArtifact(
   id: string,
   kind: ManifestArtifact["kind"],
   file_path: string,
+  jsonPathOverride?: string,
 ): ManifestArtifact {
+  // For hook artifacts, the jsonPath encodes the hookEvent (PostToolUse,
+  // SessionStart, etc.). Token-measure now reads `hookEvent` from this path
+  // instead of heuristic-matching on the lb-* id string (regression
+  // 2026-05-21 audit, WARNING #7). Tests can pass `jsonPathOverride` to
+  // simulate the real anchor; otherwise we synthesize from the id.
+  const jsonPath =
+    jsonPathOverride ??
+    (kind === "hook"
+      ? `/hooks/${id.includes("sessionstart") ? "SessionStart" : "PostToolUse"}/0`
+      : "/dummy");
   return {
     id,
     kind,
     file_path,
     anchor: {
       type: "json_field",
-      jsonPath: "/dummy",
+      jsonPath,
       idField: "_logbookId",
       idValue: id,
     },

@@ -158,8 +158,9 @@ describe("T10 — init --preset teaching coexistence with pre-existing plugins (
   it("statusLine key is added to settings.local.json that already has pre-existing hooks", () => {
     const settingsPath = path.join(tmp, ".claude/settings.local.json");
     const settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
-    expect(typeof settings.statusLine).toBe("string");
-    expect(settings.statusLine).toContain("state --inline");
+    // Claude Code schema object shape — see fix 2026-05-21.
+    expect(typeof settings.statusLine).toBe("object");
+    expect(settings.statusLine.command).toContain("state --inline");
   });
 
   it("pre-existing fake PostToolUse hooks survive statusline + teaching install", () => {

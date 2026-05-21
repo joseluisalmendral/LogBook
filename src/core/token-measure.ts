@@ -265,12 +265,33 @@ export function computeTokenBreakdown(manifest: Manifest, projectRoot: string): 
       }
       // reference.md → 0 (on-demand only, not in fixed context)
     } else if (entry.kind === "hook") {
-      // Only SessionStart hooks contribute to fixed context (stdout injected into session).
-      // PostToolUse and other hook events do NOT inject context → 0.
-      // We detect SessionStart via the manifest entry id (lb-hook-sessionstart-*).
-      // T8.D1: use conservative maximum (120 tokens) regardless of actual summary length.
-      const id = entry.id as string;
-      if (id.includes("sessionstart") || id.includes("session-start")) {
+      // Only SessionStart hooks contribute to fixed context (their stdout is
+      // injected into the session). PostToolUse and other hook events do NOT
+      // inject context → 0.
+      //
+      // Regression 2026-05-21 audit, WARNING #7: we used to detect SessionStart
+      // via `id.includes("sessionstart")` — a heuristic over the lb-* id
+      // string. A PostToolUse hook whose ULID happens to contain "sessionstart"
+      // would have falsely added 120 tokens. The correct signal is the
+      // `hookEvent` field on the json_field anchor.
+      //
+      // T8.D1: use conservative maximum (120 tokens) regardless of actual
+      // summary length.
+      // Defensive: anchor may be missing on hand-crafted or legacy manifests.
+      const anchor = entry.anchor as
+        | { type?: string; jsonPath?: string }
+        | undefined;
+      let hookEvent: string | undefined;
+      if (
+        anchor !== undefined &&
+        anchor.type === "json_field" &&
+        typeof anchor.jsonPath === "string"
+      ) {
+        // jsonPath format: "/hooks/<Event>/<index>"
+        const parts = anchor.jsonPath.split("/");
+        hookEvent = parts[2];
+      }
+      if (hookEvent === "SessionStart") {
         hasSessionStartHook = true;
       }
       // subagent / statusline / gitignore_entry → skip (not in CONTEXT_CONTRIBUTING_KINDS for explicit tracking)

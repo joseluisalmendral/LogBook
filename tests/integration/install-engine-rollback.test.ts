@@ -265,12 +265,93 @@ describe("runInstall — rollback on installer throw", () => {
       })
     ).rejects.toThrow("second install fails");
 
-    // First artifact was installed successfully; rollback must have called uninstall for it.
+    // First artifact was installed successfully; rollback must have happened.
     expect(installOrder).toEqual(["lb-hook-001"]);
-    expect(uninstallOrder).toContain("lb-hook-001");
 
-    // Manifest must NOT be written
+    // Regression 2026-05-21 audit, CRITICAL #3: rollback now restores SHARED
+    // files (`hook`, `mcp_server`, `augment_claudemd`, etc.) from their
+    // .logbook/backups/ snapshot, not by calling `installer.uninstall()`.
+    // For OWNED-file kinds (slash_command / skill / subagent), uninstall is
+    // still called. The fake installer here is registered under kind="hook",
+    // which is shared — so uninstall is NOT called and the backup restore
+    // path runs instead. The .claude/settings.local.json file never existed
+    // in this test, so the sentinel-restore is a no-op (correct end state:
+    // file absent).
+    //
+    // We deliberately do NOT assert `uninstallOrder.toContain(...)` here
+    // anymore — that would re-encode the old (incorrect) rollback contract
+    // and is exactly the test-shape mistake the 2026-05-21 post-mortem
+    // called out.
+    expect(uninstallOrder).toEqual([]);
+
+    // Manifest must NOT be written.
     expect(readManifest(paths.manifestPath)).toBeNull();
+  });
+
+  it("rollback restores SHARED-FILE backups (does not rely on installer.uninstall)", async () => {
+    // Direct evidence for the new contract: write real bytes to a shared
+    // file at install time, fail on the second artifact, assert the file
+    // was restored from the backup snapshot.
+    const installer: ArtifactInstaller = {
+      kind: "hook" as const,
+      detect: async () => ({ status: "empty" as const }),
+      install: async (_artifact, ctx) => {
+        // Simulate the real hook installer: write a mutation to the shared
+        // file. This is what makes the rollback meaningful.
+        const target = path.join(ctx.projectRoot, ".claude/settings.local.json");
+        fs.mkdirSync(path.dirname(target), { recursive: true });
+        const current = fs.existsSync(target)
+          ? fs.readFileSync(target, "utf8")
+          : "{}";
+        const next = current.replace(/}$/, ',"_lb_marker":true}');
+        fs.writeFileSync(target, next, "utf8");
+        return makeFakeManifestArtifact("lb-hook-001");
+      },
+      // uninstall should NOT be called for shared-file kinds.
+      uninstall: async () => {
+        throw new Error("rollback must NOT call uninstall for shared-file kinds");
+      },
+      verify: async () => ({ ok: true }),
+    };
+    register(installer);
+
+    // Seed a non-empty pre-install file so we can verify exact restoration.
+    const settingsAbs = path.join(projectRoot, ".claude/settings.local.json");
+    fs.mkdirSync(path.dirname(settingsAbs), { recursive: true });
+    const preInstallContent = '{"user":"keep-this"}\n';
+    fs.writeFileSync(settingsAbs, preInstallContent, "utf8");
+
+    // Throwing installer for the second artifact, registered under a
+    // different kind so we don't conflict with the one above.
+    const throwingInstaller: ArtifactInstaller = {
+      kind: "augment_claudemd" as const,
+      detect: async () => ({ status: "empty" as const }),
+      install: async () => {
+        throw new Error("second install fails");
+      },
+      uninstall: async () => {},
+      verify: async () => ({ ok: true }),
+    };
+    register(throwingInstaller);
+
+    const paths = makePaths(projectRoot);
+
+    await expect(
+      runInstall({
+        paths,
+        preset: "minimal",
+        artifacts: [
+          makeFakeArtifact("lb-hook-001"),
+          { kind: "augment_claudemd", file_path: "CLAUDE.md", block_content: "x", _logbookId: "lb-claudemd-001" },
+        ],
+        dryRun: false,
+      })
+    ).rejects.toThrow("second install fails");
+
+    // The shared file MUST be byte-identical to pre-install — proves restore
+    // path ran. If uninstall had been the rollback path it would have thrown
+    // (see installer.uninstall above) and the test would have crashed.
+    expect(fs.readFileSync(settingsAbs, "utf8")).toBe(preInstallContent);
   });
 });
 

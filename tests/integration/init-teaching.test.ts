@@ -186,8 +186,12 @@ describe("I-INIT-TEACH — init --preset teaching", () => {
   it("statusline written to settings.local.json", () => {
     const settingsPath = path.join(tmp, ".claude", "settings.local.json");
     const settings = JSON.parse(fs.readFileSync(settingsPath, "utf8"));
-    expect(typeof settings.statusLine).toBe("string");
-    expect(settings.statusLine).toContain("state --inline");
+    // Claude Code schema requires the object shape `{type, command}` —
+    // the bare-string shape was rejected with
+    // `statusLine: Expected object, but received string` (fix 2026-05-21).
+    expect(typeof settings.statusLine).toBe("object");
+    expect(settings.statusLine.type).toBe("command");
+    expect(settings.statusLine.command).toContain("state --inline");
   });
 
   it("SessionStart hook written to settings.local.json", () => {

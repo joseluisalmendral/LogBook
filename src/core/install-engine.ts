@@ -22,7 +22,7 @@ import type { Artifact } from "../types/artifact.js";
 import type { ManifestArtifact, Manifest, BackupRef } from "../types/manifest.js";
 import type { ProjectPaths } from "./paths.js";
 import { emptyManifest, readManifest, writeManifest, addArtifact, addBackup } from "./manifest.js";
-import { backupOnce } from "./backup.js";
+import { backupOnce, restoreFromBackup } from "./backup.js";
 import { getInstaller } from "../connectors/claude-code/artifacts/registry.js";
 import type { DetectionResult } from "../connectors/claude-code/artifacts/installer.js";
 import { generateUlid } from "../util/ulid.js";
@@ -280,17 +280,59 @@ export async function runInstall(input: RunInstallInput): Promise<RunInstallResu
       manifest = addArtifact(manifest, manifestArtifact);
       installCtxWithBackups.manifest = manifest;
     } catch (installError) {
-      // On any installer throw: rollback in REVERSE order.
+      // On any installer throw: rollback by RESTORING THE BACKUPS taken in
+      // step 7. Each shared file is restored exactly once (regardless of how
+      // many artifacts touched it) using its `BackupRef`.
+      //
+      // BEFORE 2026-05-21 we called `installer.uninstall(entry)` here. That
+      // path uses anchor-based string-patches, which cannot reliably undo a
+      // partially-written shared file: if the install threw mid-write, the
+      // anchor may be missing or malformed, and `uninstall` either no-ops or
+      // throws. The §24.8 / §37 byte-identity contract requires the file to
+      // be restored to its pre-install bytes, which is precisely what
+      // `restoreFromBackup` guarantees.
+      //
+      // We also still call `installer.uninstall` for kinds that own ENTIRE
+      // FILES (slash commands, skills, subagents): those are not backed up
+      // by file (they had no prior contents), and their uninstall removes
+      // the file outright.
       const rollbackErrors: Error[] = [];
+
+      // 1. Restore every shared file from its backup. Order does not matter
+      //    here — each file restore is independent.
+      for (const backupRef of backupsMap.values()) {
+        try {
+          restoreFromBackup(backupRef, paths.root);
+        } catch (rollbackErr) {
+          rollbackErrors.push(
+            rollbackErr instanceof Error
+              ? rollbackErr
+              : new Error(String(rollbackErr)),
+          );
+        }
+      }
+
+      // 2. For kinds that install whole files (slash/skill/subagent), call
+      //    their uninstall to remove the file. These do not appear in
+      //    `backupsMap` because no pre-existing content needed snapshotting.
+      const KINDS_WITH_OWNED_FILES = new Set([
+        "slash_command",
+        "skill",
+        "subagent",
+      ]);
       for (let i = installed.length - 1; i >= 0; i--) {
         const entry = installed[i];
-        if (!entry) continue;
+        if (!entry || !KINDS_WITH_OWNED_FILES.has(entry.kind)) continue;
         const rollbackInstaller = installerMap.get(entry.kind);
         if (!rollbackInstaller) continue;
         try {
           await rollbackInstaller.uninstall(entry, installCtxWithBackups);
         } catch (rollbackErr) {
-          rollbackErrors.push(rollbackErr instanceof Error ? rollbackErr : new Error(String(rollbackErr)));
+          rollbackErrors.push(
+            rollbackErr instanceof Error
+              ? rollbackErr
+              : new Error(String(rollbackErr)),
+          );
         }
       }
 
@@ -313,11 +355,23 @@ export async function runInstall(input: RunInstallInput): Promise<RunInstallResu
     }
   }
 
-  // step 9: Flush manifest atomically only if anything was installed.
-  // We always write the manifest if at least one artifact was installed (or if
-  // the manifest didn't exist before). If everything was skipped and no new
-  // artifacts were added, we still write to record the preset and installed_at.
-  if (installed.length > 0) {
+  // step 9: Flush manifest atomically.
+  //
+  // We write whenever ANY of these is true:
+  //   1. Something was installed (the manifest gained at least one artifact).
+  //   2. The preset changed compared to the on-disk manifest.
+  //   3. There is no manifest on disk yet (first-time install or recovery).
+  //
+  // Before 2026-05-21 the gate was `installed.length > 0` alone. A re-run
+  // with a different preset over a fully-occupied project (all detect()
+  // returned occupied-by-logbook) would skip every artifact, `installed`
+  // stayed empty, and the on-disk preset was never updated. `doctor` then
+  // reported the OLD preset and the user could not tell their request had
+  // been ignored (regression 2026-05-21 audit, WARNING #11).
+  const onDisk = readManifest(paths.manifestPath);
+  const presetChanged = onDisk !== null && onDisk.preset !== manifest.preset;
+  const manifestAbsent = onDisk === null;
+  if (installed.length > 0 || presetChanged || manifestAbsent) {
     writeManifest(paths.manifestPath, manifest);
   }
 

@@ -132,9 +132,11 @@ describe("T12 — ITER4 GATE: byte-identity teaching install/uninstall (THE TEAC
         const lbSsHook = ssHooks[0] as Record<string, unknown>;
         expect(lbSsHook["_logbookId"]).toBe("lb-hook-sessionstart-001");
 
-        // statusLine key present
-        expect(typeof settings.statusLine).toBe("string");
-        expect(settings.statusLine).toContain("state --inline");
+        // statusLine key present as Claude-Code-compliant object (fix 2026-05-21)
+        expect(typeof settings.statusLine).toBe("object");
+        expect((settings.statusLine as { command: string }).command).toContain(
+          "state --inline",
+        );
 
         // 3. mcp.json: fake-plugin entry UNCHANGED + logbook-mcp added
         const mcpPath = join(tmp, ".claude/mcp.json");

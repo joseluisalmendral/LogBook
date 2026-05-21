@@ -159,13 +159,20 @@ export async function dispatchToolCall(
   }
 
   // Step 3: Payload size pre-check (before any allocation-heavy work).
+  //
+  // We measure UTF-8 byte length, not JS string length. Before 2026-05-21
+  // we used `.length` on the JS string, which counts UTF-16 code units —
+  // i.e. 4096 multi-byte Unicode chars (8192 UTF-16 units) passed the check
+  // even though the actual wire representation was up to 16 KB. The spec
+  // limit (§31) is bytes, so `Buffer.byteLength(..., 'utf8')` is correct.
   const rawJson = JSON.stringify(rawInput);
-  if (rawJson.length > 8192) {
+  const rawBytes = Buffer.byteLength(rawJson, "utf8");
+  if (rawBytes > 8192) {
     return {
       error: {
         code: -32002,
         message: "payload_too_large",
-        data: { bytes: rawJson.length, max: 8192 },
+        data: { bytes: rawBytes, max: 8192 },
       },
     };
   }
