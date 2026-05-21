@@ -64,20 +64,55 @@ function canonicalJson(obj: unknown): string {
 
 /**
  * Build the JSON object text for a hook entry.
- * The entry is the object we insert into the hooks array.
+ *
+ * Claude Code's settings.local.json schema for hook events expects each
+ * element of `hooks.<Event>` to be a MATCHER OBJECT with an INNER `hooks`
+ * ARRAY of command descriptors:
+ *
+ *   {
+ *     "matcher": "",                          // tool-name pattern; "" = all
+ *     "hooks": [
+ *       { "type": "command", "command": "…" } // the actual command
+ *     ],
+ *     "_logbookId": "lb-hook-…"               // our tracking id (extra field)
+ *   }
+ *
+ * Before 2026-05-21 we wrote the inner command descriptor DIRECTLY into the
+ * outer array, causing Claude Code to fail with
+ *   `hooks: Expected array, but received undefined`
+ * at session start (the inner `hooks` array was missing). Users had to
+ * uninstall + reinstall to recover.
+ *
+ * `_logbookId` is kept at the OUTER level on purpose: uninstall's regex
+ * locates the field, walks back to the nearest `{`, and removes the
+ * enclosing object — we need that to be the WHOLE matcher entry (so the
+ * inner `hooks` array goes with it), not just one nested command.
  */
 function buildHookEntryJson(
   artifact: HookArtifact,
   logbookId: string
 ): string {
-  const obj: Record<string, unknown> = {
+  const innerCommand: Record<string, unknown> = {
     type: "command",
     command: artifact.command,
-    _logbookId: logbookId,
   };
-  if (artifact.matcher !== undefined) {
-    obj["matcher"] = artifact.matcher;
-  }
+  // IMPORTANT: `_logbookId` is the FIRST key by design.
+  //
+  // `locateInstalledEntry` finds the id field via regex and then walks
+  // backwards looking for the nearest `{`. If `_logbookId` came AFTER the
+  // `hooks` array, the nearest `{` walking backwards would be the INNER
+  // command object's brace (`{"type":"command",…}`), not the outer matcher
+  // object — uninstall would then remove only the inner command and leave a
+  // dangling matcher entry. Putting `_logbookId` immediately after the outer
+  // `{` guarantees the walk-back lands on the correct enclosing object.
+  //
+  // `canonicalJson` sorts keys alphabetically before hashing, so the hash is
+  // not affected by this insertion order.
+  const obj: Record<string, unknown> = {
+    _logbookId: logbookId,
+    matcher: artifact.matcher ?? "",
+    hooks: [innerCommand],
+  };
   return JSON.stringify(obj);
 }
 

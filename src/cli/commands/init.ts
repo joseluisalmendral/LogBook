@@ -60,11 +60,18 @@ export default defineCommand({
       default: false,
       description: "Plan-only; no writes",
     },
+    here: {
+      type: "boolean",
+      default: false,
+      description:
+        "Install in the current directory even when no .git / package.json / .claude marker is found (skips the walk-up to find the project root)",
+    },
   },
   async run({ args }) {
+    const useCwdAsFallback = args["here"] as boolean;
     let root: string;
     try {
-      root = resolveProjectRoot();
+      root = resolveProjectRoot(undefined, useCwdAsFallback);
     } catch (err) {
       process.stderr.write(
         `error: ${err instanceof Error ? err.message : String(err)}\n`,

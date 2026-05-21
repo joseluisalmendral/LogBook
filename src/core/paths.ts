@@ -10,6 +10,7 @@
  */
 
 import * as fs from "node:fs";
+import * as os from "node:os";
 import * as path from "node:path";
 import { join } from "pathe";
 import { LogBookError } from "./errors.js";
@@ -49,16 +50,49 @@ export interface ProjectPaths {
  *
  * Uses realpathSync to canonicalize symlinks (handles macOS /var → /private/var).
  *
- * @throws {LogBookError} with code PROJECT_ROOT_NOT_FOUND if no marker found.
+ * **Boundary**: the walk stops at the user's HOME directory (inclusive). We do
+ * NOT walk above HOME into `/Users` or `/`. Without this guard, a `logbook
+ * init` inside a folder that has no `.git` / `package.json` / `.claude` would
+ * silently install in some unrelated parent directory that happens to be a
+ * project root — the user-reported symptom 2026-05-21
+ * ("se instala en otra ubicación cuando no hay git init").
+ *
+ * If no marker is found anywhere from `start` up to HOME, this throws
+ * PROJECT_ROOT_NOT_FOUND with guidance: run `git init`, or call this with
+ * `useCwdAsFallback: true` (i.e. the CLI's `--here` flag) to install at the
+ * starting directory regardless.
+ *
+ * @param startFrom         Directory to start the walk from. Defaults to cwd.
+ * @param useCwdAsFallback  If true, return cwd when no marker is found
+ *                          instead of throwing. Used by `logbook init --here`.
+ * @throws {LogBookError} with code PROJECT_ROOT_NOT_FOUND if no marker found
+ *                       within HOME and useCwdAsFallback is false.
  */
-export function resolveProjectRoot(startFrom?: string): string {
+export function resolveProjectRoot(
+  startFrom?: string,
+  useCwdAsFallback: boolean = false,
+): string {
   const start = path.resolve(startFrom ?? process.cwd());
+  // Canonicalize HOME so the comparison handles macOS /var → /private/var.
+  let home: string;
+  try {
+    home = fs.realpathSync(os.homedir());
+  } catch {
+    home = os.homedir();
+  }
 
-  let current = start;
+  // Canonicalize the start path for the same reason. Falls back to the raw
+  // path if realpath fails (e.g. the dir does not exist yet).
+  let current: string;
+  try {
+    current = fs.realpathSync(start);
+  } catch {
+    current = start;
+  }
+
   while (true) {
     for (const marker of ROOT_MARKERS) {
       if (fs.existsSync(path.join(current, marker))) {
-        // Canonicalize to resolve macOS /var → /private/var symlinks.
         try {
           return fs.realpathSync(current);
         } catch {
@@ -67,16 +101,30 @@ export function resolveProjectRoot(startFrom?: string): string {
       }
     }
 
+    // Stop walking when we have just inspected HOME — do NOT cross into
+    // ancestor directories like /Users or /, which are never project roots.
+    if (current === home) break;
+
     const parent = path.dirname(current);
-    if (parent === current) {
-      // Reached filesystem root without finding a marker.
-      throw new LogBookError(
-        "PROJECT_ROOT_NOT_FOUND",
-        `No project root marker (.git, .claude, package.json) found starting from: ${start}`
-      );
-    }
+    if (parent === current) break; // filesystem root reached
+
     current = parent;
   }
+
+  if (useCwdAsFallback) {
+    try {
+      return fs.realpathSync(start);
+    } catch {
+      return start;
+    }
+  }
+
+  throw new LogBookError(
+    "PROJECT_ROOT_NOT_FOUND",
+    `No project root marker (.git, .claude, package.json) found between ${start} and ${home}.\n` +
+      `→ Run \`git init\` in the project folder, or rerun with \`--here\` to ` +
+      `install at the current directory anyway.`,
+  );
 }
 
 /**

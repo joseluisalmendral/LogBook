@@ -405,10 +405,12 @@ describe("StatuslineInstaller — CRLF fixture byte-identity roundtrip", () => {
     expect(hasCRLF(afterInstall)).toBe(true);
     expect(isMixedEndings(afterInstall)).toBe(false);
 
-    // The statusLine key must be present.
+    // The statusLine key must be present as a Claude-Code-compliant object
+    // `{ type: "command", command: "…" }` (fix 2026-05-21 — Claude Code's
+    // schema rejects a bare string here).
     const parsed = JSON.parse(afterInstall.replace(/\r\n/g, "\n")) as Record<string, unknown>;
-    expect(typeof parsed["statusLine"]).toBe("string");
-    expect(parsed["statusLine"]).toBe(artifact.command);
+    expect(typeof parsed["statusLine"]).toBe("object");
+    expect(parsed["statusLine"]).toEqual({ type: "command", command: artifact.command });
 
     // Uninstall: removes statusLine key; file must be byte-identical to original CRLF fixture.
     await installer.uninstall(entry, ctx);

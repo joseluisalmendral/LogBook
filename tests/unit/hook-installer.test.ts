@@ -169,6 +169,59 @@ describe("HookInstaller — empty.json (hooks-absent) edge case", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Claude Code shape compliance (2026-05-21 regression)
+// ---------------------------------------------------------------------------
+
+describe("HookInstaller — Claude Code hook schema compliance", () => {
+  // Claude Code's settings.local.json schema for `hooks.<Event>[i]` requires
+  // a matcher object with an inner `hooks` array of command descriptors.
+  // Before 2026-05-21 we wrote the inner command directly into the outer
+  // array, causing Claude Code to refuse the file at session start:
+  //   `hooks: Expected array, but received undefined`.
+  it("install writes matcher+hooks array shape (not bare command descriptor)", async () => {
+    writeSettings(readFixture("only-other-plugin.json"));
+    const installer = getInstaller("hook");
+    const artifact = makeHookArtifact();
+    const ctx = makeCtx();
+
+    await installer.install(artifact, ctx);
+
+    const content = fs.readFileSync(settingsPath(), "utf8");
+    const parsed = JSON.parse(content) as {
+      hooks: Record<
+        string,
+        Array<{
+          matcher: string;
+          hooks: Array<{ type: string; command: string }>;
+          _logbookId?: string;
+        }>
+      >;
+    };
+
+    const event = parsed.hooks["PostToolUse"];
+    expect(Array.isArray(event)).toBe(true);
+
+    // The fixture may have pre-existing other-plugin entries — find OUR entry
+    // by its _logbookId. We only assert the shape of the LogBook entry; other
+    // plugins are responsible for their own.
+    const ours = event!.find((e) =>
+      typeof e._logbookId === "string" && e._logbookId.startsWith("lb-hook-"),
+    );
+    expect(ours, "expected a LogBook hook entry in PostToolUse").toBeDefined();
+
+    // OUTER object: matcher + inner hooks array + _logbookId
+    expect(typeof ours!.matcher).toBe("string");
+    expect(Array.isArray(ours!.hooks)).toBe(true);
+
+    // INNER hook descriptor: type + command
+    expect(ours!.hooks).toHaveLength(1);
+    expect(ours!.hooks[0]!.type).toBe("command");
+    expect(typeof ours!.hooks[0]!.command).toBe("string");
+    expect(ours!.hooks[0]!.command).toContain("hook.cjs");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // detect()
 // ---------------------------------------------------------------------------
 

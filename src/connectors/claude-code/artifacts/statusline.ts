@@ -79,13 +79,36 @@ async function readFileOrNull(filePath: string): Promise<string | null> {
 }
 
 /**
- * Extract the current statusLine value from parsed JSON.
- * Returns the string value or null if absent or non-string.
+ * Extract the current statusLine command string from parsed JSON.
+ *
+ * Claude Code accepts two historical shapes for the `statusLine` key:
+ *
+ *   1. Object shape (current, expected):
+ *        "statusLine": { "type": "command", "command": "node …" }
+ *   2. Bare string shape (legacy LogBook installs before 2026-05-21):
+ *        "statusLine": "node …"
+ *
+ * Both shapes parse out to the same command string for ownership checks.
+ * Claude Code itself only accepts shape #1 — shape #2 produces:
+ *   `statusLine: Expected object, but received string`
+ * at session start, which is what triggered the 2026-05-21 fix. We still
+ * READ both so verify/uninstall keep working on legacy installs.
+ *
+ * Returns the command string or null if absent / unrecognized shape.
  */
 function extractStatusLineValue(source: string): string | null {
   try {
     const parsed = JSON.parse(source) as Record<string, unknown>;
     const val = parsed[STATUS_LINE_KEY];
+    // Shape 1 — object with { type: "command", command: "…" }
+    if (
+      typeof val === "object" &&
+      val !== null &&
+      typeof (val as Record<string, unknown>)["command"] === "string"
+    ) {
+      return (val as Record<string, unknown>)["command"] as string;
+    }
+    // Shape 2 — legacy bare string
     if (typeof val === "string") return val;
     return null;
   } catch {
@@ -219,12 +242,17 @@ export class StatuslineInstaller implements ArtifactInstaller<StatuslineArtifact
       };
     }
 
-    // Install: set the statusLine key as a scalar string.
+    // Install: set the statusLine key as a Claude-Code-compliant OBJECT.
+    // Claude Code's schema requires `{ type: "command", command: "…" }`. The
+    // bare-string form we used before 2026-05-21 caused
+    //   `statusLine: Expected object, but received string`
+    // at session start.
+    const statusLineValue = { type: "command", command: artifact.command };
     const { next } = setJsonObjectKey({
       source,
       jsonPath: ROOT_JSON_PATH,
       key: STATUS_LINE_KEY,
-      valueJson: JSON.stringify(artifact.command),
+      valueJson: JSON.stringify(statusLineValue),
     });
 
     // Restore original line endings before writing.

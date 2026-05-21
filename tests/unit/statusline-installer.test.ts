@@ -133,7 +133,11 @@ function readSettingsFile(): string {
 // ---------------------------------------------------------------------------
 
 describe("StatuslineInstaller — install on empty settings.local.json", () => {
-  it("install writes statusLine key with command string value", async () => {
+  it("install writes statusLine key as a Claude-Code-compliant object", async () => {
+    // Regression 2026-05-21: Claude Code's schema requires the statusLine
+    // value to be an OBJECT `{ type: "command", command: "…" }`. Writing a
+    // bare string caused Claude Code to fail at session start with
+    //   `statusLine: Expected object, but received string`.
     const installer = getStatuslineInstaller();
     const artifact = makeStatuslineArtifact();
     const ctx = makeCtx(tmpRoot);
@@ -143,9 +147,11 @@ describe("StatuslineInstaller — install on empty settings.local.json", () => {
     await installer.install(artifact, ctx);
 
     const content = readSettingsFile();
-    const parsed = JSON.parse(content) as { statusLine: string };
-    expect(parsed.statusLine).toBe(CMD);
-    expect(typeof parsed.statusLine).toBe("string");
+    const parsed = JSON.parse(content) as {
+      statusLine: { type: string; command: string };
+    };
+    expect(typeof parsed.statusLine).toBe("object");
+    expect(parsed.statusLine).toEqual({ type: "command", command: CMD });
   });
 
   it("install returns manifest entry with json_field anchor at /statusLine", async () => {
@@ -410,8 +416,10 @@ describe("StatuslineInstaller — CRLF settings.local.json roundtrip", () => {
 
     const content = readSettingsFile();
     expect(() => JSON.parse(content)).not.toThrow();
-    const parsed = JSON.parse(content) as { statusLine: string };
-    expect(parsed.statusLine).toBe(CMD);
+    const parsed = JSON.parse(content) as {
+      statusLine: { type: string; command: string };
+    };
+    expect(parsed.statusLine).toEqual({ type: "command", command: CMD });
   });
 
   it("CRLF byte-identity roundtrip: install then uninstall restores original CRLF bytes", async () => {

@@ -62,6 +62,60 @@ describe("resolveProjectRoot", () => {
     // Instead, just verify the function accepts no argument.
     expect(typeof resolveProjectRoot).toBe("function");
   });
+
+  // Regression 2026-05-21: user reported "se instala en otra ubicación cuando
+  // no hay git init". Without the HOME boundary the walk-up climbed all the
+  // way to `/` and picked up the first ancestor with any of {.git, .claude,
+  // package.json} — sometimes a totally unrelated project. The fix stops the
+  // walk at HOME and either throws (default) or returns cwd (--here).
+  describe("HOME-boundary + --here fallback (2026-05-21 regression)", () => {
+    it("does NOT walk above HOME — throws PROJECT_ROOT_NOT_FOUND for a marker-less dir under HOME", () => {
+      const home = fs.realpathSync(os.homedir());
+      // Create a marker-less directory directly under HOME so the walk-up
+      // stops at HOME without finding anything.
+      const subdir = fs.mkdtempSync(path.join(home, "lb-paths-no-marker-"));
+      try {
+        // HOME itself must NOT have a marker for this assertion to be
+        // meaningful; if it does (very unusual for a CI runner), skip.
+        const homeHasMarker = [".git", ".claude", "package.json"].some((m) =>
+          fs.existsSync(path.join(home, m)),
+        );
+        if (homeHasMarker) {
+          // Cannot make this assertion deterministically — skip silently.
+          return;
+        }
+        expect(() => resolveProjectRoot(subdir)).toThrow(LogBookError);
+      } finally {
+        fs.rmSync(subdir, { recursive: true, force: true });
+      }
+    });
+
+    it("error message mentions --here as the escape hatch", () => {
+      // canonicalTmp is under /tmp (NOT under HOME), so the walk goes all the
+      // way to / without finding a marker. We just want the helpful text.
+      try {
+        resolveProjectRoot(canonicalTmp);
+        throw new Error("expected throw");
+      } catch (e) {
+        expect((e as LogBookError).message).toMatch(/--here/);
+      }
+    });
+
+    it("useCwdAsFallback=true returns the start dir even without any marker", () => {
+      // No marker anywhere — should still resolve to canonicalTmp.
+      const result = resolveProjectRoot(canonicalTmp, /* useCwdAsFallback */ true);
+      expect(result).toBe(canonicalTmp);
+    });
+
+    it("useCwdAsFallback=true still prefers an ancestor with a marker over the start dir", () => {
+      // Marker in parent, start dir nested 3 deep — should return parent.
+      fs.writeFileSync(path.join(canonicalTmp, "package.json"), "{}");
+      const nested = path.join(canonicalTmp, "a", "b", "c");
+      fs.mkdirSync(nested, { recursive: true });
+      const result = resolveProjectRoot(nested, true);
+      expect(result).toBe(canonicalTmp);
+    });
+  });
 });
 
 describe("makePaths", () => {
