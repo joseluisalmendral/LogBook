@@ -15,6 +15,7 @@
 import * as v from "valibot";
 import { join } from "node:path";
 import { generateUlid } from "../../util/ulid.js";
+// EXCEPTION: non-events.jsonl write — pending-suggestions.jsonl (not subject to appendEvent boundary)
 import { appendJsonl } from "../../store/jsonl.js";
 import type { MCPContext } from "../context.js";
 import type { ToolDef } from "./index.js";

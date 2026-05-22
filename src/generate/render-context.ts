@@ -3,13 +3,17 @@
  *
  * JSONL is the primary read source. SQLite is best-effort index only (T10b.D2).
  *
- * Normalization (T10b.D1 closure):
- *  - CLI events use TOP-LEVEL fields: { type, title, ... }
+ * Normalization (T10b.D1 closure + Shape-A compat):
+ *  - Legacy CLI events use TOP-LEVEL fields: { type, title, ... }
  *  - MCP events use payload wrapper: { type, payload: { title, ... } }
- *  - Both are normalized into RenderEvent (top-level fields).
+ *  - New Shape-A events from appendEvent use: { kind, timestamp, payload: { entryType, ... } }
+ *  - All shapes are normalized into RenderEvent (top-level fields).
  *  - When payload is present, it is flattened into top-level. Raw event
  *    preserved in _raw for debugging.
  *  - Top-level fields win over payload fields when both are present.
+ *  - Shape-A: when kind==="user_entry" and payload.entryType exists, synthesize
+ *    type = "manual." + entryType so downstream type-based filters keep working.
+ *  - Shape-A: accept `timestamp` as fallback for `ts` (new events use timestamp).
  */
 
 import { promises as fsPromises } from "node:fs";
@@ -48,9 +52,18 @@ export interface RenderContext {
 /**
  * Normalize a raw parsed object into a RenderEvent.
  *
- * If the event has a `payload` field (MCP shape), flatten payload fields
- * into top-level. Preserve the original via `_raw`. Top-level fields win
- * when duplicated in payload.
+ * Handles three shapes:
+ *  1. Legacy CLI shape: { id, type, ts, title, ... } — pass through.
+ *  2. MCP shape: { id, type, ts, payload: { title, ... } } — flatten payload.
+ *  3. Shape-A (appendEvent): { id, kind, timestamp, payload: { entryType, ... } }
+ *     - Accept `timestamp` as `ts` when `ts` is absent.
+ *     - Synthesize `type = "manual." + entryType` for user_entry kind so
+ *       downstream filters (e.g. e.type === "manual.lesson") keep working.
+ *     - Synthesize `type = "manual." + entryType` for system kind (session_start,
+ *       phase_change, session_rename).
+ *
+ * Payload fields are flattened into top-level. Raw event preserved in `_raw`.
+ * Top-level fields win over payload fields when duplicated.
  */
 function normalizeEvent(raw: Record<string, unknown>): RenderEvent {
   const payload = raw["payload"];
@@ -67,6 +80,32 @@ function normalizeEvent(raw: Record<string, unknown>): RenderEvent {
     delete merged["payload"];
   } else {
     merged = { ...raw };
+  }
+
+  // Shape-A compat: accept `timestamp` as fallback for `ts`.
+  if (typeof merged["ts"] !== "string" && typeof merged["timestamp"] === "string") {
+    merged["ts"] = merged["timestamp"];
+  }
+
+  // Shape-A compat: synthesize `type` from kind + payload.entryType when type is absent.
+  // This keeps all downstream type-based filters working (e.g. type === "manual.lesson").
+  if (typeof merged["type"] !== "string" && typeof merged["kind"] === "string") {
+    const entryType = merged["entryType"];
+    if (typeof entryType === "string") {
+      const kind = merged["kind"] as string;
+      if (kind === "user_entry") {
+        merged["type"] = `manual.${entryType}`;
+      } else if (kind === "system") {
+        // Map system entryTypes to their legacy type names.
+        const systemTypeMap: Record<string, string> = {
+          session_start: "manual.session_start",
+          phase_change: "manual.phase",
+          session_rename: "manual.session_rename",
+          mcp_audit: "system.mcp_audit",
+        };
+        merged["type"] = systemTypeMap[entryType] ?? `system.${entryType}`;
+      }
+    }
   }
 
   return merged as RenderEvent;
@@ -131,11 +170,13 @@ export async function readContext(paths: ProjectPaths): Promise<RenderContext> {
 
     const event = normalizeEvent(parsed as Record<string, unknown>);
 
-    // Require at minimum: id, type, ts
+    // Require at minimum: id, ts (or timestamp), and type (or kind).
+    // Shape-A events use `timestamp` and `kind`; legacy events use `ts` and `type`.
+    // normalizeEvent() already maps timestamp→ts and synthesizes type from kind+entryType.
     if (
       typeof event["id"] !== "string" ||
-      typeof event["type"] !== "string" ||
-      typeof event["ts"] !== "string"
+      typeof event["ts"] !== "string" ||
+      typeof event["type"] !== "string"
     ) {
       process.stderr.write(
         `[logbook] render-context: skipping event missing id/type/ts\n`

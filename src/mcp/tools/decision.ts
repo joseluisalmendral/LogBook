@@ -26,7 +26,7 @@
 import { relative } from "node:path";
 import * as v from "valibot";
 import { generateUlid } from "../../util/ulid.js";
-import { appendJsonl } from "../../store/jsonl.js";
+import { appendEvent } from "../../store/index.js";
 import { writeAdrFile } from "../../generate/adr.js";
 import type { MCPContext } from "../context.js";
 import type { ToolDef } from "./index.js";
@@ -81,25 +81,26 @@ export const decisionTool: ToolDef<DecisionInput, DecisionOutput> = {
 
   handler: async (ctx: MCPContext, input: DecisionInput): Promise<DecisionOutput> => {
     const id = generateUlid();
-    const ts = new Date().toISOString();
     // ctx.state.session is typed in T8b (LogBookState now has session?: string).
     // Empty string placeholder is safe for SQLite NOT NULL column until T10 sets it.
     const sessionId = ctx.state.session ?? "";
 
-    // Write JSONL event — persisted to the canonical event log.
-    // Backward compat note: iter2-era MCP events used { payload: {...} } wrapper.
-    // Iter3+ writes top-level fields to match the CLI event shape (T10b.D1 closure).
-    const event = {
+    // Write JSONL event through appendEvent (redaction + Shape-A enforced).
+    const { event } = await appendEvent(ctx.paths, {
       id,
-      type: "manual.decision",
-      ts,
-      title: input.title,
-      ...(input.alternatives !== undefined && { alternatives: input.alternatives }),
-      ...(input.why !== undefined && { why: input.why }),
-      ...(input.status !== undefined && { status: input.status }),
-      ...(input.context !== undefined && { context: input.context }),
-    };
-    await appendJsonl(ctx.paths.eventsJsonl, JSON.stringify(event));
+      kind: "user_entry",
+      sessionId,
+      provider: "logbook-mcp",
+      payload: {
+        entryType: "decision",
+        title: input.title,
+        ...(input.alternatives !== undefined && { alternatives: input.alternatives }),
+        ...(input.why !== undefined && { why: input.why }),
+        ...(input.status !== undefined && { status: input.status }),
+        ...(input.context !== undefined && { context: input.context }),
+      },
+    });
+    const ts = event.timestamp;
 
     // Best-effort SQLite index row.
     // Non-fatal: if the schema or DB state is unexpected, log to stderr and continue.

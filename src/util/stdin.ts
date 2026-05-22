@@ -9,50 +9,54 @@ export interface ReadStdinOptions {
   maxBytes?: number;
 }
 
+export interface ReadStdinResult {
+  /** The collected stdin payload (may be partial when timedOut or maxBytes exceeded). */
+  payload: string;
+  /** True when the timeout fired before stdin reached EOF. */
+  timedOut: boolean;
+}
+
 /**
  * Read all data from stdin (or a provided Readable) into a UTF-8 string.
  *
- * - Returns "" on timeout (no data within timeoutMs window).
- * - Returns "" on empty stream.
- * - Returns truncated string + emits console.error when maxBytes is exceeded.
+ * - Returns `{ payload: "", timedOut: false }` on empty stream.
+ * - Returns `{ payload: "", timedOut: true }` on timeout with no data.
+ * - Returns `{ payload: partial, timedOut: true }` on timeout with partial data.
+ * - Returns `{ payload: truncated, timedOut: false }` on maxBytes exceeded (different failure mode).
  * - Never throws — the hook path must NEVER fail.
  */
-export async function readAllStdin(opts?: ReadStdinOptions): Promise<string> {
+export async function readAllStdin(opts?: ReadStdinOptions): Promise<ReadStdinResult> {
   const stream: Readable = opts?.stream ?? process.stdin;
   const timeoutMs: number = opts?.timeoutMs ?? 100;
   const maxBytes: number = opts?.maxBytes ?? 1_048_576; // 1MB default
 
-  return new Promise<string>((resolve) => {
+  return new Promise<ReadStdinResult>((resolve) => {
     const chunks: Buffer[] = [];
     let totalBytes = 0;
-    let truncated = false;
     let settled = false;
+    let didTimeout = false;
 
     let timer: ReturnType<typeof setTimeout> | undefined;
 
-    function settle(value: string): void {
+    function settle(result: ReadStdinResult): void {
       if (settled) return;
       settled = true;
       if (timer !== undefined) {
         clearTimeout(timer);
         timer = undefined;
       }
-      resolve(value);
+      resolve(result);
     }
 
     function buildResult(): string {
-      const raw = Buffer.concat(chunks).toString("utf-8");
-      if (truncated) {
-        // Already sliced during accumulation — return as-is.
-        return raw;
-      }
-      return raw;
+      return Buffer.concat(chunks).toString("utf-8");
     }
 
     // Set up timeout: if no 'end' fires within the window, resolve with what we have.
     timer = setTimeout(() => {
       timer = undefined;
-      settle(buildResult());
+      didTimeout = true;
+      settle({ payload: buildResult(), timedOut: true });
     }, timeoutMs);
 
     stream.on("data", (chunk: Buffer | string) => {
@@ -66,12 +70,11 @@ export async function readAllStdin(opts?: ReadStdinOptions): Promise<string> {
           chunks.push(buf.subarray(0, remaining));
           totalBytes = maxBytes;
         }
-        truncated = true;
         console.error(
           `logbook-stdin: input truncated to ${maxBytes} bytes — input exceeded maxBytes cap`,
         );
-        // Stop listening; settle immediately with what we have.
-        settle(buildResult());
+        // maxBytes truncation is NOT a timeout — different failure mode.
+        settle({ payload: buildResult(), timedOut: false });
         return;
       }
 
@@ -80,12 +83,12 @@ export async function readAllStdin(opts?: ReadStdinOptions): Promise<string> {
     });
 
     stream.on("end", () => {
-      settle(buildResult());
+      settle({ payload: buildResult(), timedOut: didTimeout });
     });
 
     stream.on("error", () => {
       // Errors must not propagate — hook must never fail.
-      settle(buildResult());
+      settle({ payload: buildResult(), timedOut: didTimeout });
     });
   });
 }

@@ -16,43 +16,11 @@ import { resolveProjectRoot, makePaths } from "../../../core/paths.js";
 import { readState } from "../../../core/state.js";
 import { assertWithinProject } from "../../../util/path-confine.js";
 import { normalizeOtelEnvelope } from "../../../otel/normalize.js";
-import { appendJsonl } from "../../../store/jsonl.js";
-import { redact } from "../../../redact/index.js";
+import { appendEvent } from "../../../store/index.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Recursively redact all string values in a value tree.
- * Returns the redacted tree and a flag indicating whether any hit fired.
- */
-function redactDeep(value: unknown): { value: unknown; redactedAny: boolean } {
-  if (typeof value === "string") {
-    const result = redact(value);
-    return { value: result.redacted, redactedAny: result.hits.length > 0 };
-  }
-  if (Array.isArray(value)) {
-    let redactedAny = false;
-    const next = value.map((item) => {
-      const r = redactDeep(item);
-      if (r.redactedAny) redactedAny = true;
-      return r.value;
-    });
-    return { value: next, redactedAny };
-  }
-  if (value !== null && typeof value === "object") {
-    let redactedAny = false;
-    const next: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      const r = redactDeep(v);
-      if (r.redactedAny) redactedAny = true;
-      next[k] = r.value;
-    }
-    return { value: next, redactedAny };
-  }
-  return { value, redactedAny: false };
-}
 
 /**
  * Parse file content as one or more OTLP-JSON envelopes.
@@ -163,16 +131,25 @@ export default defineCommand({
 
       for (const event of events) {
         try {
-          // Apply redaction before persist (consistent with iter2 pipeline).
-          const { value: redactedPayload, redactedAny } = redactDeep(event.payload);
-          event.payload = redactedPayload as typeof event.payload;
-          if (redactedAny) {
-            event.redacted = true;
-            redactedCount++;
-          }
-
-          const line = JSON.stringify(event);
-          await appendJsonl(paths.eventsJsonl, line);
+          // Route through appendEvent so redaction and Shape-A are enforced.
+          // Pass all already-constructed fields to preserve otel ids/timestamps.
+          const { redacted } = await appendEvent(paths, {
+            id: event.id,
+            traceId: event.traceId,
+            spanId: event.spanId,
+            ...(event.parentId !== undefined && { parentId: event.parentId }),
+            timestamp: event.timestamp,
+            kind: event.kind,
+            sessionId: event.sessionId,
+            provider: event.provider,
+            ...(event.model !== undefined && { model: event.model }),
+            ...(event.phase !== undefined && { phase: event.phase }),
+            payload: event.payload as Record<string, unknown>,
+            ...(event.tokens !== undefined && { tokens: event.tokens }),
+            ...(event.latencyMs !== undefined && { latencyMs: event.latencyMs }),
+            ...(event.meta !== undefined && { meta: event.meta }),
+          });
+          if (redacted) redactedCount++;
           ingested++;
         } catch {
           // Individual event persist failure — skip, continue.

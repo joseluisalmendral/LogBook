@@ -99,13 +99,15 @@ describe("cli-session-rename", () => {
     expect(state["sessionLabel"]).toBe("new label");
 
     const events = readEvents(dir);
+    // Shape-A: kind=system, payload.entryType=session_rename
     const renameEvent = events.find(
-      (e) => (e as { type?: string }).type === "manual.session_rename",
-    ) as
-      | { type: string; old?: string; new?: string; sessionId?: string }
-      | undefined;
+      (e) => (e as { kind?: string; payload?: Record<string, unknown> }).kind === "system" &&
+             ((e as { payload?: Record<string, unknown> }).payload?.["entryType"] === "session_rename"),
+    ) as Record<string, unknown> | undefined;
     expect(renameEvent).toBeDefined();
-    expect(renameEvent?.old).toBe("old");
-    expect(renameEvent?.["new"]).toBe("new label");
+    expect(renameEvent?.["schemaVersion"]).toBe(3);
+    const payload = renameEvent?.["payload"] as Record<string, unknown>;
+    expect(payload?.["old"]).toBe("old");
+    expect(payload?.["new"]).toBe("new label");
   });
 });

@@ -1,0 +1,1 @@
+{"hook_event_name":"PostToolUse","session_id":"abc12345-dead-beef-0000-000000000001","timestamp":"2026-05-15T20:05:00.000Z","tool_name":"Bash","tool_args":{"command":"echo hello"},"tool_response":{"output":"hello\n","interrupted":false}}

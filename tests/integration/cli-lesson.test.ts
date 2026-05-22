@@ -94,7 +94,7 @@ describe("cli-lesson", () => {
     expect(ULID_RE.test(out["id"] as string)).toBe(true);
   });
 
-  it("appends manual.lesson event with tags array and promotable=true", () => {
+  it("appends user_entry/lesson event with tags array and promotable=true", () => {
     const dir = makeTmpProject();
     runCli(
       [
@@ -111,15 +111,22 @@ describe("cli-lesson", () => {
     );
 
     const events = readEvents(dir);
+    // Shape-A: kind=user_entry, payload.entryType=lesson
     const lessonEvent = events.find(
-      (e) => (e as { type?: string }).type === "manual.lesson",
+      (e) => (e as { kind?: string; payload?: Record<string, unknown> }).kind === "user_entry" &&
+             ((e as { payload?: Record<string, unknown> }).payload?.["entryType"] === "lesson"),
     ) as Record<string, unknown> | undefined;
     expect(lessonEvent).toBeDefined();
-    expect(lessonEvent?.["title"]).toBe("Always validate");
-    expect(lessonEvent?.["body"]).toBe("Don't trust input");
-    expect(Array.isArray(lessonEvent?.["tags"])).toBe(true);
-    expect(lessonEvent?.["tags"]).toEqual(["security", "validation"]);
-    expect(lessonEvent?.["promotable"]).toBe(true);
+    expect(lessonEvent?.["kind"]).toBe("user_entry");
+    expect(lessonEvent?.["schemaVersion"]).toBe(3);
+    expect(typeof lessonEvent?.["redacted"]).toBe("boolean");
+    const payload = lessonEvent?.["payload"] as Record<string, unknown>;
+    expect(payload?.["entryType"]).toBe("lesson");
+    expect(payload?.["title"]).toBe("Always validate");
+    expect(payload?.["body"]).toBe("Don't trust input");
+    expect(Array.isArray(payload?.["tags"])).toBe(true);
+    expect(payload?.["tags"]).toEqual(["security", "validation"]);
+    expect(payload?.["promotable"]).toBe(true);
   });
 
   it("handles lesson without tags or promotable flag", () => {
@@ -140,9 +147,11 @@ describe("cli-lesson", () => {
 
     const events = readEvents(dir);
     const lessonEvent = events.find(
-      (e) => (e as { type?: string }).type === "manual.lesson",
+      (e) => (e as { kind?: string; payload?: Record<string, unknown> }).kind === "user_entry" &&
+             ((e as { payload?: Record<string, unknown> }).payload?.["entryType"] === "lesson"),
     ) as Record<string, unknown> | undefined;
-    expect(lessonEvent?.["tags"]).toEqual([]);
-    expect(lessonEvent?.["promotable"]).toBe(false);
+    const payload = lessonEvent?.["payload"] as Record<string, unknown> | undefined;
+    expect(payload?.["tags"]).toEqual([]);
+    expect(payload?.["promotable"]).toBe(false);
   });
 });

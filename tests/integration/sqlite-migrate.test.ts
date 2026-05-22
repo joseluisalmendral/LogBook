@@ -1,10 +1,18 @@
+/**
+ * Integration tests for SQLite openIndex / migrate.
+ *
+ * Updated for v2 (persistence-truthfulness PR 4):
+ *  - schema_version is now 2.
+ *  - Dead tables `events` and `sessions` are absent from a fresh DB.
+ */
+
 import { describe, it, expect, afterEach } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { realpathSync } from "node:fs";
-import Database from "better-sqlite3";
 import { openIndex, closeIndex } from "../../src/store/sqlite.js";
+import { SCHEMA_VERSION } from "../../src/store/schema.js";
 
 // Use realpathSync to resolve macOS /var -> /private/var symlink.
 const TMP = realpathSync(tmpdir());
@@ -27,7 +35,7 @@ describe("sqlite-migrate integration", () => {
     dbPath = join(tmpDir, "index.db");
   }
 
-  it("openIndex creates DB, runs migrate, all tables exist", () => {
+  it("openIndex creates DB, runs migrate, v2 tables exist and dead tables absent", () => {
     setup();
     const db = openIndex(dbPath);
 
@@ -41,22 +49,25 @@ describe("sqlite-migrate integration", () => {
 
     closeIndex(db);
 
+    // v2 tables that MUST exist
     const expected = [
       "decisions",
       "errors",
-      "events",
       "fixes",
       "lessons",
       "links",
       "milestones",
       "resources",
       "schema_version",
-      "sessions",
       "suggestions",
     ];
     for (const t of expected) {
       expect(tables, `table ${t} missing after openIndex`).toContain(t);
     }
+
+    // Dead tables that must NOT exist
+    expect(tables, "dead table `events` must be absent").not.toContain("events");
+    expect(tables, "dead table `sessions` must be absent").not.toContain("sessions");
   });
 
   it("WAL mode is active after openIndex", () => {
@@ -69,7 +80,7 @@ describe("sqlite-migrate integration", () => {
     expect(row.journal_mode).toBe("wal");
   });
 
-  it("reopening same file: migrate returns {from:1, to:1} — idempotent", () => {
+  it("reopening same file: schema_version stays at SCHEMA_VERSION — idempotent", () => {
     setup();
     // First open applies schema.
     const db1 = openIndex(dbPath);
@@ -77,16 +88,16 @@ describe("sqlite-migrate integration", () => {
 
     // Second open: migrate should be idempotent.
     const db2 = openIndex(dbPath);
-    // Verify schema_version row is still correct.
     const row = db2
       .prepare("SELECT version FROM schema_version")
       .get() as { version: number };
     closeIndex(db2);
 
-    expect(row.version).toBe(1);
+    expect(row.version).toBe(SCHEMA_VERSION);
+    expect(SCHEMA_VERSION).toBe(2);
   });
 
-  it("readonly mode skips migrate and opens successfully", () => {
+  it("readonly mode skips migrate and opens successfully at current schema_version", () => {
     setup();
     // Create and migrate first.
     const db1 = openIndex(dbPath);
@@ -99,7 +110,7 @@ describe("sqlite-migrate integration", () => {
       .get() as { version: number };
     closeIndex(db2);
 
-    expect(row.version).toBe(1);
+    expect(row.version).toBe(SCHEMA_VERSION);
   });
 
   it("closeIndex closes the db (subsequent prepare throws)", () => {

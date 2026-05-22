@@ -47,9 +47,6 @@ function makePaths(root: string): ProjectPaths {
     dataDir: path.join(root, "logbook"),
     evidenceDir,
     eventsJsonl: path.join(evidenceDir, "events.jsonl"),
-    decisionsJsonl: path.join(evidenceDir, "decisions.jsonl"),
-    errorsJsonl: path.join(evidenceDir, "errors.jsonl"),
-    lessonsJsonl: path.join(evidenceDir, "lessons.jsonl"),
   };
 }
 

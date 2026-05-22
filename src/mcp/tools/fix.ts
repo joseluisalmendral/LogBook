@@ -15,8 +15,7 @@
  */
 
 import * as v from "valibot";
-import { generateUlid } from "../../util/ulid.js";
-import { appendJsonl } from "../../store/jsonl.js";
+import { appendEvent } from "../../store/index.js";
 import type { MCPContext } from "../context.js";
 import type { ToolDef } from "./index.js";
 
@@ -50,19 +49,21 @@ export const fixTool: ToolDef<FixInput, FixOutput> = {
   valibotSchema: FixInputSchema,
 
   handler: async (ctx: MCPContext, input: FixInput): Promise<FixOutput> => {
-    const id = generateUlid();
-    const ts = new Date().toISOString();
+    const sessionId = ctx.state.session ?? "";
 
-    // Backward compat: iter2-era MCP events used { payload: {...} } wrapper.
-    // Iter3+ writes top-level fields (MONITOR-1 closure).
-    const event = {
-      id,
-      type: "manual.fix",
-      ts,
-      summary: input.summary,
-      ...(input.errorId !== undefined && { errorId: input.errorId }),
-    };
-    await appendJsonl(ctx.paths.eventsJsonl, JSON.stringify(event));
+    // Write through appendEvent (redaction + Shape-A enforced).
+    const { event } = await appendEvent(ctx.paths, {
+      kind: "user_entry",
+      sessionId,
+      provider: "logbook-mcp",
+      payload: {
+        entryType: "fix",
+        summary: input.summary,
+        ...(input.errorId !== undefined && { errorId: input.errorId }),
+      },
+    });
+    const id = event.id;
+    const ts = event.timestamp;
 
     // Insert into fixes table and optionally toggle errors.resolved.
     try {

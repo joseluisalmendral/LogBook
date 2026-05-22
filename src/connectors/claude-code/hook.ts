@@ -15,9 +15,15 @@ const STDIN_TIMEOUT_MS = 150;
 
 async function main(): Promise<number> {
   try {
-    const stdinPayload = await readAllStdin({ timeoutMs: STDIN_TIMEOUT_MS });
+    const { payload: stdinPayload, timedOut } = await readAllStdin({ timeoutMs: STDIN_TIMEOUT_MS });
+
+    // If stdin timed out and produced no data, there is nothing to ingest.
+    if (timedOut && stdinPayload.length === 0) return 0;
+
+    // Empty payload (non-timeout) — also nothing to ingest.
     if (!stdinPayload) return 0;
-    await ingestClaudePayload({ stdinPayload });
+
+    await ingestClaudePayload({ stdinPayload, stdinTruncated: timedOut });
     return 0;
   } catch (err) {
     // Hooks MUST NEVER exit non-zero — degrade silently.

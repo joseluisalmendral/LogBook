@@ -5,7 +5,8 @@ export type EventKind =
   | "tool_result"         // tool response payload
   | "system"              // session lifecycle, hook bootstrap, configuration
   | "error"               // captured error in agent/tool/hook/build/test
-  | "hook_event";         // raw event delivered by Claude Code's hook bus
+  | "hook_event"          // raw event delivered by Claude Code's hook bus
+  | "user_entry";         // CLI / MCP user-authored record; subtype in payload.entryType
 
 export interface EventTokens {
   in?: number;             // prompt tokens (best-effort, heuristic in iter1)
@@ -20,6 +21,45 @@ export interface EventPayload {
   tool_args?: unknown;     // for tool_use; redacted
   tool_response?: unknown; // for tool_result; redacted via §30 rules
   raw?: unknown;           // original hook payload kept for forensics (also redacted)
+}
+
+/**
+ * Input shape accepted by `appendEvent` in `src/store/index.ts`.
+ *
+ * Callers (CLI, MCP, hook ingest) build an EventInput and pass it to
+ * appendEvent. The store fills all structural fields (id, traceId, spanId,
+ * timestamp, schemaVersion, redacted) and then calls redactEventDeep before
+ * writing to disk.
+ *
+ * `id`, `traceId`, `spanId`, and `timestamp` are optional so that
+ * deterministic test injection is still possible (the hook ingest path already
+ * builds its own ids).
+ *
+ * `payload.entryType` is the subdiscriminator for `kind: "user_entry"` records:
+ *   "lesson" | "decision" | "resource" | "milestone" | "error" | "fix" |
+ *   "snapshot" | "visual" | "annotation" | "promote" |
+ *   "session_start" | "phase_change" | "session_rename" | "mcp_audit" | "review"
+ */
+export interface EventInput {
+  // --- Required from caller ---
+  kind: EventKind;
+  sessionId: string;
+  payload: EventPayload | Record<string, unknown>;
+
+  // --- Optional from caller ---
+  provider?: string;
+  model?: string;
+  phase?: string;
+  parentId?: string;
+  meta?: Record<string, unknown>;
+  tokens?: EventTokens;
+  latencyMs?: number;
+
+  // --- Reserved for hook ingest / deterministic test injection ---
+  id?: string;
+  traceId?: string;
+  spanId?: string;
+  timestamp?: string;
 }
 
 export interface Event {

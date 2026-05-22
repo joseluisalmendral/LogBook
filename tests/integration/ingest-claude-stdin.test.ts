@@ -157,4 +157,67 @@ describe("I3 — ingest claude stdin", () => {
     });
     expect(result.status).toBe(0);
   });
+
+  // Fix 2: session_id propagation from hook payload (Req 2.1 + Req 2.2).
+
+  it("posttool-with-session.json: sessionId equals the payload session_id (NOT a ULID)", () => {
+    // Pipe WITHOUT --session-id flag so the payload's session_id is used (slot 2).
+    const input = fs.readFileSync(path.join(FIXTURES, "posttool-with-session.json"), "utf8");
+    const result = spawnSync("node", [CLI, "ingest", "claude"], {
+      cwd: tmp,
+      input,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        LOGBOOK_HOOK_PATH: HOOK_CJS,
+        // Unset any env override to ensure slot 2 (payload) fires, not slot 3.
+        LOGBOOK_SESSION_ID: undefined as unknown as string,
+      },
+    });
+    expect(result.status).toBe(0);
+
+    const events = readEventsJsonl(tmp);
+    // Find the event written in this test run by filtering on the known session_id.
+    const event = events.find(
+      (e) => (e as Record<string, unknown>)["sessionId"] === "abc12345-dead-beef-0000-000000000001",
+    ) as Record<string, unknown> | undefined;
+    expect(event).toBeDefined();
+    // Must NOT look like a ULID (Crockford base32, ~26 chars, starts with timestamp).
+    const sessionId = String(event?.["sessionId"] ?? "");
+    expect(sessionId).toBe("abc12345-dead-beef-0000-000000000001");
+    // Verify it is NOT a ULID-format string (ULIDs are 26 chars of Crockford base32).
+    expect(/^[0-9A-HJKMNP-TV-Z]{26}$/.test(sessionId)).toBe(false);
+  });
+
+  it("user-message.json without --session-id: ULID fallback still fires when no session_id in payload", () => {
+    // user-message.json contains session_id: "sess-001" — but we verify the
+    // resolver uses the payload value directly (not a generated ULID).
+    // The ULID-fallback path: pipe a payload WITHOUT session_id field.
+    const payloadWithoutSession = JSON.stringify({
+      hook_event_name: "PostToolUse",
+      tool_name: "Bash",
+      tool_args: { command: "echo" },
+      tool_response: { output: "ok" },
+    });
+    const result = spawnSync("node", [CLI, "ingest", "claude"], {
+      cwd: tmp,
+      input: payloadWithoutSession,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        LOGBOOK_HOOK_PATH: HOOK_CJS,
+        // Unset env override to force ULID fallback (slot 4).
+        LOGBOOK_SESSION_ID: undefined as unknown as string,
+      },
+    });
+    expect(result.status).toBe(0);
+
+    const events = readEventsJsonl(tmp);
+    // The last event should have a ULID-format sessionId (26 chars, Crockford base32).
+    const lastEvent = events[events.length - 1] as Record<string, unknown> | undefined;
+    expect(lastEvent).toBeDefined();
+    const sessionId = String(lastEvent?.["sessionId"] ?? "");
+    // ULID format: 26 chars, chars from Crockford base32 set 0-9A-HJKMNP-TV-Z
+    expect(/^[0-9A-HJKMNP-TV-Z]{26}$/.test(sessionId)).toBe(true);
+  });
 });

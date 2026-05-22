@@ -100,7 +100,7 @@ describe("cli-fix", () => {
     expect(out["errorId"]).toBe(errorId);
   });
 
-  it("appends a manual.fix event linking to the error id", () => {
+  it("appends a user_entry/fix event linking to the error id", () => {
     const dir = makeTmpProject();
     const { stdout: errOut } = runCli(
       ["error", "--kind", "TypeError", "--message", "Cannot read property"],
@@ -116,12 +116,15 @@ describe("cli-fix", () => {
     );
 
     const events = readEvents(dir);
+    // Shape-A: kind=user_entry, payload.entryType=fix
     const fixEvent = events.find(
-      (e) => (e as { type?: string }).type === "manual.fix",
+      (e) => (e as { kind?: string; payload?: Record<string, unknown> }).kind === "user_entry" &&
+             ((e as { payload?: Record<string, unknown> }).payload?.["entryType"] === "fix"),
     ) as Record<string, unknown> | undefined;
     expect(fixEvent).toBeDefined();
-    expect(fixEvent?.["errorId"]).toBe(errorId);
-    expect(fixEvent?.["description"]).toBe("Added null check");
+    const payload = fixEvent?.["payload"] as Record<string, unknown>;
+    expect(payload?.["errorId"]).toBe(errorId);
+    expect(payload?.["description"]).toBe("Added null check");
   });
 
   it("--verified sets verified=true in fix event and links error in events.jsonl", () => {
@@ -157,9 +160,13 @@ describe("cli-fix", () => {
       (e) => (e as { id?: string }).id === fixId,
     ) as Record<string, unknown> | undefined;
     expect(fixEvent).toBeDefined();
-    expect(fixEvent?.["type"]).toBe("manual.fix");
-    expect(fixEvent?.["errorId"]).toBe(errorId);
-    expect(fixEvent?.["verified"]).toBe(true);
-    expect(fixEvent?.["description"]).toBe("Added null check");
+    // Shape-A: kind and payload
+    expect(fixEvent?.["kind"]).toBe("user_entry");
+    expect(fixEvent?.["schemaVersion"]).toBe(3);
+    const payload = fixEvent?.["payload"] as Record<string, unknown>;
+    expect(payload?.["entryType"]).toBe("fix");
+    expect(payload?.["errorId"]).toBe(errorId);
+    expect(payload?.["verified"]).toBe(true);
+    expect(payload?.["description"]).toBe("Added null check");
   });
 });

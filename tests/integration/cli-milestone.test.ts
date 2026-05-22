@@ -95,7 +95,7 @@ describe("cli-milestone", () => {
     expect(ULID_RE.test(out["id"] as string)).toBe(true);
   });
 
-  it("appends manual.milestone event with sessionIds and decisionIds as arrays", () => {
+  it("appends user_entry/milestone event with sessionIds and decisionIds as arrays", () => {
     const dir = makeTmpProject();
     runCli(
       [
@@ -115,20 +115,22 @@ describe("cli-milestone", () => {
     );
 
     const events = readEvents(dir);
+    // Shape-A: kind=user_entry, payload.entryType=milestone
     const msEvent = events.find(
-      (e) => (e as { type?: string }).type === "manual.milestone",
+      (e) => (e as { kind?: string; payload?: Record<string, unknown> }).kind === "user_entry" &&
+             ((e as { payload?: Record<string, unknown> }).payload?.["entryType"] === "milestone"),
     ) as Record<string, unknown> | undefined;
     expect(msEvent).toBeDefined();
-    expect(msEvent?.["title"]).toBe("MVP done");
-    expect(msEvent?.["description"]).toBe(
-      "Completed all iteration 2 tasks",
-    );
-    expect(Array.isArray(msEvent?.["sessionIds"])).toBe(true);
-    expect(msEvent?.["sessionIds"]).toEqual(["abc", "def"]);
-    expect(Array.isArray(msEvent?.["decisionIds"])).toBe(true);
-    expect(msEvent?.["decisionIds"]).toEqual(["0001", "0002"]);
-    expect(Array.isArray(msEvent?.["tags"])).toBe(true);
-    expect(msEvent?.["tags"]).toEqual(["v2", "release"]);
+    expect(msEvent?.["schemaVersion"]).toBe(3);
+    const payload = msEvent?.["payload"] as Record<string, unknown>;
+    expect(payload?.["title"]).toBe("MVP done");
+    expect(payload?.["description"]).toBe("Completed all iteration 2 tasks");
+    expect(Array.isArray(payload?.["sessionIds"])).toBe(true);
+    expect(payload?.["sessionIds"]).toEqual(["abc", "def"]);
+    expect(Array.isArray(payload?.["decisionIds"])).toBe(true);
+    expect(payload?.["decisionIds"]).toEqual(["0001", "0002"]);
+    expect(Array.isArray(payload?.["tags"])).toBe(true);
+    expect(payload?.["tags"]).toEqual(["v2", "release"]);
   });
 
   it("handles milestone without optional arrays", () => {
@@ -147,10 +149,12 @@ describe("cli-milestone", () => {
 
     const events = readEvents(dir);
     const msEvent = events.find(
-      (e) => (e as { type?: string }).type === "manual.milestone",
+      (e) => (e as { kind?: string; payload?: Record<string, unknown> }).kind === "user_entry" &&
+             ((e as { payload?: Record<string, unknown> }).payload?.["entryType"] === "milestone"),
     ) as Record<string, unknown> | undefined;
-    expect(msEvent?.["sessionIds"]).toEqual([]);
-    expect(msEvent?.["decisionIds"]).toEqual([]);
-    expect(msEvent?.["tags"]).toEqual([]);
+    const payload = msEvent?.["payload"] as Record<string, unknown> | undefined;
+    expect(payload?.["sessionIds"]).toEqual([]);
+    expect(payload?.["decisionIds"]).toEqual([]);
+    expect(payload?.["tags"]).toEqual([]);
   });
 });

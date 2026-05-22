@@ -101,16 +101,18 @@ describe("cli-promote", () => {
     expect(out["eventId"]).toBe(eventId);
     expect(out["teachingValue"]).toBe("high");
 
-    // events.jsonl must contain a manual.promote entry
+    // events.jsonl must contain a user_entry/promote entry (Shape-A)
     const lines = fs.readFileSync(eventsJsonl, "utf-8").trim().split("\n");
     const promoteLines = lines.filter((l) => {
       const e = JSON.parse(l) as Record<string, unknown>;
-      return e["type"] === "manual.promote";
+      const payload = e["payload"] as Record<string, unknown> | undefined;
+      return e["kind"] === "user_entry" && payload?.["entryType"] === "promote";
     });
     expect(promoteLines.length).toBe(1);
     const promoteEvent = JSON.parse(promoteLines[0]!) as Record<string, unknown>;
-    expect(promoteEvent["eventId"]).toBe(eventId);
-    expect(promoteEvent["teachingValue"]).toBe("high");
+    const promotePayload = promoteEvent["payload"] as Record<string, unknown>;
+    expect(promotePayload["eventId"]).toBe(eventId);
+    expect(promotePayload["teachingValue"]).toBe("high");
 
     fs.rmSync(dir, { recursive: true, force: true });
   });
@@ -125,7 +127,8 @@ describe("cli-promote", () => {
     const lines = fs.readFileSync(eventsJsonl, "utf-8").trim().split("\n");
     const promoteLines = lines.filter((l) => {
       const e = JSON.parse(l) as Record<string, unknown>;
-      return e["type"] === "manual.promote";
+      const payload = e["payload"] as Record<string, unknown> | undefined;
+      return e["kind"] === "user_entry" && payload?.["entryType"] === "promote";
     });
     expect(promoteLines.length).toBe(2);
 

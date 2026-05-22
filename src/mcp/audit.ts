@@ -17,7 +17,7 @@
  */
 
 import type { ProjectPaths } from "../core/paths.js";
-import { appendJsonl } from "../store/jsonl.js";
+import { appendEvent } from "../store/index.js";
 import { sha256 } from "../util/hash.js";
 import { generateUlid } from "../util/ulid.js";
 
@@ -40,26 +40,37 @@ export interface WriteAuditEventOptions {
 
 /**
  * Append a `mcp.tool_call` audit event to the project's events.jsonl.
- * Returns the AuditEvent that was written so callers can reference the id.
+ * Routes through appendEvent so redaction and Shape-A schema are enforced.
+ * Returns an AuditEvent-compatible object so callers can reference the id.
  */
 export async function writeAuditEvent(
   paths: ProjectPaths,
   opts: WriteAuditEventOptions,
 ): Promise<AuditEvent> {
-  const event: AuditEvent = {
-    id: generateUlid(),
+  const id = generateUlid();
+  const ts = new Date().toISOString();
+
+  const { event } = await appendEvent(paths, {
+    id,
+    kind: "system",
+    sessionId: opts.sessionId ?? "",
+    provider: "logbook-mcp",
+    payload: {
+      entryType: "mcp_audit",
+      tool: opts.tool,
+      inputHash: sha256(opts.rawInput),
+    },
+    timestamp: ts,
+  });
+
+  // Return a backward-compat AuditEvent shape so existing callers work unchanged.
+  return {
+    id: event.id,
     type: "mcp.tool_call",
     tool: opts.tool,
-    ts: new Date().toISOString(),
-    redacted: opts.redacted,
+    ts: event.timestamp,
+    redacted: event.redacted,
     inputHash: sha256(opts.rawInput),
     ...(opts.sessionId !== undefined ? { sessionId: opts.sessionId } : {}),
   };
-
-  await appendJsonl(paths.eventsJsonl, JSON.stringify(event), {
-    // Audit writes should be durable — fdatasync on each append.
-    fsyncOnAppend: true,
-  });
-
-  return event;
 }

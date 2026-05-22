@@ -237,9 +237,12 @@ describe("mcp-tool-state", () => {
     });
 
     const events = readEvents(dir);
+    type ShapeA = { kind?: string; payload?: Record<string, unknown> };
+    // Shape-A audit event: kind="system", payload.entryType="mcp_audit", payload.tool="logbook_state"
     const auditEvents = events.filter(
-      (e) => (e as { type?: string }).type === "mcp.tool_call" &&
-             (e as { tool?: string }).tool === "logbook_state",
+      (e) => (e as ShapeA).kind === "system" &&
+             (e as ShapeA).payload?.["entryType"] === "mcp_audit" &&
+             (e as ShapeA).payload?.["tool"] === "logbook_state",
     );
     const manualStateEvents = events.filter(
       (e) => (e as { type?: string }).type === "manual.state",

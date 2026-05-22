@@ -34,9 +34,6 @@ function makeTmpPaths(): { paths: ProjectPaths; tmpDir: string } {
     dataDir: path.join(tmpDir, "logbook"),
     evidenceDir,
     eventsJsonl: path.join(evidenceDir, "events.jsonl"),
-    decisionsJsonl: path.join(evidenceDir, "decisions.jsonl"),
-    errorsJsonl: path.join(evidenceDir, "errors.jsonl"),
-    lessonsJsonl: path.join(evidenceDir, "lessons.jsonl"),
   };
 
   return { paths, tmpDir };
@@ -172,6 +169,88 @@ describe("readContext — JSONL source", () => {
     const ctx = await readContext(paths);
     expect(ctx.decisions.map((e) => e.title)).toEqual(["A", "B", "C"]);
     expect(ctx.all.map((e) => e.id)).toEqual(["01", "02", "03"]);
+  });
+
+  it("reads Shape-A user_entry event and synthesizes type from payload.entryType", async () => {
+    const { paths } = makeTmpPaths();
+    // Shape-A event — no top-level type, uses kind + timestamp
+    writeEvents(paths.eventsJsonl, [
+      {
+        schemaVersion: 3,
+        id: "01SHAPEA00000000000000001",
+        kind: "user_entry",
+        timestamp: "2026-05-01T00:00:00.000Z",
+        sessionId: "sess-01",
+        traceId: "sess-01",
+        spanId: "01SPAN000000000000000000",
+        provider: "logbook-cli",
+        redacted: false,
+        payload: { entryType: "decision", title: "Shape A Decision", chosen: "A" },
+      },
+    ]);
+
+    const ctx = await readContext(paths);
+    // normalizeEvent should synthesize type="manual.decision" from kind+entryType
+    expect(ctx.decisions).toHaveLength(1);
+    expect(ctx.decisions[0]!.title).toBe("Shape A Decision");
+    expect(ctx.decisions[0]!["type"]).toBe("manual.decision");
+    // ts should be set from timestamp
+    expect(typeof ctx.decisions[0]!.ts).toBe("string");
+  });
+
+  it("reads Shape-A system/session_start event and synthesizes type", async () => {
+    const { paths } = makeTmpPaths();
+    writeEvents(paths.eventsJsonl, [
+      {
+        schemaVersion: 3,
+        id: "01SHAPEA00000000000000002",
+        kind: "system",
+        timestamp: "2026-05-01T01:00:00.000Z",
+        sessionId: "sess-02",
+        traceId: "sess-02",
+        spanId: "01SPAN000000000000000001",
+        provider: "logbook-cli",
+        redacted: false,
+        payload: { entryType: "session_start", sessionId: "sess-02" },
+      },
+    ]);
+
+    const ctx = await readContext(paths);
+    expect(ctx.sessions).toHaveLength(1);
+    expect(ctx.sessions[0]!["type"]).toBe("manual.session_start");
+  });
+
+  it("legacy and Shape-A events coexist in the same file", async () => {
+    const { paths } = makeTmpPaths();
+    writeEvents(paths.eventsJsonl, [
+      // Legacy flat shape
+      {
+        id: "01LEGACY",
+        type: "manual.lesson",
+        ts: "2026-01-01T00:00:00.000Z",
+        title: "Legacy lesson",
+      },
+      // Shape-A
+      {
+        schemaVersion: 3,
+        id: "01SHAPEA00000000000000003",
+        kind: "user_entry",
+        timestamp: "2026-01-02T00:00:00.000Z",
+        sessionId: "sess-03",
+        traceId: "sess-03",
+        spanId: "01SPAN000000000000000002",
+        provider: "logbook-cli",
+        redacted: false,
+        payload: { entryType: "lesson", title: "Shape-A lesson", body: "content" },
+      },
+    ]);
+
+    const ctx = await readContext(paths);
+    expect(ctx.lessons).toHaveLength(2);
+    // Both lessons present, sorted by ts
+    const titles = ctx.lessons.map((e) => e.title);
+    expect(titles).toContain("Legacy lesson");
+    expect(titles).toContain("Shape-A lesson");
   });
 
   it("filters events into correct typed buckets", async () => {

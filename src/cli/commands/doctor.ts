@@ -47,14 +47,18 @@
  */
 
 import { defineCommand } from "citty";
-import { resolveProjectRoot, makePaths } from "../../core/paths.js";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+import { resolveProjectRoot, makePaths, type ProjectPaths } from "../../core/paths.js";
 import { readManifest } from "../../core/manifest.js";
+import type { Manifest } from "../../types/manifest.js";
 import { bootstrapClaudeCodeInstallers } from "../../connectors/claude-code/artifacts/index.js";
 import { getInstaller } from "../../connectors/claude-code/artifacts/registry.js";
 import { readState } from "../../core/state.js";
 import { generateUlid } from "../../util/ulid.js";
 import { renderTable, renderKv, renderJson } from "../render.js";
 import { computeTokenBreakdown } from "../../core/token-measure.js";
+import { readContext } from "../../generate/render-context.js";
 
 // ---------- SG-C bundle helpers (exported for unit tests) ----------
 
@@ -99,6 +103,108 @@ function checkBundles(root: string): BundleResult[] {
     try{const sz=_fs.statSync(`${root}/${p}`).size;return{name,path:p,capKb:cap,softKb,status:classifyBundle(sz,cap),sizeKb:sz/1024};}
     catch{return{name,path:p,capKb:cap,softKb,status:"not_built" as const};}
   });
+}
+
+// -------------------------------------------------------------------
+// MCP project-root arg check (Req 1.2 — warns on old manifests)
+// -------------------------------------------------------------------
+
+export interface McpProjectRootCheckResult {
+  ok: boolean;
+  /** Human-readable warning message when ok === false. */
+  warning?: string;
+}
+
+/**
+ * Check that the installed logbook-mcp entry in .mcp.json carries
+ * `--project-root <paths.root>` in its args array.
+ *
+ * Emits a WARNING (not a failure) when:
+ *   - `--project-root` is absent from args (old manifest, pre-upgrade).
+ *   - `--project-root` is present but the stored value does not match `paths.root`.
+ *
+ * Returns { ok: true } when the check passes or when the mcp_server artifact is
+ * not installed (nothing to warn about).
+ *
+ * Never throws — all I/O errors are silently swallowed (doctor degrades gracefully).
+ */
+export function checkMcpProjectRootArg(
+  paths: ProjectPaths,
+  manifest: Manifest,
+): McpProjectRootCheckResult {
+  const hasMcpArtifact = manifest.artifacts.some((a) => a.kind === "mcp_server");
+  if (!hasMcpArtifact) return { ok: true };
+
+  const mcpJsonPath = join(paths.root, ".mcp.json");
+  if (!existsSync(mcpJsonPath)) return { ok: true };
+
+  try {
+    const raw = readFileSync(mcpJsonPath, "utf8");
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const mcpServers = parsed["mcpServers"] as Record<string, unknown> | undefined;
+    if (!mcpServers) return { ok: true };
+
+    const entry = mcpServers["logbook-mcp"] as Record<string, unknown> | undefined;
+    if (!entry) return { ok: true };
+
+    const args = entry["args"];
+    if (!Array.isArray(args)) {
+      return {
+        ok: false,
+        warning:
+          "logbook-mcp entry in .mcp.json has no args array — missing --project-root. Re-run `logbook install` to upgrade.",
+      };
+    }
+
+    const prIdx = (args as unknown[]).indexOf("--project-root");
+    if (prIdx === -1) {
+      return {
+        ok: false,
+        warning:
+          "logbook-mcp entry in .mcp.json is missing --project-root arg. Re-run `logbook install` to upgrade.",
+      };
+    }
+
+    const storedRoot = (args as unknown[])[prIdx + 1];
+    if (storedRoot !== paths.root) {
+      return {
+        ok: false,
+        warning: `logbook-mcp --project-root value ("${String(storedRoot)}") does not match current project root ("${paths.root}"). Re-run \`logbook install\` to fix.`,
+      };
+    }
+
+    return { ok: true };
+  } catch {
+    // Silently ignore I/O / JSON errors — doctor never crashes.
+    return { ok: true };
+  }
+}
+
+// -------------------------------------------------------------------
+// Truncation counter
+// -------------------------------------------------------------------
+
+/**
+ * Count events in the last 24 hours that have `meta.truncated === true`.
+ * These indicate hook stdin reads that timed out before the payload was
+ * fully received. Returns 0 when events.jsonl is absent or unreadable.
+ */
+export async function countTruncatedLast24h(paths: ProjectPaths): Promise<number> {
+  try {
+    const ctx = await readContext(paths);
+    const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    return ctx.all.filter((event) => {
+      // Only count events within the last 24h.
+      if (event.ts < cutoff) return false;
+      // Check meta.truncated === true.
+      const meta = event["meta"];
+      if (meta === null || typeof meta !== "object" || Array.isArray(meta)) return false;
+      return (meta as Record<string, unknown>)["truncated"] === true;
+    }).length;
+  } catch {
+    // Never crash doctor — degrade silently.
+    return 0;
+  }
 }
 
 // -------------------------------------------------------------------
@@ -185,6 +291,9 @@ export default defineCommand({
       }
     }
 
+    // Check MCP --project-root arg health (Req 1.2 — warns on old manifests).
+    const mcpRootCheck = checkMcpProjectRootArg(paths, manifest);
+
     // Measure token budget — real chars/4 counting (T8 iter4).
     // Logic extracted to src/core/token-measure.ts (iter6 T1).
     const breakdown = computeTokenBreakdown(manifest, paths.root);
@@ -201,6 +310,9 @@ export default defineCommand({
     // D6/D7: check bundle sizes (statSync, relative to project root)
     const bundles = checkBundles(root);
 
+    // Count truncated hook events in the last 24h (persistence-truthfulness spec).
+    const truncatedCount = await countTruncatedLast24h(paths);
+
     if (args["json"]) {
       process.stdout.write(
         renderJson({
@@ -214,6 +326,8 @@ export default defineCommand({
           })),
           disabled: state.disabled,
           bundles: bundles.map(({ name, path: p, capKb, softKb, status, sizeKb }) => ({ name, path: p, capKb, softKb, status, sizeKb })),
+          mcpProjectRootCheck: { ok: mcpRootCheck.ok, ...(mcpRootCheck.warning !== undefined ? { warning: mcpRootCheck.warning } : {}) },
+          truncatedEvents24h: truncatedCount,
         }),
       );
       return;
@@ -251,6 +365,21 @@ export default defineCommand({
           ["statusline", String(breakdown.statusline)],
           ["sessionStart", String(breakdown.sessionStart)],
         ]),
+      );
+    }
+
+    // Emit MCP project-root warning when the check finds an issue.
+    if (!mcpRootCheck.ok && mcpRootCheck.warning !== undefined) {
+      process.stdout.write(`\nWARNING: ${mcpRootCheck.warning}\n`);
+    }
+
+    // Emit truncation warning only when N > 0 — no noise on healthy runs.
+    if (truncatedCount > 0) {
+      process.stdout.write(
+        renderKv([["truncated-events-24h", String(truncatedCount)]]),
+      );
+      process.stdout.write(
+        `WARN: ${truncatedCount} event(s) were truncated by stdin timeout — hook payloads are exceeding 150ms read budget\n`,
       );
     }
 

@@ -4,14 +4,12 @@
  * Side effects:
  *  1. Calls writeAdrFile() (T9) which atomically increments state.adrCounter
  *     under proper-lockfile and writes logbook/decisions/NNNN-<slug>.md.
- *  2. Appends a `manual.decision` event to events.jsonl.
- *     Event uses TOP-LEVEL fields (T10b.D1 convention — same as all T10 CLI commands).
+ *  2. Appends a `user_entry` event (entryType: "decision") to events.jsonl via
+ *     appendEvent — redaction is automatic at the chokepoint.
  *  3. Best-effort SQLite row in the `decisions` table.
  *  4. Prints JSON: { id, counter, adrPath }.
  *
  * Design §3 CLI command signatures — decision row.
- * T10b.D1: CLI events use top-level fields (not payload wrapper). T11 generators
- * will normalize both CLI (top-level) and MCP (payload.*) shapes when reading.
  */
 
 import * as nodePath from "node:path";
@@ -19,7 +17,7 @@ import * as fs from "node:fs";
 import { defineCommand } from "citty";
 import { resolveProjectRoot, makePaths } from "../../core/paths.js";
 import { readState } from "../../core/state.js";
-import { appendJsonl } from "../../store/jsonl.js";
+import { appendEvent } from "../../store/index.js";
 import { openIndex, closeIndex } from "../../store/sqlite.js";
 import { generateUlid } from "../../util/ulid.js";
 import { writeAdrFile } from "../../generate/adr.js";
@@ -161,7 +159,6 @@ export default defineCommand({
     }
 
     const id = generateUlid();
-    const ts = new Date().toISOString();
     const adrPath = nodePath.relative(root, adrResult.filepath);
 
     // Best-effort gitSha (v1.1 S2.3): fresh subprocess for manual commands.
@@ -172,27 +169,31 @@ export default defineCommand({
       // Degrade silently — git unavailable or not a repo is fine.
     }
 
-    // Build event — TOP-LEVEL fields (T10b.D1 convention).
-    const event: Record<string, unknown> = {
-      id,
-      type: "manual.decision",
-      ts,
-      title,
-      status,
-      chosen,
-      adrCounter: adrResult.counter,
-      adrPath,
-      tags,
-      ...(gitSha !== undefined && { gitSha }),
-      ...(context !== undefined && context !== "" && { context }),
-      ...(consequences !== undefined &&
-        consequences !== "" && { consequences }),
-      ...(options !== undefined && options !== "" && { options }),
-      ...(supersedes !== undefined && supersedes !== "" && { supersedes }),
-    };
+    const state = readState(paths.statePath);
+    const sessionId = state.session ?? "";
 
+    // Append via appendEvent — redaction is automatic at the chokepoint.
     try {
-      await appendJsonl(paths.eventsJsonl, JSON.stringify(event));
+      await appendEvent(paths, {
+        kind: "user_entry",
+        sessionId,
+        payload: {
+          entryType: "decision",
+          title,
+          status,
+          chosen,
+          adrCounter: adrResult.counter,
+          adrPath,
+          tags,
+          ...(gitSha !== undefined && { gitSha }),
+          ...(context !== undefined && context !== "" && { context }),
+          ...(consequences !== undefined && consequences !== "" && { consequences }),
+          ...(options !== undefined && options !== "" && { options }),
+          ...(supersedes !== undefined && supersedes !== "" && { supersedes }),
+        },
+        id,
+        provider: "logbook-cli",
+      });
     } catch (err) {
       process.stderr.write(
         `error: failed to write event — ${err instanceof Error ? err.message : String(err)}\n`,
@@ -204,15 +205,13 @@ export default defineCommand({
     let db: ReturnType<typeof openIndex> | undefined;
     try {
       db = openIndex(paths.indexDbPath);
-      const state = readState(paths.statePath);
-      const sessionId = state.session ?? "";
       db.prepare(
         `INSERT INTO decisions (id, session_id, timestamp, title, status, chosen, supersedes, tags_json)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       ).run(
         id,
-        sessionId,
-        ts,
+        sessionId || null,
+        new Date().toISOString(),
         title,
         status,
         chosen,

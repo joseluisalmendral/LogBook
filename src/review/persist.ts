@@ -9,8 +9,7 @@
  * Event shape follows the T3 top-level convention (no payload wrapper).
  */
 
-import { appendJsonl } from "../store/jsonl.js";
-import { generateUlid } from "../util/ulid.js";
+import { appendEvent } from "../store/index.js";
 import type { ReviewState } from "../types/review.js";
 import type { ProjectPaths } from "../core/paths.js";
 
@@ -45,30 +44,34 @@ export async function persistReviewDecisions(
   let discarded = 0;
   let skipped = 0;
 
-  const ts = new Date().toISOString();
-
   for (const [eventId, decision] of Object.entries(decisions)) {
     if (decision === "promote") {
       const teachingValue = teachingValues[eventId] ?? "medium";
-      const event = {
-        id: generateUlid(),
-        type: "manual.promote",
-        ts,
-        eventId,
-        teachingValue,
-        source: "review-tui",
-      };
-      await appendJsonl(paths.eventsJsonl, JSON.stringify(event));
+      await appendEvent(paths, {
+        kind: "user_entry",
+        sessionId: "",
+        provider: "logbook-review",
+        payload: {
+          entryType: "review",
+          kind: "promote",
+          eventId,
+          teachingValue,
+          source: "review-tui",
+        },
+      });
       promoted++;
     } else if (decision === "discard") {
-      const event = {
-        id: generateUlid(),
-        type: "manual.discard",
-        ts,
-        eventId,
-        source: "review-tui",
-      };
-      await appendJsonl(paths.eventsJsonl, JSON.stringify(event));
+      await appendEvent(paths, {
+        kind: "user_entry",
+        sessionId: "",
+        provider: "logbook-review",
+        payload: {
+          entryType: "review",
+          kind: "discard",
+          eventId,
+          source: "review-tui",
+        },
+      });
       discarded++;
     } else if (decision === "skip") {
       // Intentionally no-op: skip = "leave as-is for next review session"

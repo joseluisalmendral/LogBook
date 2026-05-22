@@ -6,8 +6,8 @@
  *     Uses getGitSha() from src/connectors/git.ts — NO shell execution.
  *     On any failure (git not installed, not a repo) both sha and dirty
  *     are undefined; the command still exits 0.
- *  2. Appends a `manual.snapshot` event to events.jsonl.
- *     The event includes gitSha (v1.1 S2.3) when available.
+ *  2. Appends a `user_entry` event (entryType: "snapshot") to events.jsonl via
+ *     appendEvent — redaction is automatic at the chokepoint.
  *  3. Prints JSON: { sha?, dirty?, note? }.
  *
  * Design §3 CLI command signatures — snapshot row.
@@ -17,7 +17,8 @@ import * as fs from "node:fs";
 import { execFileSync } from "node:child_process";
 import { defineCommand } from "citty";
 import { resolveProjectRoot, makePaths } from "../../core/paths.js";
-import { appendJsonl } from "../../store/jsonl.js";
+import { readState } from "../../core/state.js";
+import { appendEvent } from "../../store/index.js";
 import { generateUlid } from "../../util/ulid.js";
 import { getGitSha } from "../../connectors/git.js";
 
@@ -77,20 +78,25 @@ export default defineCommand({
     const sha = await getGitSha(root);
     const dirty = sha !== undefined ? getGitDirtyCount(root) : undefined;
 
-    // Build event — omit undefined fields (exactOptionalPropertyTypes).
-    // gitSha (v1.1 S2.3): attach the captured SHA for the commits-doc cross-index.
-    const event: Record<string, unknown> = {
-      id: generateUlid(),
-      type: "manual.snapshot",
-      ts: new Date().toISOString(),
-      ...(sha !== undefined && { sha }),
-      ...(sha !== undefined && { gitSha: sha }),
-      ...(dirty !== undefined && { dirty }),
-      ...(note !== undefined && note !== "" && { note }),
-    };
+    const state = readState(paths.statePath);
+    const sessionId = state.session ?? "";
 
+    // Append via appendEvent — redaction is automatic at the chokepoint.
+    // gitSha (v1.1 S2.3): attach the captured SHA for the commits-doc cross-index.
     try {
-      await appendJsonl(paths.eventsJsonl, JSON.stringify(event));
+      await appendEvent(paths, {
+        kind: "user_entry",
+        sessionId,
+        payload: {
+          entryType: "snapshot",
+          ...(sha !== undefined && { sha }),
+          ...(sha !== undefined && { gitSha: sha }),
+          ...(dirty !== undefined && { dirty }),
+          ...(note !== undefined && note !== "" && { note }),
+        },
+        id: generateUlid(),
+        provider: "logbook-cli",
+      });
     } catch (err) {
       process.stderr.write(
         `error: failed to write event — ${err instanceof Error ? err.message : String(err)}\n`,

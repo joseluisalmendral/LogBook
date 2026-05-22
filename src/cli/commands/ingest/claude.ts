@@ -16,7 +16,7 @@ export default defineCommand({
   },
   async run({ args }) {
     // CLI tolerates a longer wait than the hook bundle (which must exit fast).
-    const stdinPayload = await readAllStdin({ timeoutMs: 5_000 });
+    const { payload: stdinPayload } = await readAllStdin({ timeoutMs: 5_000 });
     const opts: { stdinPayload: string; sessionId?: string } = { stdinPayload };
     if (args["session-id"]) opts.sessionId = String(args["session-id"]);
     try {

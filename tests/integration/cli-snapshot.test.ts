@@ -98,13 +98,17 @@ describe("cli-snapshot", () => {
     expect(out["dirty"] == null).toBe(true);
 
     const events = readEvents(dir);
+    // Shape-A: kind=user_entry, payload.entryType=snapshot
     const snapEvent = events.find(
-      (e) => (e as { type?: string }).type === "manual.snapshot",
-    ) as { type: string; note?: string; sha?: string; dirty?: number } | undefined;
+      (e) => (e as { kind?: string; payload?: Record<string, unknown> }).kind === "user_entry" &&
+             ((e as { payload?: Record<string, unknown> }).payload?.["entryType"] === "snapshot"),
+    ) as Record<string, unknown> | undefined;
     expect(snapEvent).toBeDefined();
-    expect(snapEvent?.note).toBe("test");
-    expect(snapEvent?.sha == null).toBe(true);
-    expect(snapEvent?.dirty == null).toBe(true);
+    expect(snapEvent?.["schemaVersion"]).toBe(3);
+    const payload = snapEvent?.["payload"] as Record<string, unknown>;
+    expect(payload?.["note"]).toBe("test");
+    expect(payload?.["sha"] == null).toBe(true);
+    expect(payload?.["dirty"] == null).toBe(true);
   });
 
   it("exits 0 on git-initialized project with 40-char sha and dirty: 0", () => {
@@ -119,11 +123,13 @@ describe("cli-snapshot", () => {
 
     const events = readEvents(dir);
     const snapEvent = events.find(
-      (e) => (e as { type?: string }).type === "manual.snapshot",
-    ) as { type: string; sha?: string; dirty?: number } | undefined;
+      (e) => (e as { kind?: string; payload?: Record<string, unknown> }).kind === "user_entry" &&
+             ((e as { payload?: Record<string, unknown> }).payload?.["entryType"] === "snapshot"),
+    ) as Record<string, unknown> | undefined;
     expect(snapEvent).toBeDefined();
-    expect(typeof snapEvent?.sha).toBe("string");
-    expect((snapEvent?.sha as string).length).toBe(40);
-    expect(snapEvent?.dirty).toBe(0);
+    const snapPayload = snapEvent?.["payload"] as Record<string, unknown>;
+    expect(typeof snapPayload?.["sha"]).toBe("string");
+    expect((snapPayload?.["sha"] as string).length).toBe(40);
+    expect(snapPayload?.["dirty"]).toBe(0);
   });
 });

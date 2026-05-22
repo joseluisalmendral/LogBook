@@ -6,6 +6,11 @@ import { DDL, SCHEMA_VERSION } from "./schema.js";
  * Idempotent: safe to call on an already-migrated database.
  *
  * Returns { from: previousVersion, to: SCHEMA_VERSION }.
+ *
+ * Migration steps applied in order inside the transaction:
+ *   v0 → v2: fresh database — run all DDL (creates current-version tables)
+ *   v1 → v2: existing database — drop dead `events` and `sessions` tables,
+ *             then create all current-version DDL (CREATE IF NOT EXISTS is safe).
  */
 export function migrate(db: Database): { from: number; to: number } {
   // Determine current version before touching anything.
@@ -19,6 +24,14 @@ export function migrate(db: Database): { from: number; to: number } {
   // Apply all DDL in one transaction so the database never ends up in a
   // partial state if interrupted between statements.
   db.transaction(() => {
+    // v1 → v2: drop dead tables that were never written to.
+    // DROP TABLE IF EXISTS is idempotent — safe at any starting version.
+    if (from >= 1) {
+      db.prepare(`DROP TABLE IF EXISTS events`).run();
+      db.prepare(`DROP TABLE IF EXISTS sessions`).run();
+    }
+
+    // Apply current-version DDL (all CREATE TABLE/INDEX IF NOT EXISTS).
     for (const sql of Object.values(DDL)) {
       db.prepare(sql).run();
     }

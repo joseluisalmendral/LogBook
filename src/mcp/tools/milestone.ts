@@ -8,8 +8,7 @@
  */
 
 import * as v from "valibot";
-import { generateUlid } from "../../util/ulid.js";
-import { appendJsonl } from "../../store/jsonl.js";
+import { appendEvent } from "../../store/index.js";
 import type { MCPContext } from "../context.js";
 import type { ToolDef } from "./index.js";
 
@@ -42,20 +41,20 @@ export const milestoneTool: ToolDef<MilestoneInput, MilestoneOutput> = {
   valibotSchema: MilestoneInputSchema,
 
   handler: async (ctx: MCPContext, input: MilestoneInput): Promise<MilestoneOutput> => {
-    const id = generateUlid();
-    const ts = new Date().toISOString();
+    const sessionId = ctx.state.session ?? "";
 
-    // Backward compat: iter2-era MCP events used { payload: {...} } wrapper.
-    // Iter3+ writes top-level fields (MONITOR-1 closure).
-    const event = {
-      id,
-      type: "manual.milestone",
-      ts,
-      title: input.title,
-      ...(input.next !== undefined && { next: input.next }),
-    };
-    await appendJsonl(ctx.paths.eventsJsonl, JSON.stringify(event));
+    // Write through appendEvent (redaction + Shape-A enforced).
+    const { event } = await appendEvent(ctx.paths, {
+      kind: "user_entry",
+      sessionId,
+      provider: "logbook-mcp",
+      payload: {
+        entryType: "milestone",
+        title: input.title,
+        ...(input.next !== undefined && { next: input.next }),
+      },
+    });
 
-    return { id };
+    return { id: event.id };
   },
 };

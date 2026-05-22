@@ -4,7 +4,8 @@
  * Side effects:
  *  1. Generates a ULID session id.
  *  2. Ensures .logbook/ and logbook/evidence/ directories exist.
- *  3. Appends a `manual.session_start` event to events.jsonl.
+ *  3. Appends a `system` event (entryType: "session_start") to events.jsonl via
+ *     appendEvent — redaction is automatic at the chokepoint.
  *  4. Writes state.session (and optionally state.sessionLabel).
  *  5. Prints JSON: { sessionId, label? }.
  *
@@ -15,7 +16,7 @@ import * as fs from "node:fs";
 import { defineCommand } from "citty";
 import { resolveProjectRoot, makePaths } from "../../core/paths.js";
 import { readState, writeState } from "../../core/state.js";
-import { appendJsonl } from "../../store/jsonl.js";
+import { appendEvent } from "../../store/index.js";
 import { generateUlid } from "../../util/ulid.js";
 
 export default defineCommand({
@@ -48,20 +49,20 @@ export default defineCommand({
     fs.mkdirSync(paths.evidenceDir, { recursive: true });
 
     const sessionId = generateUlid();
-    const ts = new Date().toISOString();
     const label = args["label"] as string | undefined;
 
-    // Build event — omit label field when not provided (exactOptionalPropertyTypes).
-    const event: Record<string, unknown> = {
-      id: generateUlid(),
-      type: "manual.session_start",
-      ts,
-      sessionId,
-      ...(label !== undefined && label !== "" && { label }),
-    };
-
+    // Append via appendEvent — redaction is automatic at the chokepoint.
     try {
-      await appendJsonl(paths.eventsJsonl, JSON.stringify(event));
+      await appendEvent(paths, {
+        kind: "system",
+        sessionId,
+        payload: {
+          entryType: "session_start",
+          sessionId,
+          ...(label !== undefined && label !== "" && { label }),
+        },
+        provider: "logbook-cli",
+      });
     } catch (err) {
       process.stderr.write(
         `error: failed to write event — ${err instanceof Error ? err.message : String(err)}\n`,

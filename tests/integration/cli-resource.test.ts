@@ -94,7 +94,7 @@ describe("cli-resource", () => {
     expect(ULID_RE.test(out["id"] as string)).toBe(true);
   });
 
-  it("appends manual.resource event with correct fields", () => {
+  it("appends user_entry/resource event with correct fields", () => {
     const dir = makeTmpProject();
     runCli(
       [
@@ -111,15 +111,20 @@ describe("cli-resource", () => {
       dir,
     );
     const events = readEvents(dir);
+    // Shape-A: kind=user_entry, payload.entryType=resource
     const resEvent = events.find(
-      (e) => (e as { type?: string }).type === "manual.resource",
+      (e) => (e as { kind?: string; payload?: Record<string, unknown> }).kind === "user_entry" &&
+             ((e as { payload?: Record<string, unknown> }).payload?.["entryType"] === "resource"),
     ) as Record<string, unknown> | undefined;
     expect(resEvent).toBeDefined();
-    expect(resEvent?.["kind"]).toBe("url");
-    expect(resEvent?.["uri"]).toBe("https://example.com");
-    expect(resEvent?.["title"]).toBe("Example");
-    expect(Array.isArray(resEvent?.["tags"])).toBe(true);
-    expect(resEvent?.["tags"]).toEqual(["ref", "docs"]);
+    expect(resEvent?.["schemaVersion"]).toBe(3);
+    const payload = resEvent?.["payload"] as Record<string, unknown>;
+    expect(payload?.["entryType"]).toBe("resource");
+    expect(payload?.["kind"]).toBe("url");
+    expect(payload?.["uri"]).toBe("https://example.com");
+    expect(payload?.["title"]).toBe("Example");
+    expect(Array.isArray(payload?.["tags"])).toBe(true);
+    expect(payload?.["tags"]).toEqual(["ref", "docs"]);
   });
 
   it("exits 1 when kind is invalid, stderr contains 'invalid kind'", () => {

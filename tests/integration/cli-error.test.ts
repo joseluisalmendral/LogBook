@@ -106,19 +106,24 @@ describe("cli-error", () => {
     expect(code).toBe(0);
 
     const events = readEvents(dir);
+    // Shape-A: kind=user_entry, payload.entryType=error
     const errEvent = events.find(
-      (e) => (e as { type?: string }).type === "manual.error",
+      (e) => (e as { kind?: string; payload?: Record<string, unknown> }).kind === "user_entry" &&
+             ((e as { payload?: Record<string, unknown> }).payload?.["entryType"] === "error"),
     ) as Record<string, unknown> | undefined;
     expect(errEvent).toBeDefined();
+    const payload = errEvent?.["payload"] as Record<string, unknown>;
     // Stack should be redacted — must NOT contain the raw key
-    expect(String(errEvent?.["stack"] ?? "")).not.toContain(
+    expect(String(payload?.["stack"] ?? "")).not.toContain(
       "AKIAIOSFODNN7EXAMPLE",
     );
     // Should contain [REDACTED:...] marker
-    expect(String(errEvent?.["stack"] ?? "")).toContain("[REDACTED:");
+    expect(String(payload?.["stack"] ?? "")).toContain("[REDACTED:");
+    // redacted flag should be true
+    expect(errEvent?.["redacted"]).toBe(true);
   });
 
-  it("appends manual.error event with kind and message fields", () => {
+  it("appends user_entry/error event with kind and message fields", () => {
     const dir = makeTmpProject();
     const { code, stdout } = runCli(
       [
@@ -143,8 +148,12 @@ describe("cli-error", () => {
       (e) => (e as { id?: string }).id === id,
     ) as Record<string, unknown> | undefined;
     expect(errEvent).toBeDefined();
-    expect(errEvent?.["kind"]).toBe("TypeError");
-    expect(errEvent?.["message"]).toBe("Cannot read property");
-    expect(errEvent?.["source"]).toBe("manual");
+    expect(errEvent?.["schemaVersion"]).toBe(3);
+    expect(errEvent?.["kind"]).toBe("user_entry");
+    const payload = errEvent?.["payload"] as Record<string, unknown>;
+    expect(payload?.["entryType"]).toBe("error");
+    expect(payload?.["kind"]).toBe("TypeError");
+    expect(payload?.["message"]).toBe("Cannot read property");
+    expect(payload?.["source"]).toBe("manual");
   });
 });

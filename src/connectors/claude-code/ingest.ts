@@ -7,14 +7,14 @@
  *   3. Parse stdin payload (best-effort; never throws).
  *   4. Resolve session id.
  *   5. Normalize raw payload → Event.
- *   6. Redact string-valued fields recursively (before any persistence).
- *   7. Append the redacted event as a JSONL line.
+ *   6. Build EventInput and call appendEvent — redaction covers the full event
+ *      (payload AND meta) inside appendEvent. No local redactDeep needed.
+ *   7. Return result with written/redacted flags.
  */
 
-import { redact } from "../../redact/index.js";
 import { normalizeClaudeEvent } from "../../normalize/event.js";
 import type { RawClaudeHookPayload } from "../../normalize/event.js";
-import { appendJsonl } from "../../store/jsonl.js";
+import { appendEvent } from "../../store/index.js";
 import { resolveProjectRoot, makePaths } from "../../core/paths.js";
 import { readState, writeState } from "../../core/state.js";
 import { generateUlid } from "../../util/ulid.js";
@@ -34,6 +34,18 @@ export interface IngestOptions {
   now?: () => string;
   /** Injectable ULID generator for deterministic tests. */
   ulid?: () => string;
+  /**
+   * Set to true when stdin was cut off by the 150ms timeout (i.e. the read
+   * window expired before stdin reached EOF). appendEvent will then set
+   * meta.truncated = true on the stored event, independently of parse_error.
+   *
+   * Truth table (meta flags on stored event):
+   *   stdin OK   + JSON OK  → neither flag
+   *   stdin OK   + JSON fail → parse_error: true
+   *   timedOut   + JSON OK  → truncated: true
+   *   timedOut   + JSON fail → truncated: true, parse_error: true
+   */
+  stdinTruncated?: boolean;
 }
 
 export interface IngestResult {
@@ -59,38 +71,21 @@ export interface IngestResult {
 // ---------------------------------------------------------------------------
 
 /**
- * Recursively walk a value tree and apply redact() to every string.
- * Returns the redacted tree and a boolean indicating whether any hit fired.
+ * Validate a candidate session_id from the Claude hook payload (Req 2.1).
+ *
+ * Rules:
+ *   - Must be a string (typeof guard — catches numeric/object schema drift).
+ *   - Trimmed value must be non-empty.
+ *   - Trimmed length must be ≤ 128 (defensive cap; Claude UUIDs are ~36 chars).
+ *
+ * Returns the trimmed value on success, undefined on any failure.
+ * Never throws — resolver falls through to the next priority slot.
  */
-function redactDeep(value: unknown): { value: unknown; redactedAny: boolean } {
-  if (typeof value === "string") {
-    const result = redact(value);
-    return { value: result.redacted, redactedAny: result.hits.length > 0 };
-  }
-
-  if (Array.isArray(value)) {
-    let redactedAny = false;
-    const next = value.map((item) => {
-      const r = redactDeep(item);
-      if (r.redactedAny) redactedAny = true;
-      return r.value;
-    });
-    return { value: next, redactedAny };
-  }
-
-  if (value !== null && typeof value === "object") {
-    let redactedAny = false;
-    const next: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      const r = redactDeep(v);
-      if (r.redactedAny) redactedAny = true;
-      next[k] = r.value;
-    }
-    return { value: next, redactedAny };
-  }
-
-  // Primitives (number, boolean, null, undefined) — pass through unchanged
-  return { value, redactedAny: false };
+function extractValidSessionId(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0 || trimmed.length > 128) return undefined;
+  return trimmed;
 }
 
 // ---------------------------------------------------------------------------
@@ -114,6 +109,7 @@ export async function ingestClaudePayload(opts: IngestOptions): Promise<IngestRe
 
   // 3. Parse payload — best-effort, never throws.
   let parsed: RawClaudeHookPayload;
+  let jsonParseFailed = false;
   if (!opts.stdinPayload || !opts.stdinPayload.trim()) {
     return { written: false, redacted: false, reason: "empty-stdin" };
   }
@@ -123,11 +119,13 @@ export async function ingestClaudePayload(opts: IngestOptions): Promise<IngestRe
     // Non-JSON input: wrap as a degraded record for forensic logging.
     // hook_event_name is intentionally omitted so mapKind returns "hook_event".
     parsed = { raw_stdin: opts.stdinPayload, parse_error: true };
+    jsonParseFailed = true;
   }
 
-  // 4. Resolve session id.
+  // 4. Resolve session id (priority: test-injection > Claude payload > env > ULID).
   const sessionId =
     opts.sessionId ??
+    extractValidSessionId(parsed.session_id) ??
     process.env["LOGBOOK_SESSION_ID"] ??
     ulidFn();
 
@@ -138,15 +136,35 @@ export async function ingestClaudePayload(opts: IngestOptions): Promise<IngestRe
     ulid: ulidFn,
   });
 
-  // 6. Redact string-valued fields in the payload tree before persistence.
-  //    We walk the payload object recursively so we never write raw secrets to disk.
-  const { value: redactedPayload, redactedAny } = redactDeep(event.payload);
-  event.payload = redactedPayload as typeof event.payload;
-  event.redacted = redactedAny;
+  // 6. Build meta flags: truncated and parse_error are independent facts.
+  //    Both can be present simultaneously (timeout often causes parse failure).
+  const metaFlags: Record<string, unknown> = { ...(event.meta ?? {}) };
+  if (opts.stdinTruncated === true) {
+    metaFlags["truncated"] = true;
+  }
+  if (jsonParseFailed) {
+    metaFlags["parse_error"] = true;
+  }
 
-  // 7. Serialize and append.
-  const line = JSON.stringify(event);
-  await appendJsonl(paths.eventsJsonl, line);
+  // 7. Route through appendEvent — this covers redaction of the FULL event
+  //    (payload AND meta) so event.meta.api_key and similar fields are scrubbed.
+  //    The local redactDeep helper is removed; appendEvent owns all redaction.
+  const { event: storedEvent, redacted: redactedAny } = await appendEvent(paths, {
+    id: event.id,
+    traceId: event.traceId,
+    spanId: event.spanId,
+    ...(event.parentId !== undefined && { parentId: event.parentId }),
+    timestamp: event.timestamp,
+    kind: event.kind,
+    sessionId: event.sessionId,
+    provider: event.provider,
+    ...(event.model !== undefined && { model: event.model }),
+    ...(event.phase !== undefined && { phase: event.phase }),
+    payload: event.payload as Record<string, unknown>,
+    ...(event.tokens !== undefined && { tokens: event.tokens }),
+    ...(event.latencyMs !== undefined && { latencyMs: event.latencyMs }),
+    meta: metaFlags,
+  });
 
   // 8. SessionStart dispatch — THREE side effects per design §6 + v1.1 S2.3:
   //    (a) JSONL append (audit) — already done in step 7.
@@ -186,6 +204,9 @@ export async function ingestClaudePayload(opts: IngestOptions): Promise<IngestRe
       }
     }
   }
+
+  // Suppress unused variable warning for storedEvent (used indirectly via side effects).
+  void storedEvent;
 
   return {
     written: true,

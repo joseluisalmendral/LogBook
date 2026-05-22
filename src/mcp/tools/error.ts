@@ -19,7 +19,7 @@
 
 import * as v from "valibot";
 import { generateUlid } from "../../util/ulid.js";
-import { appendJsonl } from "../../store/jsonl.js";
+import { appendEvent } from "../../store/index.js";
 import type { MCPContext } from "../context.js";
 import type { ToolDef } from "./index.js";
 
@@ -52,21 +52,22 @@ export const errorTool: ToolDef<ErrorInput, ErrorOutput> = {
   valibotSchema: ErrorInputSchema,
 
   handler: async (ctx: MCPContext, input: ErrorInput): Promise<ErrorOutput> => {
-    const id = generateUlid();
-    const ts = new Date().toISOString();
     // ctx.state.session is typed in T8b (LogBookState now has session?: string).
     const sessionId = ctx.state.session ?? "";
 
-    // Backward compat: iter2-era MCP events used { payload: {...} } wrapper.
-    // Iter3+ writes top-level fields (MONITOR-1 closure).
-    const event = {
-      id,
-      type: "manual.error",
-      ts,
-      title: input.title,
-      ...(input.symptom !== undefined && { symptom: input.symptom }),
-    };
-    await appendJsonl(ctx.paths.eventsJsonl, JSON.stringify(event));
+    // Write through appendEvent (redaction + Shape-A enforced).
+    const { event } = await appendEvent(ctx.paths, {
+      kind: "user_entry",
+      sessionId,
+      provider: "logbook-mcp",
+      payload: {
+        entryType: "error",
+        title: input.title,
+        ...(input.symptom !== undefined && { symptom: input.symptom }),
+      },
+    });
+    const id = event.id;
+    const ts = event.timestamp;
 
     try {
       ctx.db

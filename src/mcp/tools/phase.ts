@@ -15,8 +15,7 @@
  */
 
 import * as v from "valibot";
-import { generateUlid } from "../../util/ulid.js";
-import { appendJsonl } from "../../store/jsonl.js";
+import { appendEvent } from "../../store/index.js";
 import { readState, writeState } from "../../core/state.js";
 import type { MCPContext } from "../context.js";
 import type { ToolDef } from "./index.js";
@@ -48,19 +47,19 @@ export const phaseTool: ToolDef<PhaseInput, PhaseOutput> = {
   valibotSchema: PhaseInputSchema,
 
   handler: async (ctx: MCPContext, input: PhaseInput): Promise<PhaseOutput> => {
-    const id = generateUlid();
-    const ts = new Date().toISOString();
+    const sessionId = ctx.state.session ?? "";
 
-    // Append manual.phase event to the canonical event log.
-    // Backward compat: iter2-era MCP events used { payload: {...} } wrapper.
-    // Iter3+ writes top-level fields (MONITOR-1 closure).
-    const event = {
-      id,
-      type: "manual.phase",
-      ts,
-      name: input.name,
-    };
-    await appendJsonl(ctx.paths.eventsJsonl, JSON.stringify(event));
+    // Write through appendEvent (redaction + Shape-A enforced).
+    // kind=system: phase changes are system lifecycle events, not user-authored data.
+    await appendEvent(ctx.paths, {
+      kind: "system",
+      sessionId,
+      provider: "logbook-mcp",
+      payload: {
+        entryType: "phase_change",
+        phase: input.name,
+      },
+    });
 
     // Write state.currentPhase atomically. Re-read from disk to avoid stale ctx.state.
     try {

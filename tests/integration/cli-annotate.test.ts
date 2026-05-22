@@ -114,7 +114,7 @@ describe("logbook annotate (S6.1)", () => {
     expect(result["relatedEventId"]).toBe(EXISTING_EVENT_ID);
   });
 
-  it("writes a manual.annotation event to events.jsonl", () => {
+  it("writes a user_entry/annotation event to events.jsonl", () => {
     const dir = makeTmpProject();
     seedExistingEvent(dir);
 
@@ -124,15 +124,19 @@ describe("logbook annotate (S6.1)", () => {
     );
 
     const events = readEvents(dir);
+    // Shape-A: kind=user_entry, payload.entryType=annotation
     const annotation = events.find(
-      (e) => e["type"] === "manual.annotation",
+      (e) => e["kind"] === "user_entry" &&
+             (e["payload"] as Record<string, unknown> | undefined)?.["entryType"] === "annotation",
     );
 
     expect(annotation).toBeDefined();
-    expect(annotation!["relatedEventId"]).toBe(EXISTING_EVENT_ID);
-    expect(annotation!["note"]).toBe("Annotation note text.");
+    expect(annotation!["schemaVersion"]).toBe(3);
+    const payload = annotation!["payload"] as Record<string, unknown>;
+    expect(payload["relatedEventId"]).toBe(EXISTING_EVENT_ID);
+    expect(payload["note"]).toBe("Annotation note text.");
     expect(typeof annotation!["id"]).toBe("string");
-    expect(typeof annotation!["ts"]).toBe("string");
+    expect(typeof annotation!["timestamp"]).toBe("string");
   });
 
   it("exits 1 with clear error when event-id is not found", () => {
@@ -192,7 +196,8 @@ describe("logbook annotate (S6.1)", () => {
     // Capture events count before
     const eventsBefore = readEvents(dir);
     const annotationBefore = eventsBefore.find(
-      (e) => e["type"] === "manual.annotation",
+      (e) => e["kind"] === "user_entry" &&
+             (e["payload"] as Record<string, unknown> | undefined)?.["entryType"] === "annotation",
     );
     expect(annotationBefore).toBeDefined();
 
@@ -200,9 +205,11 @@ describe("logbook annotate (S6.1)", () => {
     // (uninstall does NOT touch events.jsonl per design §24)
     const eventsAfter = readEvents(dir);
     const annotationAfter = eventsAfter.find(
-      (e) => e["type"] === "manual.annotation",
+      (e) => e["kind"] === "user_entry" &&
+             (e["payload"] as Record<string, unknown> | undefined)?.["entryType"] === "annotation",
     );
     expect(annotationAfter).toBeDefined();
-    expect(annotationAfter!["note"]).toBe("Pre-reinstall annotation.");
+    const annotationPayload = annotationAfter!["payload"] as Record<string, unknown>;
+    expect(annotationPayload["note"]).toBe("Pre-reinstall annotation.");
   });
 });

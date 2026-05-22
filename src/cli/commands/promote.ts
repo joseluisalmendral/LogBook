@@ -4,7 +4,8 @@
  * Mutates the teachingValue on a stored event by:
  *  1. Validating --teaching ∈ {high, medium, low}; exits 1 on invalid value.
  *  2. Scanning events.jsonl to confirm the event-id exists; exits 1 if not found.
- *  3. Appending a `manual.promote` event to events.jsonl (canonical audit trail).
+ *  3. Appending a `user_entry` event (entryType: "promote") to events.jsonl via
+ *     appendEvent — redaction is automatic at the chokepoint.
  *  4. Best-effort SQLite UPDATE (T9.D1: schema.ts events table does not have a
  *     teaching_value column; skip SQLite entirely and rely on JSONL only).
  *
@@ -24,7 +25,8 @@
 import * as fs from "node:fs";
 import { defineCommand } from "citty";
 import { resolveProjectRoot, makePaths } from "../../core/paths.js";
-import { appendJsonl } from "../../store/jsonl.js";
+import { readState } from "../../core/state.js";
+import { appendEvent } from "../../store/index.js";
 import { generateUlid } from "../../util/ulid.js";
 
 /** Valid teaching values (ordered for UX display). */
@@ -117,21 +119,19 @@ export default defineCommand({
       process.exit(1);
     }
 
-    // 5. Build the manual.promote event (top-level fields; T3 convention)
+    // 5. Build and append the promote event via appendEvent.
     const promoteId = generateUlid();
-    const ts = new Date().toISOString();
-    const promoteEvent = {
-      id: promoteId,
-      type: "manual.promote",
-      ts,
-      eventId,
-      teachingValue,
-      source: "cli",
-    };
+    const state = readState(paths.statePath);
+    const sessionId = state.session ?? "";
 
-    // 6. Append to events.jsonl
     try {
-      await appendJsonl(paths.eventsJsonl, JSON.stringify(promoteEvent));
+      await appendEvent(paths, {
+        kind: "user_entry",
+        sessionId,
+        payload: { entryType: "promote", eventId, teachingValue, source: "cli" },
+        id: promoteId,
+        provider: "logbook-cli",
+      });
     } catch (err) {
       process.stderr.write(
         `error: failed to append promote event — ${err instanceof Error ? err.message : String(err)}\n`,
@@ -139,12 +139,12 @@ export default defineCommand({
       process.exit(1);
     }
 
-    // 7. Best-effort SQLite UPDATE (T9.D1: skipped — no teaching_value column in v1 schema)
+    // 6. Best-effort SQLite UPDATE (T9.D1: skipped — no teaching_value column in v1 schema)
     // When T13 adds the column, this block will be:
     //   db.prepare("UPDATE events SET teaching_value = ? WHERE id = ?").run(teachingValue, eventId)
     // For now, JSONL is the canonical store and this is a no-op.
 
-    // 8. Output result
+    // 7. Output result
     const result = { id: promoteId, eventId, teachingValue };
 
     if (args["json"]) {

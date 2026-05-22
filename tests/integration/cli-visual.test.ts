@@ -92,12 +92,16 @@ describe("cli-visual", () => {
     expect(out["note"]).toBe("design mockup");
 
     const events = readEvents(dir);
+    // Shape-A: kind=user_entry, payload.entryType=visual
     const visualEvent = events.find(
-      (e) => (e as { type?: string }).type === "manual.visual",
-    ) as { type: string; path?: string; note?: string } | undefined;
+      (e) => (e as { kind?: string; payload?: Record<string, unknown> }).kind === "user_entry" &&
+             ((e as { payload?: Record<string, unknown> }).payload?.["entryType"] === "visual"),
+    ) as Record<string, unknown> | undefined;
     expect(visualEvent).toBeDefined();
-    expect(visualEvent?.path).toBe("tmp/screenshots/foo.png");
-    expect(visualEvent?.note).toBe("design mockup");
+    expect(visualEvent?.["schemaVersion"]).toBe(3);
+    const visualPayload = visualEvent?.["payload"] as Record<string, unknown>;
+    expect(visualPayload?.["path"]).toBe("tmp/screenshots/foo.png");
+    expect(visualPayload?.["note"]).toBe("design mockup");
   });
 
   it("exits 1 when path escapes the project root", () => {

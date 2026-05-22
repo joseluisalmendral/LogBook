@@ -4,8 +4,8 @@
  * Side effects:
  *  1. Validates kind ∈ {url, file, snippet, doc} — exits 1 with stderr on failure.
  *  2. For kind=file: asserts path is within project root (security guard).
- *  3. Appends a `manual.resource` event to events.jsonl.
- *     Event uses TOP-LEVEL fields (T10b.D1 convention).
+ *  3. Appends a `user_entry` event (entryType: "resource") to events.jsonl via
+ *     appendEvent — redaction is automatic at the chokepoint.
  *  4. Best-effort SQLite row in the `resources` table.
  *  5. Prints JSON: { id }.
  *
@@ -15,7 +15,8 @@
 import * as fs from "node:fs";
 import { defineCommand } from "citty";
 import { resolveProjectRoot, makePaths } from "../../core/paths.js";
-import { appendJsonl } from "../../store/jsonl.js";
+import { readState } from "../../core/state.js";
+import { appendEvent } from "../../store/index.js";
 import { openIndex, closeIndex } from "../../store/sqlite.js";
 import { generateUlid } from "../../util/ulid.js";
 import { assertWithinProject } from "../../util/path-confine.js";
@@ -99,21 +100,24 @@ export default defineCommand({
     fs.mkdirSync(paths.evidenceDir, { recursive: true });
 
     const id = generateUlid();
-    const ts = new Date().toISOString();
+    const state = readState(paths.statePath);
+    const sessionId = state.session ?? "";
 
-    // Build event — TOP-LEVEL fields (T10b.D1 convention).
-    const event: Record<string, unknown> = {
-      id,
-      type: "manual.resource",
-      ts,
-      kind,
-      uri,
-      tags,
-      ...(title !== undefined && title !== "" && { title }),
-    };
-
+    // Append via appendEvent — redaction is automatic at the chokepoint.
     try {
-      await appendJsonl(paths.eventsJsonl, JSON.stringify(event));
+      await appendEvent(paths, {
+        kind: "user_entry",
+        sessionId,
+        payload: {
+          entryType: "resource",
+          kind,
+          uri,
+          tags,
+          ...(title !== undefined && title !== "" && { title }),
+        },
+        id,
+        provider: "logbook-cli",
+      });
     } catch (err) {
       process.stderr.write(
         `error: failed to write event — ${err instanceof Error ? err.message : String(err)}\n`,
@@ -133,7 +137,7 @@ export default defineCommand({
         kind,
         uri,
         title ?? null,
-        ts,
+        new Date().toISOString(),
         tags.length > 0 ? JSON.stringify(tags) : null,
       );
     } catch (err) {

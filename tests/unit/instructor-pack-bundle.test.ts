@@ -48,9 +48,6 @@ function fakePaths(dataDir: string): ProjectPaths {
     dataDir,
     evidenceDir: path.join(dataDir, "evidence"),
     eventsJsonl: path.join(dataDir, "evidence", "events.jsonl"),
-    decisionsJsonl: path.join(dataDir, "evidence", "decisions.jsonl"),
-    errorsJsonl: path.join(dataDir, "evidence", "errors.jsonl"),
-    lessonsJsonl: path.join(dataDir, "evidence", "lessons.jsonl"),
   };
 }
 

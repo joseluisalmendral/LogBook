@@ -140,11 +140,13 @@ describe("mcp-tool-phase", () => {
     expect(state.currentPhase).toBe("apply");
 
     const events = readEvents(dir);
+    type ShapeA = { kind?: string; payload?: Record<string, unknown> };
     const phaseEvent = events.find(
-      (e) => (e as { type?: string }).type === "manual.phase",
-    ) as { type: string; name?: string } | undefined;
+      (e) => (e as ShapeA).kind === "system" &&
+             (e as ShapeA).payload?.["entryType"] === "phase_change",
+    ) as ShapeA | undefined;
     expect(phaseEvent).toBeDefined();
-    // iter3+ shape: name is at top level (no payload wrapper).
-    expect(phaseEvent?.name).toBe("apply");
+    // Shape-A: phase name is in payload.phase.
+    expect(phaseEvent?.payload?.["phase"]).toBe("apply");
   }, 60_000);
 });

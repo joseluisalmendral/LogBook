@@ -7,7 +7,8 @@
  *
  * Side effects:
  *  1. Validates the path resolves within the project root (path-escape guard).
- *  2. Appends a `manual.visual` event with project-relative path to events.jsonl.
+ *  2. Appends a `user_entry` event (entryType: "visual") with project-relative
+ *     path to events.jsonl via appendEvent — redaction is automatic.
  *  3. Prints JSON: { path, note? }.
  *
  * Design §3 CLI command signatures — visual row.
@@ -18,7 +19,8 @@ import * as fs from "node:fs";
 import * as nodePath from "node:path";
 import { defineCommand } from "citty";
 import { resolveProjectRoot, makePaths } from "../../core/paths.js";
-import { appendJsonl } from "../../store/jsonl.js";
+import { readState } from "../../core/state.js";
+import { appendEvent } from "../../store/index.js";
 import { generateUlid } from "../../util/ulid.js";
 import { assertWithinProject } from "../../util/path-confine.js";
 
@@ -72,17 +74,22 @@ export default defineCommand({
     // Ensure evidence directory exists.
     fs.mkdirSync(paths.evidenceDir, { recursive: true });
 
-    // Build event — omit undefined fields.
-    const event: Record<string, unknown> = {
-      id: generateUlid(),
-      type: "manual.visual",
-      ts: new Date().toISOString(),
-      path: relativePath,
-      ...(note !== undefined && note !== "" && { note }),
-    };
+    const state = readState(paths.statePath);
+    const sessionId = state.session ?? "";
 
+    // Append via appendEvent — redaction is automatic at the chokepoint.
     try {
-      await appendJsonl(paths.eventsJsonl, JSON.stringify(event));
+      await appendEvent(paths, {
+        kind: "user_entry",
+        sessionId,
+        payload: {
+          entryType: "visual",
+          path: relativePath,
+          ...(note !== undefined && note !== "" && { note }),
+        },
+        id: generateUlid(),
+        provider: "logbook-cli",
+      });
     } catch (err) {
       process.stderr.write(
         `error: failed to write event — ${err instanceof Error ? err.message : String(err)}\n`,

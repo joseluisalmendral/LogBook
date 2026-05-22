@@ -39,9 +39,6 @@ export interface ProjectPaths {
   dataDir: string;        // <root>/logbook
   evidenceDir: string;    // <root>/logbook/evidence
   eventsJsonl: string;    // <root>/logbook/evidence/events.jsonl
-  decisionsJsonl: string; // <root>/logbook/evidence/decisions.jsonl
-  errorsJsonl: string;    // <root>/logbook/evidence/errors.jsonl
-  lessonsJsonl: string;   // <root>/logbook/evidence/lessons.jsonl
 }
 
 /**
@@ -153,8 +150,5 @@ export function makePaths(root: string): ProjectPaths {
     dataDir: join(root, "logbook"),
     evidenceDir,
     eventsJsonl: join(evidenceDir, "events.jsonl"),
-    decisionsJsonl: join(evidenceDir, "decisions.jsonl"),
-    errorsJsonl: join(evidenceDir, "errors.jsonl"),
-    lessonsJsonl: join(evidenceDir, "lessons.jsonl"),
   };
 }

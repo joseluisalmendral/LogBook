@@ -188,14 +188,16 @@ describe("mcp-tool-decision-with-adr", () => {
       expect(filename).toMatch(/^\d{4}-[\w-]+\.md$/);
       expect(filename.startsWith("0001-")).toBe(true);
 
-      // 4. JSONL has manual.decision event.
+      // 4. JSONL has Shape-A decision event (kind="user_entry", payload.entryType="decision").
       const eventsPath = join(dir, "logbook", "evidence", "events.jsonl");
       expect(existsSync(eventsPath)).toBe(true);
       const events = readFileSync(eventsPath, "utf8")
         .split("\n")
         .filter(Boolean)
-        .map((l) => JSON.parse(l) as { type: string; id?: string });
-      const decisionEvent = events.find((e) => e.type === "manual.decision");
+        .map((l) => JSON.parse(l) as { kind?: string; payload?: { entryType?: string }; id?: string });
+      const decisionEvent = events.find(
+        (e) => e.kind === "user_entry" && e.payload?.entryType === "decision",
+      );
       expect(decisionEvent).toBeDefined();
 
       // 5. SQLite DB exists.

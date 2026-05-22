@@ -2,7 +2,8 @@
  * logbook phase <name> — Set the active LogBook phase.
  *
  * Side effects:
- *  1. Appends a `manual.phase` event to events.jsonl.
+ *  1. Appends a `system` event (entryType: "phase_change") to events.jsonl via
+ *     appendEvent — redaction is automatic at the chokepoint.
  *  2. Writes state.currentPhase atomically.
  *  3. Prints JSON: { phase }.
  *
@@ -13,7 +14,7 @@ import * as fs from "node:fs";
 import { defineCommand } from "citty";
 import { resolveProjectRoot, makePaths } from "../../core/paths.js";
 import { readState, writeState } from "../../core/state.js";
-import { appendJsonl } from "../../store/jsonl.js";
+import { appendEvent } from "../../store/index.js";
 import { generateUlid } from "../../util/ulid.js";
 
 export default defineCommand({
@@ -45,15 +46,19 @@ export default defineCommand({
     // Ensure evidence directory exists.
     fs.mkdirSync(paths.evidenceDir, { recursive: true });
 
-    const event = {
-      id: generateUlid(),
-      type: "manual.phase",
-      ts: new Date().toISOString(),
-      phase: phaseName,
-    };
+    const state = readState(paths.statePath);
+    const sessionId = state.session ?? "";
 
+    // Append via appendEvent — redaction is automatic at the chokepoint.
     try {
-      await appendJsonl(paths.eventsJsonl, JSON.stringify(event));
+      await appendEvent(paths, {
+        kind: "system",
+        sessionId,
+        payload: { entryType: "phase_change", phase: phaseName },
+        phase: phaseName,
+        provider: "logbook-cli",
+        id: generateUlid(),
+      });
     } catch (err) {
       process.stderr.write(
         `error: failed to write event — ${err instanceof Error ? err.message : String(err)}\n`,
@@ -63,9 +68,9 @@ export default defineCommand({
 
     // Update state.currentPhase.
     try {
-      const state = readState(paths.statePath);
-      state.currentPhase = phaseName;
-      writeState(paths.statePath, state);
+      const freshState = readState(paths.statePath);
+      freshState.currentPhase = phaseName;
+      writeState(paths.statePath, freshState);
     } catch (err) {
       process.stderr.write(
         `error: failed to write state — ${err instanceof Error ? err.message : String(err)}\n`,

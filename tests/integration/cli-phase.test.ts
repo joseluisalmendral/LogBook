@@ -74,7 +74,7 @@ function readEvents(dir: string): unknown[] {
 }
 
 describe("cli-phase", () => {
-  it("sets currentPhase to 'design' and appends manual.phase event", () => {
+  it("sets currentPhase to 'design' and appends system/phase_change event", () => {
     const dir = makeTmpProject();
     // Start a session first
     runCli(["start"], dir);
@@ -89,14 +89,18 @@ describe("cli-phase", () => {
     expect(state["currentPhase"]).toBe("design");
 
     const events = readEvents(dir);
+    // Shape-A: kind=system, payload.entryType=phase_change
     const phaseEvent = events.find(
-      (e) => (e as { type?: string }).type === "manual.phase",
-    ) as { type: string; phase?: string } | undefined;
+      (e) => (e as { kind?: string; payload?: Record<string, unknown> }).kind === "system" &&
+             ((e as { payload?: Record<string, unknown> }).payload?.["entryType"] === "phase_change"),
+    ) as Record<string, unknown> | undefined;
     expect(phaseEvent).toBeDefined();
-    expect(phaseEvent?.phase).toBe("design");
+    expect(phaseEvent?.["schemaVersion"]).toBe(3);
+    const payload = phaseEvent?.["payload"] as Record<string, unknown>;
+    expect(payload?.["phase"]).toBe("design");
   });
 
-  it("updates currentPhase to 'apply' and appends second manual.phase event", () => {
+  it("updates currentPhase to 'apply' and appends second system/phase_change event", () => {
     const dir = makeTmpProject();
     runCli(["start"], dir);
     runCli(["phase", "design"], dir);
@@ -111,7 +115,8 @@ describe("cli-phase", () => {
 
     const events = readEvents(dir);
     const phaseEvents = events.filter(
-      (e) => (e as { type?: string }).type === "manual.phase",
+      (e) => (e as { kind?: string; payload?: Record<string, unknown> }).kind === "system" &&
+             ((e as { payload?: Record<string, unknown> }).payload?.["entryType"] === "phase_change"),
     );
     expect(phaseEvents.length).toBe(2);
   });

@@ -134,7 +134,7 @@ describe("cli-decision", () => {
     expect(content).toContain("Smaller config");
   });
 
-  it("appends a manual.decision event to events.jsonl", () => {
+  it("appends a user_entry/decision event to events.jsonl", () => {
     const dir = makeTmpProject();
     runCli(
       [
@@ -147,14 +147,18 @@ describe("cli-decision", () => {
       dir,
     );
     const events = readEvents(dir);
+    // Shape-A: kind=user_entry, payload.entryType=decision
     const decEvent = events.find(
-      (e) => (e as { type?: string }).type === "manual.decision",
+      (e) => (e as { kind?: string; payload?: Record<string, unknown> }).kind === "user_entry" &&
+             ((e as { payload?: Record<string, unknown> }).payload?.["entryType"] === "decision"),
     ) as Record<string, unknown> | undefined;
     expect(decEvent).toBeDefined();
-    expect(decEvent?.["title"]).toBe("Use Vite");
-    expect(decEvent?.["chosen"]).toBe("Vite");
-    expect(typeof decEvent?.["adrCounter"]).toBe("number");
-    expect(decEvent?.["adrCounter"]).toBe(1);
+    expect(decEvent?.["schemaVersion"]).toBe(3);
+    const payload = decEvent?.["payload"] as Record<string, unknown>;
+    expect(payload?.["title"]).toBe("Use Vite");
+    expect(payload?.["chosen"]).toBe("Vite");
+    expect(typeof payload?.["adrCounter"]).toBe("number");
+    expect(payload?.["adrCounter"]).toBe(1);
   });
 
   it("persists adrCounter: 1 in state.json", () => {

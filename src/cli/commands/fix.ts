@@ -2,8 +2,8 @@
  * logbook fix — Link a fix to an error.
  *
  * Side effects:
- *  1. Appends a `manual.fix` event to events.jsonl.
- *     Event uses TOP-LEVEL fields (T10b.D1 convention).
+ *  1. Appends a `user_entry` event (entryType: "fix") to events.jsonl via
+ *     appendEvent — redaction is automatic at the chokepoint.
  *  2. Best-effort SQLite: inserts into `fixes` table; if --verified, also
  *     UPDATEs errors SET resolved=1, fix_id=<id> WHERE id=<error-id>.
  *  3. Prints JSON: { id, errorId }.
@@ -16,7 +16,8 @@
 import * as fs from "node:fs";
 import { defineCommand } from "citty";
 import { resolveProjectRoot, makePaths } from "../../core/paths.js";
-import { appendJsonl } from "../../store/jsonl.js";
+import { readState } from "../../core/state.js";
+import { appendEvent } from "../../store/index.js";
 import { openIndex, closeIndex } from "../../store/sqlite.js";
 import { generateUlid } from "../../util/ulid.js";
 
@@ -64,20 +65,18 @@ export default defineCommand({
     const verified = Boolean(args["verified"]);
 
     const id = generateUlid();
-    const ts = new Date().toISOString();
+    const state = readState(paths.statePath);
+    const sessionId = state.session ?? "";
 
-    // Build event — TOP-LEVEL fields (T10b.D1 convention).
-    const event: Record<string, unknown> = {
-      id,
-      type: "manual.fix",
-      ts,
-      errorId,
-      description,
-      verified,
-    };
-
+    // Append via appendEvent — redaction is automatic at the chokepoint.
     try {
-      await appendJsonl(paths.eventsJsonl, JSON.stringify(event));
+      await appendEvent(paths, {
+        kind: "user_entry",
+        sessionId,
+        payload: { entryType: "fix", errorId, description, verified },
+        id,
+        provider: "logbook-cli",
+      });
     } catch (err) {
       process.stderr.write(
         `error: failed to write event — ${err instanceof Error ? err.message : String(err)}\n`,
@@ -92,7 +91,7 @@ export default defineCommand({
 
       db.prepare(
         `INSERT INTO fixes (id, error_id, timestamp, verified) VALUES (?, ?, ?, ?)`,
-      ).run(id, errorId, ts, verified ? 1 : 0);
+      ).run(id, errorId, new Date().toISOString(), verified ? 1 : 0);
 
       if (verified) {
         db.prepare(`UPDATE errors SET resolved=1, fix_id=? WHERE id=?`).run(

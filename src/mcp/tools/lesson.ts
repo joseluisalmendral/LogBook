@@ -15,8 +15,7 @@
  */
 
 import * as v from "valibot";
-import { generateUlid } from "../../util/ulid.js";
-import { appendJsonl } from "../../store/jsonl.js";
+import { appendEvent } from "../../store/index.js";
 import type { MCPContext } from "../context.js";
 import type { ToolDef } from "./index.js";
 
@@ -49,20 +48,20 @@ export const lessonTool: ToolDef<LessonInput, LessonOutput> = {
   valibotSchema: LessonInputSchema,
 
   handler: async (ctx: MCPContext, input: LessonInput): Promise<LessonOutput> => {
-    const id = generateUlid();
-    const ts = new Date().toISOString();
+    const sessionId = ctx.state.session ?? "";
 
-    // Backward compat: iter2-era MCP events used { payload: {...} } wrapper.
-    // Iter3+ writes top-level fields (MONITOR-1 closure).
-    const event = {
-      id,
-      type: "manual.lesson",
-      ts,
-      text: input.text,
-      ...(input.linkTo !== undefined && { linkTo: input.linkTo }),
-    };
-    await appendJsonl(ctx.paths.eventsJsonl, JSON.stringify(event));
+    // Write through appendEvent (redaction + Shape-A enforced).
+    const { event } = await appendEvent(ctx.paths, {
+      kind: "user_entry",
+      sessionId,
+      provider: "logbook-mcp",
+      payload: {
+        entryType: "lesson",
+        text: input.text,
+        ...(input.linkTo !== undefined && { linkTo: input.linkTo }),
+      },
+    });
 
-    return { id };
+    return { id: event.id };
   },
 };

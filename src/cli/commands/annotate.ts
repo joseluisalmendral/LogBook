@@ -6,7 +6,8 @@
  *     If not found → exit 1 with "error: no event with id <id>".
  *  2. Validate --note non-empty and ≤ 2000 chars (Valibot, exit 1 on failure).
  *  3. Capture getGitSha(root) if possible (best-effort, undefined on failure).
- *  4. Build manual.annotation event and append via locked writer (appendJsonl).
+ *  4. Build and validate annotation input, then append via appendEvent — redaction
+ *     is automatic at the chokepoint.
  *  5. Print JSON: { id, relatedEventId }.
  *
  * Design S6.1 — annotation contract.
@@ -19,12 +20,14 @@ import { createInterface } from "node:readline";
 import { defineCommand } from "citty";
 import * as v from "valibot";
 import { resolveProjectRoot, makePaths } from "../../core/paths.js";
-import { appendJsonl } from "../../store/jsonl.js";
+import { readState } from "../../core/state.js";
+import { appendEvent } from "../../store/index.js";
 import { generateUlid } from "../../util/ulid.js";
 import { getGitSha } from "../../connectors/git.js";
 
 // ---------------------------------------------------------------------------
 // Valibot schema — exported for unit tests (annotation-schema.test.ts)
+// Schema validates the pre-write input shape (not the stored Shape-A event).
 // ---------------------------------------------------------------------------
 
 export const AnnotationEventSchema = v.strictObject({
@@ -150,11 +153,11 @@ export default defineCommand({
       // Degrade silently — non-git projects are fine.
     }
 
-    // Build annotation event.
+    // Build validation object (pre-write schema check on the logical input).
     const id = generateUlid();
     const ts = new Date().toISOString();
 
-    const eventData: Record<string, unknown> = {
+    const validationInput: Record<string, unknown> = {
       id,
       type: "manual.annotation",
       ts,
@@ -164,7 +167,7 @@ export default defineCommand({
     };
 
     // Validate against schema before writing.
-    const validation = v.safeParse(AnnotationEventSchema, eventData);
+    const validation = v.safeParse(AnnotationEventSchema, validationInput);
     if (!validation.success) {
       const messages = v.flatten(validation.issues);
       process.stderr.write(
@@ -173,9 +176,23 @@ export default defineCommand({
       process.exit(1);
     }
 
-    // Append via locked writer.
+    const state = readState(paths.statePath);
+    const sessionId = state.session ?? "";
+
+    // Append via appendEvent — redaction is automatic at the chokepoint.
     try {
-      await appendJsonl(paths.eventsJsonl, JSON.stringify(eventData));
+      await appendEvent(paths, {
+        kind: "user_entry",
+        sessionId,
+        payload: {
+          entryType: "annotation",
+          relatedEventId,
+          note,
+          ...(gitSha !== undefined && { gitSha }),
+        },
+        id,
+        provider: "logbook-cli",
+      });
     } catch (err) {
       process.stderr.write(
         `error: failed to write event — ${err instanceof Error ? err.message : String(err)}\n`,

@@ -2,8 +2,8 @@
  * logbook milestone — Record a milestone.
  *
  * Side effects:
- *  1. Appends a `manual.milestone` event to events.jsonl.
- *     Event uses TOP-LEVEL fields (T10b.D1 convention).
+ *  1. Appends a `user_entry` event (entryType: "milestone") to events.jsonl via
+ *     appendEvent — redaction is automatic at the chokepoint.
  *  2. Best-effort SQLite row in the `milestones` table.
  *  3. Prints JSON: { id }.
  *
@@ -13,7 +13,8 @@
 import * as fs from "node:fs";
 import { defineCommand } from "citty";
 import { resolveProjectRoot, makePaths } from "../../core/paths.js";
-import { appendJsonl } from "../../store/jsonl.js";
+import { readState } from "../../core/state.js";
+import { appendEvent } from "../../store/index.js";
 import { openIndex, closeIndex } from "../../store/sqlite.js";
 import { generateUlid } from "../../util/ulid.js";
 import { getGitSha } from "../../connectors/git.js";
@@ -82,7 +83,6 @@ export default defineCommand({
     const tags = splitComma(args["tags"] as string | undefined);
 
     const id = generateUlid();
-    const ts = new Date().toISOString();
 
     // Best-effort gitSha (v1.1 S2.3): fresh subprocess for manual commands.
     let gitSha: string | undefined;
@@ -92,21 +92,26 @@ export default defineCommand({
       // Degrade silently — git unavailable or not a repo is fine.
     }
 
-    // Build event — TOP-LEVEL fields (T10b.D1 convention).
-    const event: Record<string, unknown> = {
-      id,
-      type: "manual.milestone",
-      ts,
-      title,
-      description,
-      sessionIds,
-      decisionIds,
-      tags,
-      ...(gitSha !== undefined && { gitSha }),
-    };
+    const state = readState(paths.statePath);
+    const sessionId = state.session ?? "";
 
+    // Append via appendEvent — redaction is automatic at the chokepoint.
     try {
-      await appendJsonl(paths.eventsJsonl, JSON.stringify(event));
+      await appendEvent(paths, {
+        kind: "user_entry",
+        sessionId,
+        payload: {
+          entryType: "milestone",
+          title,
+          description,
+          sessionIds,
+          decisionIds,
+          tags,
+          ...(gitSha !== undefined && { gitSha }),
+        },
+        id,
+        provider: "logbook-cli",
+      });
     } catch (err) {
       process.stderr.write(
         `error: failed to write event — ${err instanceof Error ? err.message : String(err)}\n`,
@@ -123,7 +128,7 @@ export default defineCommand({
          VALUES (?, ?, ?, ?)`,
       ).run(
         id,
-        ts,
+        new Date().toISOString(),
         title,
         tags.length > 0 ? JSON.stringify(tags) : null,
       );

@@ -1,5 +1,5 @@
 /**
- * SQLite v1 DDL for the LogBook index.
+ * SQLite v2 DDL for the LogBook index.
  *
  * Design intent: the SQLite index is for FAST LOOKUP only.
  * JSONL files remain the canonical event source.
@@ -9,49 +9,19 @@
  *
  * tags_json columns store JSON arrays serialized as TEXT (iter1; no JSON1
  * functions used; iter2 may upgrade to JSON1 virtual columns or FTS5).
+ *
+ * v2 changes (persistence-truthfulness): dropped dead `events` and `sessions`
+ * tables — these were never written to; JSONL is the canonical event store.
+ * See migrate.ts for the v1→v2 forward-only migration that drops them on
+ * existing databases.
  */
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const DDL = {
   schema_version: `CREATE TABLE IF NOT EXISTS schema_version (
     version INTEGER PRIMARY KEY,
     applied_at TEXT NOT NULL
-  )`,
-
-  events: `CREATE TABLE IF NOT EXISTS events (
-    id TEXT PRIMARY KEY,
-    trace_id TEXT NOT NULL,
-    span_id TEXT NOT NULL,
-    parent_id TEXT,
-    timestamp TEXT NOT NULL,
-    session_id TEXT NOT NULL,
-    provider TEXT NOT NULL,
-    model TEXT,
-    kind TEXT NOT NULL,
-    phase TEXT,
-    redacted INTEGER NOT NULL,
-    latency_ms INTEGER,
-    payload_text TEXT,
-    payload_tool_name TEXT,
-    meta_json TEXT
-  )`,
-
-  events_session_idx: `CREATE INDEX IF NOT EXISTS idx_events_session ON events(session_id, timestamp)`,
-
-  events_kind_idx: `CREATE INDEX IF NOT EXISTS idx_events_kind ON events(kind, timestamp)`,
-
-  sessions: `CREATE TABLE IF NOT EXISTS sessions (
-    id TEXT PRIMARY KEY,
-    started_at TEXT NOT NULL,
-    ended_at TEXT,
-    project_root TEXT NOT NULL,
-    agent TEXT NOT NULL,
-    model TEXT,
-    phase TEXT,
-    event_count INTEGER NOT NULL DEFAULT 0,
-    decision_count INTEGER NOT NULL DEFAULT 0,
-    error_count INTEGER NOT NULL DEFAULT 0
   )`,
 
   decisions: `CREATE TABLE IF NOT EXISTS decisions (

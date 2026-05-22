@@ -18,44 +18,12 @@ import { readAllStdin } from "../../../util/stdin.js";
 import { resolveProjectRoot, makePaths } from "../../../core/paths.js";
 import { readState } from "../../../core/state.js";
 import { normalizeCodexEvent } from "../../../connectors/codex/normalize.js";
-import { appendJsonl } from "../../../store/jsonl.js";
-import { redact } from "../../../redact/index.js";
+import { appendEvent } from "../../../store/index.js";
 import { generateUlid } from "../../../util/ulid.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Recursively redact all string values in a value tree.
- * Returns the redacted tree and a flag indicating whether any hit fired.
- */
-function redactDeep(value: unknown): { value: unknown; redactedAny: boolean } {
-  if (typeof value === "string") {
-    const result = redact(value);
-    return { value: result.redacted, redactedAny: result.hits.length > 0 };
-  }
-  if (Array.isArray(value)) {
-    let redactedAny = false;
-    const next = value.map((item) => {
-      const r = redactDeep(item);
-      if (r.redactedAny) redactedAny = true;
-      return r.value;
-    });
-    return { value: next, redactedAny };
-  }
-  if (value !== null && typeof value === "object") {
-    let redactedAny = false;
-    const next: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      const r = redactDeep(v);
-      if (r.redactedAny) redactedAny = true;
-      next[k] = r.value;
-    }
-    return { value: next, redactedAny };
-  }
-  return { value, redactedAny: false };
-}
 
 /**
  * Parse stdin content as one or more Codex payloads.
@@ -115,7 +83,7 @@ export default defineCommand({
   },
   async run({ args }) {
     // 1. Read stdin (with a generous timeout for CLI usage vs the 200ms hook constraint).
-    const stdinContent = await readAllStdin({ timeoutMs: 5_000 });
+    const { payload: stdinContent } = await readAllStdin({ timeoutMs: 5_000 });
 
     // 2. Resolve project root and paths.
     const root = resolveProjectRoot();
@@ -174,16 +142,24 @@ export default defineCommand({
 
         const event = normalizeCodexEvent(rawPayload, ctx);
 
-        // Apply redaction BEFORE persist (spec §30 requirement).
-        const { value: redactedPayload, redactedAny } = redactDeep(event.payload);
-        event.payload = redactedPayload as typeof event.payload;
-        if (redactedAny) {
-          event.redacted = true;
-          redactedCount++;
-        }
-
-        const line = JSON.stringify(event);
-        await appendJsonl(paths.eventsJsonl, line);
+        // Route through appendEvent — redaction covers full event (payload + meta).
+        const { redacted: redactedAny } = await appendEvent(paths, {
+          id: event.id,
+          traceId: event.traceId,
+          spanId: event.spanId,
+          ...(event.parentId !== undefined && { parentId: event.parentId }),
+          timestamp: event.timestamp,
+          kind: event.kind,
+          sessionId: event.sessionId,
+          provider: event.provider,
+          ...(event.model !== undefined && { model: event.model }),
+          ...(event.phase !== undefined && { phase: event.phase }),
+          payload: event.payload as Record<string, unknown>,
+          ...(event.tokens !== undefined && { tokens: event.tokens }),
+          ...(event.latencyMs !== undefined && { latencyMs: event.latencyMs }),
+          ...(event.meta !== undefined && { meta: event.meta }),
+        });
+        if (redactedAny) redactedCount++;
         ingested++;
       } catch {
         // Individual event persist failure — skip and continue.

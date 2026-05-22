@@ -99,15 +99,19 @@ describe("cli-start", () => {
     expect(state["sessionLabel"]).toBe("Iter2 work");
   });
 
-  it("appends a manual.session_start event to events.jsonl", () => {
+  it("appends a system/session_start event to events.jsonl", () => {
     const dir = makeTmpProject();
     runCli(["start", "--label", "Iter2 work"], dir);
     const events = readEvents(dir);
+    // Shape-A: kind=system, payload.entryType=session_start
     const startEvent = events.find(
-      (e) => (e as { type?: string }).type === "manual.session_start",
-    ) as { type: string; sessionId?: string; label?: string } | undefined;
+      (e) => (e as { kind?: string; payload?: Record<string, unknown> }).kind === "system" &&
+             ((e as { payload?: Record<string, unknown> }).payload?.["entryType"] === "session_start"),
+    ) as Record<string, unknown> | undefined;
     expect(startEvent).toBeDefined();
-    expect(startEvent?.label).toBe("Iter2 work");
+    expect(startEvent?.["schemaVersion"]).toBe(3);
+    const payload = startEvent?.["payload"] as Record<string, unknown>;
+    expect(payload?.["label"]).toBe("Iter2 work");
   });
 
   it("second call without --label updates state.session with new ULID, no label in state", () => {

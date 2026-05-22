@@ -179,15 +179,17 @@ describe("mcp-tool-error-fix", () => {
       expect(resultObj.id).toBeDefined();
 
       const events = readEvents(dir);
+      type ShapeA = { kind?: string; payload?: Record<string, unknown>; id?: string };
       const errorEvent = events.find(
         (e) =>
-          (e as { type?: string }).type === "manual.error" &&
-          (e as { id?: string }).id === resultObj.id,
-      ) as { type: string; title?: string } | undefined;
+          (e as ShapeA).kind === "user_entry" &&
+          (e as ShapeA).payload?.["entryType"] === "error" &&
+          (e as ShapeA).id === resultObj.id,
+      ) as ShapeA | undefined;
 
       expect(errorEvent).toBeDefined();
-      // iter3+ shape: title is at top level (no payload wrapper).
-      expect(errorEvent!.title).toBe(
+      // Shape-A: title is in payload.title.
+      expect(errorEvent!.payload?.["title"]).toBe(
         "TypeError: cannot read property of undefined",
       );
     });
@@ -235,16 +237,17 @@ describe("mcp-tool-error-fix", () => {
 
       // Verify JSONL has the fix event.
       const events = readEvents(dir);
+      type ShapeA = { kind?: string; payload?: Record<string, unknown>; id?: string };
       const fixEvent = events.find(
         (e) =>
-          (e as { type?: string }).type === "manual.fix" &&
-          (e as { id?: string }).id === fixResult.id,
-      ) as { errorId?: string } | undefined;
+          (e as ShapeA).kind === "user_entry" &&
+          (e as ShapeA).payload?.["entryType"] === "fix" &&
+          (e as ShapeA).id === fixResult.id,
+      ) as ShapeA | undefined;
 
       expect(fixEvent).toBeDefined();
-      // The errorId field is a reference field (ends in "Id") — exempt from entropy
-      // redaction. Iter3+ shape: errorId is at top level (no payload wrapper).
-      expect(fixEvent!.errorId).toBe(errorId);
+      // Shape-A: errorId is in payload.errorId (ULID — not redacted by ULID_RE).
+      expect(fixEvent!.payload?.["errorId"]).toBe(errorId);
     });
   }, 60_000);
 

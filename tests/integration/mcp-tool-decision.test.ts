@@ -206,27 +206,30 @@ describe("mcp-tool-decision", () => {
 
       const decisionId = resultObj.id!;
 
-      // 2. JSONL has both audit event and manual.decision event.
+      // 2. JSONL has both audit event and decision event (Shape-A).
       const events = readEvents(dir);
+      type ShapeA = { kind?: string; payload?: Record<string, unknown>; timestamp?: string; id?: string };
       const auditEvent = events.find(
-        (e) => (e as { type?: string }).type === "mcp.tool_call" &&
-               (e as { tool?: string }).tool === "logbook_decision",
-      ) as { type: string; ts: string; redacted?: boolean } | undefined;
+        (e) => (e as ShapeA).kind === "system" &&
+               (e as ShapeA).payload?.["entryType"] === "mcp_audit" &&
+               (e as ShapeA).payload?.["tool"] === "logbook_decision",
+      ) as ShapeA | undefined;
       const decisionEvent = events.find(
-        (e) => (e as { type?: string }).type === "manual.decision" &&
-               (e as { id?: string }).id === decisionId,
-      ) as { type: string; ts: string; id: string; title?: string } | undefined;
+        (e) => (e as ShapeA).kind === "user_entry" &&
+               (e as ShapeA).payload?.["entryType"] === "decision" &&
+               (e as ShapeA).id === decisionId,
+      ) as ShapeA | undefined;
 
       expect(auditEvent).toBeDefined();
       expect(decisionEvent).toBeDefined();
 
-      // 3. Audit-before-effect: audit ts <= decision ts.
-      const auditTs = new Date(auditEvent!.ts).getTime();
-      const decisionTs = new Date(decisionEvent!.ts).getTime();
+      // 3. Audit-before-effect: audit timestamp <= decision timestamp.
+      const auditTs = new Date(auditEvent!.timestamp!).getTime();
+      const decisionTs = new Date(decisionEvent!.timestamp!).getTime();
       expect(auditTs).toBeLessThanOrEqual(decisionTs);
 
-      // 4. Decision event has title at top level (iter3+ shape — no payload wrapper).
-      expect(decisionEvent!.title).toBe("Use SQLite as event store");
+      // 4. Decision event has title in payload (Shape-A).
+      expect(decisionEvent!.payload?.["title"]).toBe("Use SQLite as event store");
 
       // 5. SQLite has a row in the decisions table.
       // We verify indirectly by checking the DB file exists.

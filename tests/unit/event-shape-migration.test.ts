@@ -1,18 +1,13 @@
 /**
  * Unit tests: T3 — MONITOR-1 event-shape migration.
  *
- * Verifies that all 8 MCP tool handlers write top-level fields in the JSONL
- * event (no `payload` wrapper at the top level of the event object).
+ * Updated for PR 3: MCP tools now route through appendEvent and write Shape-A.
+ *   - Shape-A: schemaVersion=3, kind="user_entry"|"system", payload.entryType=*, redacted=bool
+ *   - suggest.ts still writes to pending-suggestions.jsonl (EXCEPTION — Shape-B there is OK)
  *
- * Each test:
- *  1. Builds a minimal mock MCPContext with a temp events.jsonl.
- *  2. Calls the handler directly (no MCP server spawn needed).
- *  3. Reads back the appended JSONL line and parses it.
- *  4. Asserts: event.payload === undefined, semantic fields at top level.
- *
- * Backward-compat dual-read tests at the bottom verify that normalizeEvent()
- * in render-context.ts still handles both old (payload.*) and new (top-level)
- * JSONL shapes — critical for existing user JSONL files from iter2.
+ * Backward-compat tests remain: normalizeEvent() in render-context.ts still handles
+ * both old (payload.*) and new (top-level) JSONL shapes — critical for existing user
+ * JSONL files from iter2.
  */
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
@@ -81,9 +76,6 @@ function makeCtx(tmpDir: string): import("../../src/mcp/context.js").MCPContext 
     dataDir: path.join(tmpDir, "logbook"),
     evidenceDir,
     eventsJsonl,
-    decisionsJsonl: path.join(evidenceDir, "decisions.jsonl"),
-    errorsJsonl: path.join(evidenceDir, "errors.jsonl"),
-    lessonsJsonl: path.join(evidenceDir, "lessons.jsonl"),
   };
 
   return {
@@ -112,28 +104,35 @@ function readAllEvents(eventsJsonl: string): Record<string, unknown>[] {
     .map((l) => JSON.parse(l) as Record<string, unknown>);
 }
 
+/** Get the payload object from a Shape-A event. */
+function getPayload(event: Record<string, unknown>): Record<string, unknown> {
+  return (event["payload"] ?? {}) as Record<string, unknown>;
+}
+
 // ---------------------------------------------------------------------------
-// Shared assertions
+// Shared assertions for Shape-A
 // ---------------------------------------------------------------------------
 
-function assertTopLevelShape(
+function assertShapeA(
   event: Record<string, unknown>,
-  expectedType: string,
-  expectedFields: Record<string, unknown>,
+  expectedKind: string,
+  expectedEntryType: string,
+  expectedPayloadFields: Record<string, unknown>,
 ): void {
-  // event.type matches expected
-  expect(event["type"]).toBe(expectedType);
-
-  // event.payload is undefined (no wrapper)
-  expect(event["payload"]).toBeUndefined();
-
-  // id and ts are present at top level
+  // Shape-A structural fields
+  expect(event["schemaVersion"]).toBe(3);
+  expect(event["kind"]).toBe(expectedKind);
   expect(typeof event["id"]).toBe("string");
-  expect(typeof event["ts"]).toBe("string");
+  expect(typeof event["timestamp"]).toBe("string");
+  expect(typeof event["redacted"]).toBe("boolean");
 
-  // Each expected semantic field appears at top level
-  for (const [key, value] of Object.entries(expectedFields)) {
-    expect(event[key]).toBe(value);
+  // payload object must exist with correct entryType
+  const p = getPayload(event);
+  expect(p["entryType"]).toBe(expectedEntryType);
+
+  // Each expected semantic field appears in payload
+  for (const [key, value] of Object.entries(expectedPayloadFields)) {
+    expect(p[key]).toBe(value);
   }
 }
 
@@ -154,11 +153,11 @@ afterEach(() => {
 });
 
 // ---------------------------------------------------------------------------
-// 1. logbook_decision — top-level shape
+// 1. logbook_decision — Shape-A
 // ---------------------------------------------------------------------------
 
-describe("logbook_decision handler — top-level event shape", () => {
-  it("writes manual.decision event with top-level title (no payload wrapper)", async () => {
+describe("logbook_decision handler — Shape-A event", () => {
+  it("writes Shape-A decision event with payload.entryType=decision", async () => {
     const ctx = makeCtx(tmpDir);
 
     // decision handler also calls writeAdrFile which needs the decisionsDir
@@ -171,107 +170,112 @@ describe("logbook_decision handler — top-level event shape", () => {
       status: "Accepted",
     });
 
-    // Find the manual.decision event (there may be mcp.tool_call audit events too
-    // but decision.ts does NOT write audit events — those come from the dispatcher)
     const events = readAllEvents(ctx.paths.eventsJsonl);
-    const decisionEvent = events.find((e) => e["type"] === "manual.decision");
+    // Find the user_entry event (not the audit event)
+    const decisionEvent = events.find(
+      (e) => e["kind"] === "user_entry" && getPayload(e)["entryType"] === "decision",
+    );
 
     expect(decisionEvent).toBeDefined();
-    assertTopLevelShape(decisionEvent!, "manual.decision", {
+    assertShapeA(decisionEvent!, "user_entry", "decision", {
       title: "Use top-level event shape",
     });
   });
 });
 
 // ---------------------------------------------------------------------------
-// 2. logbook_error — top-level shape
+// 2. logbook_error — Shape-A
 // ---------------------------------------------------------------------------
 
-describe("logbook_error handler — top-level event shape", () => {
-  it("writes manual.error event with top-level title (no payload wrapper)", async () => {
+describe("logbook_error handler — Shape-A event", () => {
+  it("writes Shape-A error event with payload.entryType=error and title", async () => {
     const ctx = makeCtx(tmpDir);
 
     await errorTool.handler(ctx, {
-      title: "NullPointerException in auth",
-      symptom: "Crash on login",
+      title: "login fails on empty password",
+      symptom: "crash on login page",
     });
 
     const event = readLastEvent(ctx.paths.eventsJsonl);
-    assertTopLevelShape(event, "manual.error", {
-      title: "NullPointerException in auth",
-      symptom: "Crash on login",
+    assertShapeA(event, "user_entry", "error", {
+      title: "login fails on empty password",
+      symptom: "crash on login page",
     });
   });
 
-  it("writes manual.error event with only required title field at top level", async () => {
+  it("writes Shape-A error event with only required title", async () => {
     const ctx = makeCtx(tmpDir);
 
-    await errorTool.handler(ctx, { title: "Simple error" });
+    await errorTool.handler(ctx, { title: "simple error occurs here" });
 
     const event = readLastEvent(ctx.paths.eventsJsonl);
-    assertTopLevelShape(event, "manual.error", { title: "Simple error" });
-    expect(event["symptom"]).toBeUndefined();
+    assertShapeA(event, "user_entry", "error", { title: "simple error occurs here" });
+    expect(getPayload(event)["symptom"]).toBeUndefined();
   });
 });
 
 // ---------------------------------------------------------------------------
-// 3. logbook_fix — top-level shape
+// 3. logbook_fix — Shape-A
 // ---------------------------------------------------------------------------
 
-describe("logbook_fix handler — top-level event shape", () => {
-  it("writes manual.fix event with top-level summary (no payload wrapper)", async () => {
+describe("logbook_fix handler — Shape-A event", () => {
+  it("writes Shape-A fix event with payload.summary and errorId", async () => {
     const ctx = makeCtx(tmpDir);
+    // Use a proper 26-char ULID so ULID_RE skips redaction on errorId
+    const fakeErrorId = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
 
     await fixTool.handler(ctx, {
-      summary: "Added null check",
-      errorId: "01ERRXXX",
+      summary: "added null check to fix crash",
+      errorId: fakeErrorId,
     });
 
     const event = readLastEvent(ctx.paths.eventsJsonl);
-    assertTopLevelShape(event, "manual.fix", {
-      summary: "Added null check",
-      errorId: "01ERRXXX",
+    assertShapeA(event, "user_entry", "fix", {
+      summary: "added null check to fix crash",
+      errorId: fakeErrorId,
     });
   });
 
-  it("writes manual.fix event without errorId when not provided", async () => {
+  it("writes Shape-A fix event without errorId when not provided", async () => {
     const ctx = makeCtx(tmpDir);
 
     await fixTool.handler(ctx, { summary: "General cleanup" });
 
     const event = readLastEvent(ctx.paths.eventsJsonl);
-    assertTopLevelShape(event, "manual.fix", { summary: "General cleanup" });
-    expect(event["errorId"]).toBeUndefined();
+    assertShapeA(event, "user_entry", "fix", { summary: "General cleanup" });
+    expect(getPayload(event)["errorId"]).toBeUndefined();
   });
 });
 
 // ---------------------------------------------------------------------------
-// 4. logbook_lesson — top-level shape
+// 4. logbook_lesson — Shape-A
 // ---------------------------------------------------------------------------
 
-describe("logbook_lesson handler — top-level event shape", () => {
-  it("writes manual.lesson event with top-level text (no payload wrapper)", async () => {
+describe("logbook_lesson handler — Shape-A event", () => {
+  it("writes Shape-A lesson event with payload.entryType=lesson and text", async () => {
     const ctx = makeCtx(tmpDir);
+    // Use a proper 26-char ULID so ULID_RE skips redaction on linkTo
+    const fakeLinkId = "01BX5ZZKBKACTAV9WEVGEMMVRZ";
 
     await lessonTool.handler(ctx, {
-      text: "Always validate inputs at the boundary",
-      linkTo: "01DECABC",
+      text: "always validate inputs at the boundary",
+      linkTo: fakeLinkId,
     });
 
     const event = readLastEvent(ctx.paths.eventsJsonl);
-    assertTopLevelShape(event, "manual.lesson", {
-      text: "Always validate inputs at the boundary",
-      linkTo: "01DECABC",
+    assertShapeA(event, "user_entry", "lesson", {
+      text: "always validate inputs at the boundary",
+      linkTo: fakeLinkId,
     });
   });
 });
 
 // ---------------------------------------------------------------------------
-// 5. logbook_resource — top-level shape
+// 5. logbook_resource — Shape-A
 // ---------------------------------------------------------------------------
 
-describe("logbook_resource handler — top-level event shape", () => {
-  it("writes manual.resource event with top-level url (no payload wrapper)", async () => {
+describe("logbook_resource handler — Shape-A event", () => {
+  it("writes Shape-A resource event with payload.url", async () => {
     const ctx = makeCtx(tmpDir);
 
     await resourceTool.handler(ctx, {
@@ -280,7 +284,7 @@ describe("logbook_resource handler — top-level event shape", () => {
     });
 
     const event = readLastEvent(ctx.paths.eventsJsonl);
-    assertTopLevelShape(event, "manual.resource", {
+    assertShapeA(event, "user_entry", "resource", {
       url: "https://example.com/docs",
       note: "Reference for JSONL format",
     });
@@ -288,11 +292,11 @@ describe("logbook_resource handler — top-level event shape", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6. logbook_milestone — top-level shape
+// 6. logbook_milestone — Shape-A
 // ---------------------------------------------------------------------------
 
-describe("logbook_milestone handler — top-level event shape", () => {
-  it("writes manual.milestone event with top-level title (no payload wrapper)", async () => {
+describe("logbook_milestone handler — Shape-A event", () => {
+  it("writes Shape-A milestone event with payload.title", async () => {
     const ctx = makeCtx(tmpDir);
 
     await milestoneTool.handler(ctx, {
@@ -301,7 +305,7 @@ describe("logbook_milestone handler — top-level event shape", () => {
     });
 
     const event = readLastEvent(ctx.paths.eventsJsonl);
-    assertTopLevelShape(event, "manual.milestone", {
+    assertShapeA(event, "user_entry", "milestone", {
       title: "Iter3 complete",
       next: "Iter4 starts",
     });
@@ -309,25 +313,25 @@ describe("logbook_milestone handler — top-level event shape", () => {
 });
 
 // ---------------------------------------------------------------------------
-// 7. logbook_phase — top-level shape
+// 7. logbook_phase — Shape-A (kind=system)
 // ---------------------------------------------------------------------------
 
-describe("logbook_phase handler — top-level event shape", () => {
-  it("writes manual.phase event with top-level name (no payload wrapper)", async () => {
+describe("logbook_phase handler — Shape-A event (kind=system)", () => {
+  it("writes Shape-A phase_change event with kind=system and payload.phase", async () => {
     const ctx = makeCtx(tmpDir);
 
     await phaseTool.handler(ctx, { name: "apply" });
 
     const event = readLastEvent(ctx.paths.eventsJsonl);
-    assertTopLevelShape(event, "manual.phase", { name: "apply" });
+    assertShapeA(event, "system", "phase_change", { phase: "apply" });
   });
 });
 
 // ---------------------------------------------------------------------------
-// 8. logbook_suggest — shape with user-supplied payload preserved
+// 8. logbook_suggest — writes to pending-suggestions.jsonl (exception)
 // ---------------------------------------------------------------------------
 
-describe("logbook_suggest handler — user payload preserved", () => {
+describe("logbook_suggest handler — user payload preserved in pending-suggestions.jsonl", () => {
   it("writes to pending-suggestions.jsonl with top-level id/ts/type and user payload", async () => {
     const ctx = makeCtx(tmpDir);
 
@@ -355,7 +359,6 @@ describe("logbook_suggest handler — user payload preserved", () => {
     expect(suggestion["type"]).toBe("manual.decision");
 
     // user-supplied payload is preserved as event.payload
-    // (suggest stores an opaque user blob — this is intentional per design §8 note)
     const userPayload = suggestion["payload"] as Record<string, unknown>;
     expect(userPayload).toBeDefined();
     expect(userPayload["title"]).toBe("Consider TypeScript strict mode");
@@ -386,9 +389,6 @@ describe("render-context normalizeEvent — backward compatibility", () => {
       dataDir: path.join(dir, "logbook"),
       evidenceDir,
       eventsJsonl: path.join(evidenceDir, "events.jsonl"),
-      decisionsJsonl: path.join(evidenceDir, "decisions.jsonl"),
-      errorsJsonl: path.join(evidenceDir, "errors.jsonl"),
-      lessonsJsonl: path.join(evidenceDir, "lessons.jsonl"),
     };
   }
 
