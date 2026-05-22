@@ -115,6 +115,45 @@ describe("resolveProjectRoot", () => {
       const result = resolveProjectRoot(nested, true);
       expect(result).toBe(canonicalTmp);
     });
+
+    // Regression 2026-05-22: user ran `logbook init` from a project under
+    // HOME with no marker. The walk-up reached HOME, found `~/.claude/`
+    // (which always exists because Claude Code itself created it) and
+    // accepted HOME as the project root. LogBook then installed every
+    // artifact INTO HOME (`~/.claude/settings.local.json`, `~/.mcp.json`,
+    // etc.), polluting the user's home directory. The fix: HOME is NEVER
+    // a valid project root — markers there are ignored.
+    it("HOME with a `.claude/` marker is NOT accepted as project root", () => {
+      const home = fs.realpathSync(os.homedir());
+      // HOME has `.claude/` on virtually every machine where Claude Code ran.
+      // (We do not create it in the test — the assumption is realistic.)
+      if (!fs.existsSync(path.join(home, ".claude"))) {
+        // Test cannot be deterministic without it — skip silently.
+        return;
+      }
+      // Start the walk from a marker-less subdir directly under HOME.
+      const sub = fs.mkdtempSync(path.join(home, "lb-paths-not-home-"));
+      try {
+        expect(() => resolveProjectRoot(sub)).toThrow(LogBookError);
+      } finally {
+        fs.rmSync(sub, { recursive: true, force: true });
+      }
+    });
+
+    it("--here at HOME-like subdir still resolves to that subdir (escape hatch works)", () => {
+      // The user can still install into a marker-less directory under HOME
+      // by passing `--here`. The fallback honors the start dir even if HOME
+      // is on the walk path.
+      const home = fs.realpathSync(os.homedir());
+      const sub = fs.mkdtempSync(path.join(home, "lb-paths-here-"));
+      try {
+        const result = resolveProjectRoot(sub, true);
+        expect(result).toBe(sub);
+        expect(result).not.toBe(home);
+      } finally {
+        fs.rmSync(sub, { recursive: true, force: true });
+      }
+    });
   });
 });
 

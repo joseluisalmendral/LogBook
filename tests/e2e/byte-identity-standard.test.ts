@@ -83,7 +83,7 @@ describe("T13 — byte-identity standard install/uninstall (ITER3 GATE)", () => 
         expect(lbHooks).toHaveLength(1);
 
         // mcp.json: fake-plugin entry unchanged + logbook-mcp added
-        const mcpRaw = readFileSync(j(tmp, ".claude/mcp.json"), "utf8");
+        const mcpRaw = readFileSync(j(tmp, ".mcp.json"), "utf8");
         const mcp = JSON.parse(mcpRaw);
         expect(mcp.mcpServers?.["fake-plugin"]?.["_fakePluginId"]).toBe("fp-001");
         expect(mcp.mcpServers?.["logbook-mcp"]?.["_logbookId"]).toBe("lb-mcp-001");

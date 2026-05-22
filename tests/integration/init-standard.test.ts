@@ -157,8 +157,10 @@ describe("I-INIT1 — init --preset standard", () => {
     expect(lbHook?.["_logbookId"]).toBe("lb-hook-posttooluse-001");
   });
 
-  it("mcp_server entry written to mcp.json", () => {
-    const mcpPath = path.join(tmp, ".claude", "mcp.json");
+  it("mcp_server entry written to .mcp.json at project root", () => {
+    // Canonical project-scope MCP path (fix 2026-05-22). Claude Code reads
+    // `.mcp.json` at root, NOT `.claude/mcp.json`.
+    const mcpPath = path.join(tmp, ".mcp.json");
     expect(fs.existsSync(mcpPath)).toBe(true);
     const mcp = JSON.parse(fs.readFileSync(mcpPath, "utf8"));
     expect(mcp.mcpServers?.["logbook-mcp"]).toBeDefined();

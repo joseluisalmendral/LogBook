@@ -158,7 +158,7 @@ function buildStandardManifest(root: string): Manifest {
     preset: "standard",
     artifacts: [
       makeArtifact("lb-hook-posttooluse-001", "hook", ".claude/settings.local.json"),
-      makeArtifact("lb-mcp-001", "mcp_server", ".claude/mcp.json"),
+      makeArtifact("lb-mcp-001", "mcp_server", ".mcp.json"),
       augment,
       ...slashArtifacts,
       ...skillArtifacts,

@@ -59,7 +59,7 @@ logbook init [--preset minimal|standard|teaching|full] [--yes] [--dry-run]
 
 - Writes `.logbook/install-manifest.json`.
 - Creates backups in `.logbook/backups/` for every shared file it edits.
-- Appends entries to `.claude/settings.local.json`, `.claude/mcp.json`, `.gitignore`, and (for `standard`/`teaching`) `CLAUDE.md`.
+- Appends entries to `.claude/settings.local.json`, `.mcp.json`, `.gitignore`, and (for `standard`/`teaching`) `CLAUDE.md`.
 - Creates owned files under `.claude/commands/`, `.claude/skills/`, `.claude/subagents/`.
 
 **Exit codes.** `0` on success, `1` on detection error / rollback.

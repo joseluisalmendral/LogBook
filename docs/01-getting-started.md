@@ -63,7 +63,7 @@ After the initial install, "how do I update?" has two answers depending on which
 
 ### Layer 1 — Global binary (symlink-backed, auto-updates)
 
-`pnpm link --global` creates a symlink, not a copy. The `logbook` command in your `$PATH` resolves at every invocation to `dist/cli/index.cjs` inside the cloned repo. The same is true of `dist/mcp/server.cjs`, which is what `.claude/mcp.json` in every installed project points at (via absolute path).
+`pnpm link --global` creates a symlink, not a copy. The `logbook` command in your `$PATH` resolves at every invocation to `dist/cli/index.cjs` inside the cloned repo. The same is true of `dist/mcp/server.cjs`, which is what `.mcp.json` in every installed project points at (via absolute path).
 
 This means **any rebuild of the LogBook repo immediately propagates to every project**, with zero per-project action:
 
@@ -80,7 +80,7 @@ Things that auto-update through this path:
 | Change | How it propagates |
 |--------|-------------------|
 | Bug fix in CLI command logic | symlink → next `logbook <cmd>` invocation |
-| Bug fix in the MCP server | `.claude/mcp.json` absolute path → next Claude Code session start |
+| Bug fix in the MCP server | `.mcp.json` absolute path → next Claude Code session start |
 | Improvement in the PostToolUse hook ingestor | hook entry calls the global binary → next tool call |
 | New CLI subcommand | symlink → available immediately |
 | Changes to preset definitions | `init` reads them from the global binary → applies to new installs |
@@ -97,7 +97,7 @@ When you ran `logbook init` in a project, several files were **copied** into the
 | `<!-- logbook:augment -->` block inside `CLAUDE.md` | ❌ no — it's pasted text |
 | `<!-- logbook:gitignore -->` lines in `.gitignore` | ❌ no — they're pasted lines |
 | Hook entry in `.claude/settings.local.json` | ⚠ the line is fixed but it invokes the global binary, so the *behavior* updates |
-| Server entry in `.claude/mcp.json` | ✅ the line is fixed but it points at the global `dist/mcp/server.cjs`, so the *behavior* updates |
+| Server entry in `.mcp.json` | ✅ the line is fixed but it points at the global `dist/mcp/server.cjs`, so the *behavior* updates |
 
 So if a release changes the Skill body or adds a new slash command, projects that were installed before that release **keep running the old Skill / old commands** until you refresh them.
 
@@ -139,7 +139,7 @@ The doctor reads `.logbook/install-manifest.json` (which records the content has
 
 The v1.3 release (see [`v1.3-roadmap.md`](./v1.3-roadmap.md)) addresses two friction points in this flow:
 
-1. **`brew install logbook` / `scoop install logbook`** replace the manual clone + link, putting the binary at a stable path (`/opt/homebrew/bin/logbook` or equivalent). This eliminates the "if I move the repo, projects break" failure mode caused by the absolute path in `.claude/mcp.json`.
+1. **`brew install logbook` / `scoop install logbook`** replace the manual clone + link, putting the binary at a stable path (`/opt/homebrew/bin/logbook` or equivalent). This eliminates the "if I move the repo, projects break" failure mode caused by the absolute path in `.mcp.json`.
 2. **`logbook self-update`** adds an in-place upgrade path that detects stale per-project artifacts and refreshes them without requiring `uninstall` + `init`. Pairs with a startup update-check that flags new releases.
 
 ## Your first 5 minutes
@@ -157,7 +157,7 @@ Once the binary is installed, the loop is:
 
    The TUI launches with an animated LogBook banner (cyan ASCII art, 640 ms line-reveal) and then walks you through preset choice and confirmation. `init --yes --preset standard` does the same non-interactively, no banner. Set `LOGBOOK_NO_ANIMATION=1` if you want the banner to render instantly without the typing effect.
 
-3. Open the project in Claude Code. The MCP server `logbook-mcp` is registered project-scoped in `.claude/mcp.json`; the PostToolUse hook is registered in `.claude/settings.local.json`; the agent will pick both up on session start.
+3. Open the project in Claude Code. The MCP server `logbook-mcp` is registered project-scoped in `.mcp.json`; the PostToolUse hook is registered in `.claude/settings.local.json`; the agent will pick both up on session start.
 
 4. Work normally. The agent captures decisions, errors, lessons, and resources automatically via MCP tool calls (driven by the installed Skill). The hook captures every tool call as raw evidence in `logbook/evidence/events.jsonl`.
 

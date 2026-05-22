@@ -17,7 +17,7 @@ That single command does the following:
 
 1. Generates `.logbook/install-manifest.json`.
 2. Appends a `PostToolUse` hook to `.claude/settings.local.json` (or creates it).
-3. Registers the `logbook-mcp` server in `.claude/mcp.json`.
+3. Registers the `logbook-mcp` server in `.mcp.json`.
 4. Writes 8 slash command files under `.claude/commands/lb-*.md`.
 5. Writes 2 Skill files under `.claude/skills/logbook-auto-capture/`.
 6. Inserts an idempotent block into `CLAUDE.md`.

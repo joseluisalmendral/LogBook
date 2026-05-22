@@ -235,7 +235,7 @@ LogBook se integra con Claude Code en cinco capas, en orden de preferencia:
 
 # 13. MCP server `logbook-mcp` (interfaz primaria)
 
-`logbook init` registra LogBook como MCP server local en `.claude/mcp.json` (project-scoped). El servidor corre como un proceso local cuando Claude Code lo invoca.
+`logbook init` registra LogBook como MCP server local en `.mcp.json` (project-scoped). El servidor corre como un proceso local cuando Claude Code lo invoca.
 
 ## 13.1 Tools expuestas
 
@@ -281,7 +281,7 @@ Todas las descripciones de tools están **optimizadas para mínimo coste de toke
 
 ## 13.4 Coexistencia MCP
 
-LogBook se registra como MCP server con nombre único `logbook-mcp`. Si el usuario ya tiene otros MCP servers, `.claude/mcp.json` se edita append-only y con backup. Si existe colisión de nombre, `logbook init` aborta y propone `--mcp-name`.
+LogBook se registra como MCP server con nombre único `logbook-mcp`. Si el usuario ya tiene otros MCP servers, `.mcp.json` se edita append-only y con backup. Si existe colisión de nombre, `logbook init` aborta y propone `--mcp-name`.
 
 ---
 
@@ -585,7 +585,7 @@ Y todos llevan instrucción explícita "no inventes, separa hechos de interpreta
 
 # 24. Coexistencia con otros plugins y hooks
 
-Segundo capítulo clave. LogBook debe convivir con otras herramientas que tocan los mismos ficheros (`.claude/settings.local.json`, `CLAUDE.md`, `.claude/mcp.json`, `.gitignore`).
+Segundo capítulo clave. LogBook debe convivir con otras herramientas que tocan los mismos ficheros (`.claude/settings.local.json`, `CLAUDE.md`, `.mcp.json`, `.gitignore`).
 
 ## 24.1 Principios
 
@@ -706,7 +706,7 @@ Reglas: task > phase > default. Auth no disponible → fallback default. `logboo
 
 Dos vías soportadas:
 
-1. **Codex como MCP server** registrado en `.claude/mcp.json`. Sus llamadas quedan en hooks como cualquier otra tool. LogBook no necesita código.
+1. **Codex como MCP server** registrado en `.mcp.json`. Sus llamadas quedan en hooks como cualquier otra tool. LogBook no necesita código.
 2. **Codex como subprocess** vía `codex exec` para pipelines internas de LogBook. Lo invoca Vercel AI SDK si existe el provider compatible, o spawn directo en `connectors/codex.ts`.
 
 ---
@@ -842,7 +842,7 @@ El usuario sobreescribe en `review`.
 ## 31.1 Requisitos no negociables
 
 1. **Transporte stdio local exclusivamente** en el MVP. Sin HTTP, sin WebSocket, sin escucha remota. Claude Code lanza el server como proceso hijo.
-2. **Project-scoped registration** en `.claude/mcp.json` (project-local). Nunca se registra en user-level `~/.claude/mcp.json` para evitar exposición cross-proyecto.
+2. **Project-scoped registration** en `.mcp.json` (project-local). Nunca se registra en user-level `~/.mcp.json` para evitar exposición cross-proyecto.
 3. **Sin ejecución de shell** desde tools del MCP. Las tools llaman únicamente a funciones TypeScript del CLI, auditables.
 4. **Sin paso de credenciales del agente al server.** Si el server necesita autenticación (Agent SDK), la lee de su propia configuración, no del cliente.
 5. **Validación de input con valibot** en cada tool. Esquemas estrictos, sin pass-through de payloads arbitrarios. Rechaza campos extra no declarados.
@@ -889,7 +889,7 @@ Sistema de primer nivel. Extiende v2 para cubrir todos los nuevos artefactos.
   "installedAt": "2026-05-15T10:00:00Z",
   "artifacts": [
     { "kind": "hook",       "file": ".claude/settings.local.json", "jsonPath": "$.hooks.PostToolUse[1]", "id": "lb-hook-PostToolUse-001", "hash": "sha256:..." },
-    { "kind": "mcp-server", "file": ".claude/mcp.json",            "jsonPath": "$.mcpServers.logbook-mcp", "id": "lb-mcp-001" },
+    { "kind": "mcp-server", "file": ".mcp.json",            "jsonPath": "$.mcpServers.logbook-mcp", "id": "lb-mcp-001" },
     { "kind": "slash",      "file": ".claude/commands/lb-decision.md", "id": "lb-slash-decision" },
     { "kind": "skill",      "file": ".claude/skills/logbook-auto-capture/SKILL.md", "id": "lb-skill-auto" },
     { "kind": "subagent",   "file": ".claude/subagents/logbook-curator.md", "id": "lb-sub-curator" },

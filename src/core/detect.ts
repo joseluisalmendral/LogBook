@@ -158,7 +158,7 @@ function scanMarkdownBlock(
 // ---------------------------------------------------------------------------
 
 /**
- * json_object_key variant: used by MCPServerInstaller for .claude/mcp.json.
+ * json_object_key variant: used by MCPServerInstaller for `.mcp.json` (project root).
  *
  * The anchor records the full RFC 6901 path to the key, e.g. "/mcpServers/logbook-mcp".
  * Detection: scan for the idValue literal inside the file; if found, locate the

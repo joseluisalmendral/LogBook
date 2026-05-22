@@ -9,7 +9,7 @@ export type Artifact =
     }
   | {
       kind: "mcp_server";
-      name: string;                // key under mcpServers in .claude/mcp.json (e.g. "logbook-mcp")
+      name: string;                // key under mcpServers in `.mcp.json` at project root (e.g. "logbook-mcp")
       command: string;             // node abs path (e.g. "node")
       args: string[];              // e.g. ["/abs/dist/mcp/server.cjs"]
       env?: Record<string, string>;

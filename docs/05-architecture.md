@@ -215,7 +215,7 @@ The dispatcher pipeline runs for every tool call:
 
 The 9 tools are wired in `src/mcp/tools/index.ts` as `ALL_TOOLS`. Each defines its own `valibotSchema` (used for validation) and `inputSchema` (advertised to MCP clients as plain JSON Schema for protocol-level documentation).
 
-Stdio transport only. No HTTP, no WebSocket, no outbound network. Project-scoped registration in `.claude/mcp.json` (never user-level). All confirmed by `src/mcp/server.ts:1-36` header comment.
+Stdio transport only. No HTTP, no WebSocket, no outbound network. Project-scoped registration in `.mcp.json` (never user-level). All confirmed by `src/mcp/server.ts:1-36` header comment.
 
 ## LLM router
 

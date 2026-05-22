@@ -235,13 +235,13 @@ describe("T10 — init --preset teaching coexistence with pre-existing plugins (
   // -------------------------------------------------------------------------
 
   it("mcp.json fake-plugin entry is NOT removed during teaching install", () => {
-    const mcpRaw = fs.readFileSync(path.join(tmp, ".claude/mcp.json"), "utf8");
+    const mcpRaw = fs.readFileSync(path.join(tmp, ".mcp.json"), "utf8");
     const mcp = JSON.parse(mcpRaw);
     expect(mcp.mcpServers?.["fake-plugin"]?.["_fakePluginId"]).toBe("fp-001");
   });
 
   it("mcp.json logbook-mcp entry is added alongside fake-plugin", () => {
-    const mcpRaw = fs.readFileSync(path.join(tmp, ".claude/mcp.json"), "utf8");
+    const mcpRaw = fs.readFileSync(path.join(tmp, ".mcp.json"), "utf8");
     const mcp = JSON.parse(mcpRaw);
     expect(typeof mcp.mcpServers?.["logbook-mcp"]?.["_logbookId"]).toBe("string");
   });

@@ -4,7 +4,7 @@
  * THE TEACHING PRESET GATE. Uses tests/fixtures/project-teaching/ which has:
  *   - CLAUDE.md with user content + otherplugin block in <!-- otherplugin start --> markers
  *   - .claude/settings.local.json with 2 fake PostToolUse hooks (mixed indent), NO statusLine key
- *   - .claude/mcp.json with 1 fake plugin mcp server
+ *   - .mcp.json with 1 fake plugin mcp server
  *   - .claude/commands/fake-plugin.md — pre-existing slash from another plugin
  *   - .claude/subagents/fake-other.md — pre-existing subagent from another plugin
  *   - .gitignore with node_modules/ + dist/
@@ -56,7 +56,7 @@ describe("T12 — ITER4 GATE: byte-identity teaching install/uninstall (THE TEAC
 
       // Capture fixture bytes for mid-install comparison assertions
       const fixtureClaudeMd = readFileSync(join(FIXTURE, "CLAUDE.md"), "utf8");
-      const fixtureMcpRaw = readFileSync(join(FIXTURE, ".claude/mcp.json"), "utf8");
+      const fixtureMcpRaw = readFileSync(join(FIXTURE, ".mcp.json"), "utf8");
       const fakeOtherContent = readFileSync(
         join(FIXTURE, ".claude/subagents/fake-other.md"),
         "utf8",
@@ -139,7 +139,7 @@ describe("T12 — ITER4 GATE: byte-identity teaching install/uninstall (THE TEAC
         );
 
         // 3. mcp.json: fake-plugin entry UNCHANGED + logbook-mcp added
-        const mcpPath = join(tmp, ".claude/mcp.json");
+        const mcpPath = join(tmp, ".mcp.json");
         const mcpRaw = readFileSync(mcpPath, "utf8");
         const mcp = JSON.parse(mcpRaw);
         const fakePluginMarker = '"fake-plugin"';

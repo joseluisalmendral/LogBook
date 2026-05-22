@@ -105,6 +105,9 @@ beforeEach(() => {
   bootstrapClaudeCodeInstallers();
   tmpDir = resolve(tmpdir(), `mcp-installer-test-${process.pid}-${Date.now()}`);
   mkdirSync(tmpDir, { recursive: true });
+  // `.mcp.json` lives at project root — no `.claude/` parent needed for it.
+  // We still create `.claude/` so other shared-file tests (settings.local.json
+  // etc.) that may run in the same fixture work.
   mkdirSync(join(tmpDir, ".claude"), { recursive: true });
 });
 
@@ -113,7 +116,10 @@ afterEach(async () => {
 });
 
 function mcpJsonPath(): string {
-  return join(tmpDir, ".claude", "mcp.json");
+  // Canonical project-scope MCP path: `.mcp.json` at project root.
+  // Was `.claude/mcp.json` before 2026-05-22 (Claude Code did not read MCP
+  // from that path — see src/connectors/claude-code/artifacts/mcp.ts header).
+  return join(tmpDir, ".mcp.json");
 }
 
 function copyFixture(dir: string, name: string): string {
@@ -215,7 +221,7 @@ describe("MCPServerInstaller — byte-identity roundtrips", () => {
 // ---------------------------------------------------------------------------
 
 describe("MCPServerInstaller — file missing", () => {
-  it("install creates .claude/mcp.json with mcpServers key", async () => {
+  it("install creates .mcp.json with mcpServers key", async () => {
     // Do NOT copy a fixture — file is absent
     const installer = getMcpInstaller();
     const artifact = makeMcpArtifact();
@@ -448,7 +454,7 @@ describe("MCPServerInstaller — manifest entry shape", () => {
     const entry = await installer.install(artifact, ctx);
     expect(entry.id).toBe(LOGBOOK_MCP_ID);
     expect(entry.kind).toBe("mcp_server");
-    expect(entry.file_path).toBe(".claude/mcp.json");
+    expect(entry.file_path).toBe(".mcp.json");
     expect(entry.content_hash).toBeTruthy();
     expect(entry.installed_at).toBeTruthy();
     expect(entry.anchor.type).toBe("json_object_key");

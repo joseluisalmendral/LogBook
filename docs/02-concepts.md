@@ -72,7 +72,7 @@ An "artifact" is any file or file-fragment that LogBook installs into the projec
 | Kind | What it does |
 |------|--------------|
 | `hook` | Entry in `.claude/settings.local.json` invoking the LogBook hook bundle on Claude Code events (`PostToolUse`, `SessionStart`). |
-| `mcp_server` | Entry in `.claude/mcp.json` registering `logbook-mcp` (stdio, project-scoped). |
+| `mcp_server` | Entry in `.mcp.json` registering `logbook-mcp` (stdio, project-scoped). |
 | `slash_command` | Markdown file in `.claude/commands/lb-*.md` — `lb-decision`, `lb-error`, `lb-fix`, `lb-lesson`, `lb-milestone`, `lb-phase`, `lb-review`, `lb-status`. |
 | `skill` | Two files under `.claude/skills/logbook-auto-capture/` — `SKILL.md` (fixed context) and `reference.md` (on-demand). |
 | `subagent` | Markdown file under `.claude/subagents/` — `logbook-curator` and `logbook-teacher`. Teaching preset only. |
@@ -181,7 +181,7 @@ The router resolves in this priority: `by_task[task] > by_phase[phase] > default
 
 ## Byte-identity contract
 
-Spec §24.8 / §37 guarantee: install + uninstall leaves every shared file byte-identical to its pre-install state, even when other plugins have entries in `.claude/settings.local.json`, `CLAUDE.md`, `.claude/mcp.json`, or `.gitignore`. This is enforced by:
+Spec §24.8 / §37 guarantee: install + uninstall leaves every shared file byte-identical to its pre-install state, even when other plugins have entries in `.claude/settings.local.json`, `CLAUDE.md`, `.mcp.json`, or `.gitignore`. This is enforced by:
 
 - **Pure string-patching.** LogBook never does `JSON.parse` + `JSON.stringify` on shared files (that would normalize whitespace and collapse comments). All edits are surgical string operations via `src/util/json-string-patch.ts`. See [`05-architecture.md`](./05-architecture.md#string-patch-primitives) for the contract.
 - **`_logbookId` tagging.** Every entry LogBook adds carries an `lb-*` id, either as a JSON field, a markdown block marker, or a manifest record (for scalar values where no in-situ tag is possible, the manifest stores a `contentHash`).

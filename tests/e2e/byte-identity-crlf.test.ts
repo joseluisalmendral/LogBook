@@ -88,7 +88,7 @@ describe("T13 — byte-identity CRLF install/uninstall (closes W1)", () => {
         expect(claudeMd).toContain("<!-- otherplugin start -->");
         expect(claudeMd).toContain("<!-- logbook:generated start v=1 -->");
 
-        const mcpRaw = readFileSync(j(tmp, ".claude/mcp.json"), "utf8");
+        const mcpRaw = readFileSync(j(tmp, ".mcp.json"), "utf8");
         // mcp.json may be CRLF (original) — verify fake-plugin preserved + logbook added
         const mcp = JSON.parse(mcpRaw);
         expect(mcp.mcpServers?.["fake-plugin"]?.["_fakePluginId"]).toBe("fp-001");

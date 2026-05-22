@@ -52,7 +52,7 @@ Each section below summarizes one iteration: its mission, slice count, key decis
 
 **Key architectural decisions.**
 
-- **Pure string-patching for shared files.** `src/util/json-string-patch.ts` (572 lines) is the load-bearing primitive. The decision: never call `JSON.parse` + `JSON.stringify` on `.claude/settings.local.json`, `CLAUDE.md`, `.claude/mcp.json`, or `.gitignore`. Every edit is a surgical string operation. This is what makes the §37 byte-identity contract possible.
+- **Pure string-patching for shared files.** `src/util/json-string-patch.ts` (572 lines) is the load-bearing primitive. The decision: never call `JSON.parse` + `JSON.stringify` on `.claude/settings.local.json`, `CLAUDE.md`, `.mcp.json`, or `.gitignore`. Every edit is a surgical string operation. This is what makes the §37 byte-identity contract possible.
 - **JSONL as source of truth, SQLite as best-effort index.** SQLite native bindings can fail in unusual environments (CJS bundles, tmp dirs). The canonical event log is plain JSONL with file-locking (`proper-lockfile`) and `fdatasync`. SQLite is rebuilt from JSONL when needed.
 - **Sentinel backups.** When backing up a shared file before install, an empty `sha256` records "file did not exist pre-install". On uninstall, sentinel-empty files are deleted rather than restored — keeping the project byte-identical to its pre-install state.
 
@@ -78,7 +78,7 @@ Iter1 was foundation-only — no surprising bugs because there was nothing built
 **Key architectural decisions.**
 
 - **MCP SDK low-level `Server` + `setRequestHandler` instead of high-level `McpServer.registerTool`.** Rationale: `McpServer.registerTool` requires Zod. LogBook uses valibot everywhere else. Importing Zod just for the MCP tool registration was rejected — the low-level API gives the same protocol surface and lets valibot drive validation. Documented as T7.SDK in the iter2 deviations register.
-- **`json_object_key` anchor variant.** Distinct from `json_field` (array-item semantics). Used by the MCP server installer because `.claude/mcp.json` adds a key under `mcpServers`, not an array element. T4.D1 in iter2.
+- **`json_object_key` anchor variant.** Distinct from `json_field` (array-item semantics). Used by the MCP server installer because `.mcp.json` adds a key under `mcpServers`, not an array element. T4.D1 in iter2.
 - **CRLF normalization pipeline.** `src/util/crlf.ts` introduced. Every installer reads raw → `detectLineEnding()` → `toLF()` → string-patch → `fromLF(detected)` → write. The detected ending is recorded in the manifest for symmetric uninstall.
 
 **Bugs the tests caught.**
@@ -345,7 +345,7 @@ The numerical evidence: 909 unit tests covering pure functions, 354 integration 
 
 ### String-patch always; never re-serialize
 
-This is the byte-identity contract throughline. The moment you call `JSON.stringify(JSON.parse(source))` on a shared file, you've broken the contract — whitespace normalizes, key order changes, the bytes drift. The discipline is to never reach for `JSON.parse + JSON.stringify` on `.claude/settings.local.json`, `.claude/mcp.json`, `CLAUDE.md`, or `.gitignore`. Every edit goes through `src/util/json-string-patch.ts`, `src/util/markdown-block.ts`, or `src/util/line-set.ts`.
+This is the byte-identity contract throughline. The moment you call `JSON.stringify(JSON.parse(source))` on a shared file, you've broken the contract — whitespace normalizes, key order changes, the bytes drift. The discipline is to never reach for `JSON.parse + JSON.stringify` on `.claude/settings.local.json`, `.mcp.json`, `CLAUDE.md`, or `.gitignore`. Every edit goes through `src/util/json-string-patch.ts`, `src/util/markdown-block.ts`, or `src/util/line-set.ts`.
 
 The 6 byte-identity e2e gates are what enforce this discipline.
 

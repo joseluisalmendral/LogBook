@@ -1,12 +1,23 @@
 /**
- * MCPServerInstaller — ArtifactInstaller<{kind:"mcp_server"}> for .claude/mcp.json.
+ * MCPServerInstaller — ArtifactInstaller<{kind:"mcp_server"}> for .mcp.json.
  *
  * Install strategy (design §5, T4):
- * - Target: .claude/mcp.json
+ * - Target: `.mcp.json` at the PROJECT ROOT (committable, project-scoped).
+ *   This is the canonical location Claude Code reads for project-scoped MCP
+ *   servers (equivalent to `claude mcp add <name> --scope project`).
  * - Anchor: json_object_key with /mcpServers/logbook-mcp + _logbookId
  * - Install: setJsonObjectKey(source, "/mcpServers", "logbook-mcp", entryJson) when
  *   the mcpServers key already exists; controlled JSON.parse+JSON.stringify when absent.
  * - Uninstall: removeJsonObjectKey(source, "/mcpServers", "logbook-mcp")
+ *
+ * PATH MIGRATION 2026-05-22:
+ * Before today the target file was `.claude/mcp.json`. Claude Code does NOT read
+ * MCP config from that path — it reads `.mcp.json` at project root for the
+ * `project` scope. User-reported symptom: "MCP server existe y arranca pero no
+ * está cargado en esta sesión". The dist binary was writing the entry to the
+ * wrong place. The fix: write to the canonical `.mcp.json` at root, accepting
+ * that Claude Code will prompt the user to approve the server on first session
+ * (correct security behavior for project-scoped MCP).
  *
  * CONTROLLED RE-SERIALIZE POLICY (T4.D2):
  * We permit JSON.parse+JSON.stringify ONLY when the mcpServers key does NOT yet exist
@@ -19,7 +30,7 @@
  * NOT preserved byte-for-byte. This is documented as T4.D2 and is acceptable because:
  * - The file had no mcpServers key (so Claude Code wasn't reading MCP config from it).
  * - We record createdMcpServersKey=true so uninstall can remove the key symmetrically.
- * - Real-world .claude/mcp.json files always have mcpServers at the top level.
+ * - Real-world `.mcp.json` files always have mcpServers at the top level.
  *
  * CONTENT HASH POLICY:
  * content_hash is computed over canonical JSON (sorted keys, no whitespace) of the
@@ -56,11 +67,17 @@ type McpServerArtifact = Extract<Artifact, { kind: "mcp_server" }>;
 // Constants
 // ---------------------------------------------------------------------------
 
-/** The key we insert under /mcpServers in .claude/mcp.json. */
+/** The key we insert under /mcpServers in .mcp.json. */
 const MCP_KEY = "logbook-mcp";
 
-/** Project-relative path of the target file. */
-const MCP_JSON_PATH = ".claude/mcp.json";
+/**
+ * Project-relative path of the target file.
+ *
+ * Was `.claude/mcp.json` before 2026-05-22. Claude Code does NOT read MCP
+ * config from there. The canonical project-scope location is `.mcp.json` at
+ * the project root (matches `claude mcp add <name> --scope project`).
+ */
+const MCP_JSON_PATH = ".mcp.json";
 
 // ---------------------------------------------------------------------------
 // Utilities

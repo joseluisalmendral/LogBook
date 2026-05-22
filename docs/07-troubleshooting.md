@@ -316,7 +316,7 @@ fd -e md . .claude/commands                 # any lb-*.md files left?
 
 **Fix.** Two paths:
 
-1. **Manual cleanup.** Any file starting with `lb-` under `.claude/commands/`, `.claude/skills/logbook-auto-capture/`, `.claude/subagents/` belongs to LogBook. Any JSON entry with `_logbookId` in `.claude/settings.local.json` or `.claude/mcp.json` belongs to LogBook. Remove them by hand.
+1. **Manual cleanup.** Any file starting with `lb-` under `.claude/commands/`, `.claude/skills/logbook-auto-capture/`, `.claude/subagents/` belongs to LogBook. Any JSON entry with `_logbookId` in `.claude/settings.local.json` or `.mcp.json` belongs to LogBook. Remove them by hand.
 
 2. **Force a clean state with `purge --force`.**
 

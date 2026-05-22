@@ -390,7 +390,11 @@ function getArtifactFilePath(artifact: Artifact): string {
     case "hook":
       return ".claude/settings.local.json";
     case "mcp_server":
-      return ".claude/mcp.json";
+      // Project-scope MCP servers. Claude Code reads this file as the
+      // equivalent of `claude mcp add <name> --scope project`. (Was
+      // `.claude/mcp.json` before 2026-05-22 — Claude Code did not read MCPs
+      // from that path, so the server never loaded in sessions.)
+      return ".mcp.json";
     case "slash_command":
     case "skill":
     case "subagent":

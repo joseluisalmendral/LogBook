@@ -91,6 +91,16 @@ export function resolveProjectRoot(
   }
 
   while (true) {
+    // HOME itself is NEVER a valid project root. macOS users always have
+    // `~/.claude/` (created by Claude Code itself); many devs also have
+    // `~/.git` (dotfiles repo). If we accepted HOME as a project root,
+    // running `logbook init` from a marker-less subdir would silently
+    // install LogBook into the user's home directory, polluting
+    // `~/.claude/`, `~/.mcp.json`, etc. — exactly what happened to a user
+    // on 2026-05-22. Skip the marker check at HOME and treat it as the
+    // walk's stop boundary.
+    if (current === home) break;
+
     for (const marker of ROOT_MARKERS) {
       if (fs.existsSync(path.join(current, marker))) {
         try {
@@ -100,10 +110,6 @@ export function resolveProjectRoot(
         }
       }
     }
-
-    // Stop walking when we have just inspected HOME — do NOT cross into
-    // ancestor directories like /Users or /, which are never project roots.
-    if (current === home) break;
 
     const parent = path.dirname(current);
     if (parent === current) break; // filesystem root reached
