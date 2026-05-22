@@ -1,0 +1,59 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`export-html-snapshot > body innerHTML snapshot — structural regression guard 1`] = `
+"<h2 id="project-index">Project Index</h2>
+<h1 id="project-alpha">Project Alpha</h1>
+<p>This is the index doc. It contains <strong>bold text</strong>, <em>italic</em>, and <code>inline code</code>.</p>
+<h2 id="section-one">Section One</h2>
+<p>A paragraph with a <a href="#section-one">relative link</a> that is safe.</p>
+<h3 id="subsection">Subsection</h3>
+<p>A deeper heading.</p>
+<blockquote>
+<p>This is a blockquote. It should have a left accent border only.
+No background fill, no italic.</p>
+</blockquote>
+<p>| Column A | Column B | Column C |
+|----------|----------|----------|
+| Row 1A | Row 1B | Row 1C |
+| Row 2A | Row 2B | Row 2C |
+| Row 3A | Row 3B | Row 3C |</p>
+<hr>
+<h2 id="section-two">Section Two</h2>
+<pre><code class="language-bash">echo "Hello from a code block"
+ls -la
+</code></pre>
+<p>A final paragraph before the end of the index document.</p>
+<hr>
+<h2 id="timeline">Timeline</h2>
+<h1 id="timeline-1">Timeline</h1>
+<h2 id="2026-01-01">2026-01-01</h2>
+<ul>
+<li>Session started</li>
+<li>First commit recorded</li>
+</ul>
+<h2 id="2026-01-02">2026-01-02</h2>
+<ul>
+<li>Decision logged: use JSONL storage</li>
+</ul>
+<hr>
+<h2 id="2026-01-03">2026-01-03</h2>
+<p>Another session.</p>
+<hr>
+<h2 id="errors-and-lessons">Errors and Lessons</h2>
+<h1 id="errors-and-lessons-1">Errors and Lessons</h1>
+<h2 id="lessons-learned">Lessons Learned</h2>
+<ul>
+<li>Always validate input</li>
+<li>Write tests before implementation</li>
+</ul>
+<blockquote>
+<p>Remember: a small test suite is better than no test suite.</p>
+</blockquote>
+<hr>
+<h2 id="commits">Commits</h2>
+<h1 id="commits-1">Commits</h1>
+<h2 id="abc1234">abc1234</h2>
+<p>Initial commit — project scaffolding.</p>
+<h2 id="def5678">def5678</h2>
+<p>Add core JSONL append logic.</p>"
+`;

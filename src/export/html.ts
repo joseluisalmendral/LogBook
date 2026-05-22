@@ -55,11 +55,16 @@ export interface ExportOptions {
   speakerMode?: boolean;
 }
 
-/** Names of the 3 source doc files under logbook/docs/. */
+/**
+ * Names of the 4 source doc files under logbook/docs/.
+ * ADR-01: explicit manifest — export order is authoritative here, not derived
+ * from runAllGenerators. commits.md is gracefully skipped if absent.
+ */
 const SOURCE_DOCS = [
   "index.md",
   "timeline.md",
   "errors-and-lessons.md",
+  "commits.md",
 ] as const;
 
 /** Section labels used when concatenating the docs. */
@@ -67,6 +72,7 @@ const SECTION_LABELS: Record<string, string> = {
   "index.md": "Project Index",
   "timeline.md": "Timeline",
   "errors-and-lessons.md": "Errors and Lessons",
+  "commits.md": "Commits",
 };
 
 /**
@@ -114,6 +120,11 @@ async function markdownToHtml(
 
 /**
  * Wrap an HTML body fragment in a complete HTML document with inlined CSS.
+ *
+ * ADR-05: the card layout requires two surfaces — body (page shell) and
+ * .lb-doc (content card). The wrapper is added here, not in markdownToHtml,
+ * so that function remains a pure markdown-to-fragment converter.
+ *
  * @param css  The CSS string to inline (either INLINE_CSS or a sanitized theme).
  */
 function buildHtmlDocument(htmlBody: string, title: string, css: string): string {
@@ -126,8 +137,10 @@ function buildHtmlDocument(htmlBody: string, title: string, css: string): string
     `  <style>${css}</style>\n` +
     `</head>\n` +
     `<body>\n` +
+    `<main class="lb-doc">\n` +
     htmlBody +
-    `\n</body>\n` +
+    `\n</main>\n` +
+    `</body>\n` +
     `</html>\n`
   );
 }
@@ -166,11 +179,23 @@ export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
   const outFile =
     opts.outFile ?? join(paths.dataDir, "exports", "index.html");
 
-  // 1. Read source docs — fail fast if any are missing.
+  /**
+   * Docs that may be absent without aborting the export.
+   * commits.md is generated only when git history is present.
+   * Spec: "Project with no commits file" scenario.
+   */
+  const OPTIONAL_DOCS = new Set(["commits.md"]);
+
+  // 1. Read source docs — fail fast if required docs are missing; skip optional ones.
   const markdownParts: string[] = [];
   for (const docName of SOURCE_DOCS) {
     const docPath = join(docsDir, docName);
     if (!existsSync(docPath)) {
+      if (OPTIONAL_DOCS.has(docName)) {
+        // Graceful skip: commits.md may not exist if no sessions have been recorded
+        // or the project has no git history. Export continues without a Commits section.
+        continue;
+      }
       throw new Error(
         `Missing generated doc: ${docPath}\n` +
           `Run \`logbook build\` first to generate the docs before exporting.`
@@ -207,7 +232,7 @@ export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
   const fullHtml = buildHtmlDocument(htmlBody, "LogBook", inlineCss);
 
   // 5. Sanitize — throws if any external ref is detected.
-  assertNoExternalRefs(fullHtml);
+  const sanitizeResult = assertNoExternalRefs(fullHtml);
 
   // 6. Write atomically (temp file + rename).
   const outDir = dirname(outFile);
@@ -224,7 +249,7 @@ export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
   return {
     outFile,
     bytes,
-    externalRefs: 0,
+    externalRefs: sanitizeResult.externalRefs,
     durationMs,
   };
 }

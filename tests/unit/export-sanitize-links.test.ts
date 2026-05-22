@@ -109,4 +109,29 @@ describe("assertNoExternalRefs", () => {
       assertNoExternalRefs("<link rel=stylesheet href=x.css>")
     ).toThrow();
   });
+
+  // ADR-02: assertNoExternalRefs now returns { externalRefs: number } on success.
+  // The success path always returns externalRefs: 0 (ADR-04 — commits.md uses
+  // plain SHA text so no external URLs survive to this point).
+  it("returns { externalRefs: 0 } for clean HTML", () => {
+    const result = assertNoExternalRefs("<p>ok</p>");
+    expect(result).toEqual({ externalRefs: 0 });
+  });
+
+  it("returns { externalRefs: 0 } for empty string", () => {
+    const result = assertNoExternalRefs("");
+    expect(result).toEqual({ externalRefs: 0 });
+  });
+
+  it("returns { externalRefs: 0 } for HTML with inline-only styles", () => {
+    const result = assertNoExternalRefs(
+      "<style>body { color: red; }</style><p>text</p>"
+    );
+    expect(result).toEqual({ externalRefs: 0 });
+  });
+
+  it("return value externalRefs is a number", () => {
+    const result = assertNoExternalRefs("<h1>Title</h1><p>content</p>");
+    expect(typeof result.externalRefs).toBe("number");
+  });
 });

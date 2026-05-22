@@ -383,6 +383,10 @@ async function markdownToHtml(
 
 /**
  * Wrap an HTML body fragment in a complete self-contained HTML document.
+ *
+ * ADR-05: mirrors the card layout from html.ts — body is the page shell,
+ * .lb-doc is the content card.
+ *
  * @param css  The CSS string to inline (either INLINE_CSS or a sanitized theme).
  */
 function buildHtmlDocument(htmlBody: string, title: string, css: string): string {
@@ -395,8 +399,10 @@ function buildHtmlDocument(htmlBody: string, title: string, css: string): string
     `  <style>${css}</style>\n` +
     `</head>\n` +
     `<body>\n` +
+    `<main class="lb-doc">\n` +
     htmlBody +
-    `\n</body>\n` +
+    `\n</main>\n` +
+    `</body>\n` +
     `</html>\n`
   );
 }
@@ -510,7 +516,7 @@ export async function exportInstructorPack(
   const fullHtml = buildHtmlDocument(htmlBody, "LogBook — Instructor Pack", inlineCss);
 
   // 8. Assert no external refs
-  assertNoExternalRefs(fullHtml);
+  const sanitizeResult = assertNoExternalRefs(fullHtml);
 
   // 9. Atomic write
   const outDir = dirname(outFile);
@@ -527,7 +533,7 @@ export async function exportInstructorPack(
   return {
     outFile,
     bytes,
-    externalRefs: 0,
+    externalRefs: sanitizeResult.externalRefs,
     durationMs,
   };
 }

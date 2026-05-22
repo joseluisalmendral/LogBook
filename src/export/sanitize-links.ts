@@ -51,14 +51,27 @@ export function sanitizeReport(html: string): SanitizeReport {
   };
 }
 
+/** Return value of assertNoExternalRefs on the success path. */
+export interface ExternalRefsResult {
+  /** Count of external references found (always 0 on the success path). */
+  externalRefs: number;
+}
+
 /**
  * Assert that the HTML has no external references.
  * Throws an Error if any external ref is detected.
  *
+ * Returns { externalRefs: 0 } on success so callers can forward the
+ * count directly into ExportReport without hardcoding a constant.
+ *
  * Used as the final gatekeeper in the exportHtml pipeline.
  * If this throws, the export is aborted (temp file is not renamed to outFile).
+ *
+ * ADR-02: per design, commits.md uses plain SHA text so externalRefs is
+ * always 0 on the success path. The return shape is future-proof insurance
+ * for policy changes that allow counted-but-not-blocked refs.
  */
-export function assertNoExternalRefs(html: string): void {
+export function assertNoExternalRefs(html: string): ExternalRefsResult {
   const report = sanitizeReport(html);
 
   const violations: string[] = [];
@@ -90,4 +103,6 @@ export function assertNoExternalRefs(html: string): void {
         violations.map((v) => `  - ${v}`).join("\n")
     );
   }
+
+  return { externalRefs: 0 };
 }
