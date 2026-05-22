@@ -183,11 +183,23 @@ export function buildMinimalArtifacts(): Artifact[] {
  * Reads slash command bodies and the augment block from the assets/ directory
  * at build time (not at install time — the list is assembled once, then the
  * install-engine installs them in order). This matches the §6 spec exactly.
+ *
+ * @param projectRoot - Absolute path to the project root. When provided, the
+ *   MCP server entry includes `--project-root <projectRoot>` in its args so
+ *   the server resolves the project deterministically regardless of cwd.
+ *   When omitted (backward-compat / TUI preview), only `[serverPath]` is used.
  */
-export function buildStandardArtifacts(): Artifact[] {
+export function buildStandardArtifacts(projectRoot?: string): Artifact[] {
   const hookPath = resolveHookPath();
   const mcpServerPath = resolveMcpServerPath();
   const augmentBody = readAugmentAsset();
+
+  // Build the MCP server args: always include serverPath; append --project-root
+  // when the caller supplies the absolute project root (Req 1.1).
+  const mcpArgs: string[] =
+    projectRoot !== undefined
+      ? [mcpServerPath, "--project-root", projectRoot]
+      : [mcpServerPath];
 
   // Build the 8 slash command artifacts
   const slashArtifacts: Artifact[] = STANDARD_SLASH_NAMES.map((name) => ({
@@ -211,7 +223,7 @@ export function buildStandardArtifacts(): Artifact[] {
       kind: "mcp_server",
       name: "logbook-mcp",
       command: "node",
-      args: [mcpServerPath],
+      args: mcpArgs,
       _logbookId: "lb-mcp-001",
     },
     // 3. augment_claudemd
@@ -266,9 +278,9 @@ export function buildStandardArtifacts(): Artifact[] {
  *   16  hook (SessionStart)
  *   17  gitignore_entry (LAST)
  */
-export function buildTeachingArtifacts(): Artifact[] {
+export function buildTeachingArtifacts(projectRoot?: string): Artifact[] {
   const hookPath = resolveHookPath();
-  const standard = buildStandardArtifacts();
+  const standard = buildStandardArtifacts(projectRoot);
 
   // Standard artifacts without the trailing gitignore_entry batch.
   // The standard preset emits gitignore entries LAST (per the iter1 install-
@@ -345,12 +357,12 @@ export function buildTeachingArtifacts(): Artifact[] {
  *              standard set + 2 subagents + statusline + SessionStart hook.
  * "full" is reserved for future use; falls back to teaching for now.
  */
-export function buildArtifactsForPreset(preset: string): Artifact[] {
+export function buildArtifactsForPreset(preset: string, projectRoot?: string): Artifact[] {
   if (preset === "teaching" || preset === "full") {
-    return buildTeachingArtifacts();
+    return buildTeachingArtifacts(projectRoot);
   }
   if (preset === "standard") {
-    return buildStandardArtifacts();
+    return buildStandardArtifacts(projectRoot);
   }
   // Default: minimal
   return buildMinimalArtifacts();

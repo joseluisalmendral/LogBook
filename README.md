@@ -36,13 +36,13 @@ Full installation paths (including ad-hoc per-project usage and the future `pnpm
 
 ```sh
 cd /path/to/your-project
-logbook init --preset standard --yes      # install (or just `logbook` for the TUI wizard)
+logbook init --yes                         # install standard preset (or just `logbook` for the TUI wizard)
 # work normally in Claude Code — auto-capture is on
 logbook build                              # regenerate logbook/docs/*
 logbook export instructor-pack             # produce a single shareable HTML
 ```
 
-Three presets: `minimal` (hooks only, 0 fixed tokens), `standard` (default, 381 tokens), `teaching` (full pedagogical stack, 499 tokens).
+Three presets: `minimal` (hooks only, 0 fixed tokens), `standard` (default, 381 tokens), `teaching` (full pedagogical stack, 499 tokens). Use `--preset minimal` for hook-only installs without MCP or slash commands.
 
 ### LLM providers
 
@@ -98,7 +98,7 @@ Quick reference:
 
 | Command | What it does |
 |---------|--------------|
-| `logbook init [--preset minimal\|standard\|teaching]` | Install LogBook artifacts into the project |
+| `logbook init [--preset minimal\|standard\|teaching]` | Install LogBook artifacts (default: `standard`) |
 | `logbook build [--safe]` | Regenerate `logbook/docs/*` from events |
 | `logbook decision --title "..." --chosen "..."` | Record an architectural decision (ADR) |
 | `logbook decision --with-diff` | Record ADR + capture git SHA + diff stats |

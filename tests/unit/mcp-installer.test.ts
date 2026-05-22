@@ -47,6 +47,9 @@ const LOGBOOK_MCP_ID = "lb-mcp-001";
 /** Placeholder absolute path used in tests (T7 produces the real bundle). */
 const MCP_SERVER_PATH = "/abs/dist/mcp/server.cjs";
 
+/** Placeholder project root for --project-root arg tests. */
+const PROJECT_ROOT = "/abs/project/root";
+
 // ---------------------------------------------------------------------------
 // Test context factory
 // ---------------------------------------------------------------------------
@@ -67,6 +70,17 @@ function makeMcpArtifact(): Extract<Artifact, { kind: "mcp_server" }> {
     name: LOGBOOK_MCP_KEY,
     command: "node",
     args: [MCP_SERVER_PATH],
+    _logbookId: LOGBOOK_MCP_ID,
+  };
+}
+
+/** Artifact built by presets.ts when projectRoot is provided (Req 1.1). */
+function makeMcpArtifactWithProjectRoot(): Extract<Artifact, { kind: "mcp_server" }> {
+  return {
+    kind: "mcp_server",
+    name: LOGBOOK_MCP_KEY,
+    command: "node",
+    args: [MCP_SERVER_PATH, "--project-root", PROJECT_ROOT],
     _logbookId: LOGBOOK_MCP_ID,
   };
 }
@@ -437,6 +451,41 @@ describe("MCPServerInstaller — verify", () => {
     const result = await installer.verify(entry, verifyCtx);
     expect(result.ok).toBe(false);
     expect(result.reason).toBe("anchor_missing");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// --project-root args forwarding (Req 1.1)
+// ---------------------------------------------------------------------------
+
+describe("MCPServerInstaller — --project-root args forwarding", () => {
+  it("writes args with --project-root when artifact includes it", async () => {
+    const installer = getMcpInstaller();
+    const artifact = makeMcpArtifactWithProjectRoot();
+    const ctx = makeContext(tmpDir);
+
+    await installer.install(artifact, ctx);
+    const content = await fs.readFile(mcpJsonPath(), "utf8");
+    const parsed = JSON.parse(content) as { mcpServers: Record<string, unknown> };
+    const entry = parsed.mcpServers[LOGBOOK_MCP_KEY] as Record<string, unknown>;
+    expect(Array.isArray(entry["args"])).toBe(true);
+    const writtenArgs = entry["args"] as string[];
+    expect(writtenArgs[0]).toBe(MCP_SERVER_PATH);
+    expect(writtenArgs[1]).toBe("--project-root");
+    expect(writtenArgs[2]).toBe(PROJECT_ROOT);
+  });
+
+  it("writes args without --project-root when artifact omits it (backward-compat)", async () => {
+    const installer = getMcpInstaller();
+    const artifact = makeMcpArtifact();
+    const ctx = makeContext(tmpDir);
+
+    await installer.install(artifact, ctx);
+    const content = await fs.readFile(mcpJsonPath(), "utf8");
+    const parsed = JSON.parse(content) as { mcpServers: Record<string, unknown> };
+    const entry = parsed.mcpServers[LOGBOOK_MCP_KEY] as Record<string, unknown>;
+    const writtenArgs = entry["args"] as string[];
+    expect(writtenArgs).toEqual([MCP_SERVER_PATH]);
   });
 });
 

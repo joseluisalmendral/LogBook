@@ -76,6 +76,47 @@ export function parseMcpClockOffset(raw: string | undefined): number {
 }
 
 // ---------------------------------------------------------------------------
+// CLI arg parser — --project-root
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse `--project-root <value>` from the process argv array (Req 1.2).
+ *
+ * Rules:
+ *   - Walks argv.slice(2), finds `--project-root`, takes the next slot.
+ *   - Valid only when the value is a non-empty, absolute path.
+ *   - Unknown flags are silently ignored (forward-compat).
+ *   - Malformed / missing value → emits a warning to stderr and returns undefined.
+ *   - Never throws.
+ *
+ * Exported for unit-test access only — not part of the public module API.
+ *
+ * @param argv - Typically `process.argv`; passed as a parameter for testability.
+ */
+export function parseProjectRootArg(argv: string[]): string | undefined {
+  const args = argv.slice(2);
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "--project-root") {
+      const value = args[i + 1];
+      if (typeof value !== "string" || value.length === 0) {
+        process.stderr.write(
+          "[logbook-mcp] warning: --project-root flag present but has no value — ignoring\n",
+        );
+        return undefined;
+      }
+      if (!isAbsolute(value)) {
+        process.stderr.write(
+          `[logbook-mcp] warning: --project-root value is not an absolute path ("${value}") — ignoring\n`,
+        );
+        return undefined;
+      }
+      return value;
+    }
+  }
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------
 // Package version
 // ---------------------------------------------------------------------------
 
@@ -261,7 +302,23 @@ export async function dispatchToolCall(
 // ---------------------------------------------------------------------------
 
 async function main(): Promise<void> {
-  const ctx = await bootstrapMcpContext();
+  // Parse --project-root from argv and pass it as opts.cwd so the server
+  // resolves the project deterministically regardless of the spawning cwd.
+  const projectRoot = parseProjectRootArg(process.argv);
+  let ctx;
+  try {
+    ctx = await bootstrapMcpContext(projectRoot !== undefined ? { cwd: projectRoot } : {});
+  } catch (err) {
+    process.stderr.write(
+      `[logbook-mcp] fatal: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    if (projectRoot === undefined) {
+      process.stderr.write(
+        "[logbook-mcp] hint: pass --project-root <abs> to resolve the project root explicitly\n",
+      );
+    }
+    process.exit(1);
+  }
   const version = readPackageVersion();
 
   const server = new Server(

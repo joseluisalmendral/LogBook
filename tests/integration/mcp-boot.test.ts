@@ -18,7 +18,8 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { spawn, spawnSync } from "node:child_process";
 import { join } from "node:path";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 
 const PROJECT_ROOT = join(import.meta.dirname, "..", "..");
 const SERVER_BUNDLE = join(PROJECT_ROOT, "dist", "mcp", "server.cjs");
@@ -94,6 +95,7 @@ describe("mcp-boot", () => {
       cwd: PROJECT_ROOT,
       stdio: ["pipe", "pipe", "pipe"],
     });
+
 
     // Capture stderr for debugging on failure.
     const stderrChunks: Buffer[] = [];
@@ -188,6 +190,70 @@ describe("mcp-boot", () => {
       proc.kill("SIGKILL");
       const stderr = stderrChunks.map((c) => c.toString()).join("");
       throw new Error(`${String(err)}\nServer stderr:\n${stderr}`);
+    }
+  }, 30_000);
+
+  it("server starts successfully when spawned with --project-root <tmpDir> (Req 1.2)", async () => {
+    // Create a temp dir that looks like a project root so bootstrapMcpContext succeeds.
+    const tmpProjectDir = mkdtempSync(join(tmpdir(), "lb-mcp-boot-pr-"));
+    try {
+      writeFileSync(join(tmpProjectDir, "package.json"), JSON.stringify({ name: "test" }) + "\n");
+      mkdirSync(join(tmpProjectDir, ".logbook"), { recursive: true });
+
+      // Spawn the server WITHOUT relying on cwd — pass --project-root explicitly.
+      const proc = spawn(
+        "node",
+        [SERVER_BUNDLE, "--project-root", tmpProjectDir],
+        {
+          cwd: tmpdir(), // intentionally NOT the project root
+          stdio: ["pipe", "pipe", "pipe"],
+        },
+      );
+
+      const stderrChunks: Buffer[] = [];
+      proc.stderr?.on("data", (chunk: Buffer) => stderrChunks.push(chunk));
+
+      try {
+        // Send MCP initialize — if bootstrap succeeded, the server responds.
+        const initResponse = await sendAndReceive(proc, {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion: "2025-03-26",
+            capabilities: {},
+            clientInfo: { name: "test-client", version: "0.0.1" },
+          },
+        });
+
+        expect(initResponse).toMatchObject({
+          jsonrpc: "2.0",
+          id: 1,
+          result: {
+            serverInfo: { name: "logbook-mcp" },
+          },
+        });
+
+        // Clean shutdown.
+        await new Promise<void>((resolve, reject) => {
+          const exitTimer = setTimeout(() => {
+            proc.kill("SIGKILL");
+            reject(new Error("Server did not exit within 2s after SIGTERM"));
+          }, 2000);
+          proc.once("exit", (code, signal) => {
+            clearTimeout(exitTimer);
+            if (code === 0 || signal === "SIGTERM") resolve();
+            else reject(new Error(`Unexpected exit: code=${code} signal=${signal}`));
+          });
+          proc.kill("SIGTERM");
+        });
+      } catch (err) {
+        proc.kill("SIGKILL");
+        const stderr = stderrChunks.map((c) => c.toString()).join("");
+        throw new Error(`${String(err)}\nServer stderr:\n${stderr}`);
+      }
+    } finally {
+      rmSync(tmpProjectDir, { recursive: true, force: true });
     }
   }, 30_000);
 });

@@ -145,7 +145,7 @@ export async function runInstallAction(
   ctx.dispatch({ type: "doing.start", label: "Installing...", returnTo: "home" });
   try {
     bootstrapClaudeCodeInstallers();
-    const artifacts = buildArtifactsForPreset(opts.preset);
+    const artifacts = buildArtifactsForPreset(opts.preset, ctx.paths.root);
     await runInstall({
       paths: ctx.paths,
       preset: opts.preset,

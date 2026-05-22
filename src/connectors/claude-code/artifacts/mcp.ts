@@ -136,10 +136,13 @@ function buildMcpServerPath(artifact: McpServerArtifact): string {
 /** Build the JSON text of the value object to insert under /mcpServers/logbook-mcp. */
 function buildEntryJson(artifact: McpServerArtifact): string {
   const serverPath = buildMcpServerPath(artifact);
+  // Honor caller-supplied args (e.g. ["serverPath", "--project-root", root]).
+  // Fall back to [serverPath] only when the artifact carries no args (backward-compat).
+  const resolvedArgs = artifact.args.length > 0 ? artifact.args : [serverPath];
   const entry: Record<string, unknown> = {
     type: "stdio",
     command: artifact.command,
-    args: [serverPath],
+    args: resolvedArgs,
     _logbookId: artifact._logbookId,
   };
   if (artifact.env && Object.keys(artifact.env).length > 0) {

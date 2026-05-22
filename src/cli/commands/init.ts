@@ -47,8 +47,8 @@ export default defineCommand({
   args: {
     preset: {
       type: "string",
-      default: "minimal",
-      description: "minimal | standard | teaching | full",
+      default: "standard",
+      description: "minimal | standard | teaching | full (default: standard)",
     },
     yes: {
       type: "boolean",
@@ -82,8 +82,8 @@ export default defineCommand({
     const paths = makePaths(root);
     bootstrapClaudeCodeInstallers();
 
-    const preset = (args["preset"] as string) || "minimal";
-    const artifacts = buildArtifactsForPreset(preset);
+    const preset = (args["preset"] as string) || "standard";
+    const artifacts = buildArtifactsForPreset(preset, root);
     const dryRun = args["dry-run"] as boolean;
     const skipConfirm = args["yes"] as boolean;
 
