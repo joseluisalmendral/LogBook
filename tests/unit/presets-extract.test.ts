@@ -167,6 +167,72 @@ describe("buildArtifactsForPreset — extraction regression guard", () => {
     expect(artifacts[1]!.kind).toBe("gitignore_entry");
   });
 
+  // Regression 2026-05-22: user reported `PostToolUse:Bash hook error
+  // Failed with non-blocking status code: node:internal/modules/cjs/loader:1408`
+  // because their LogBook install path was
+  // `/Users/.../CONSTRUCCION FORMACION IA B2B/LogBook-repo/...`. The hook
+  // command was emitted as `node /Users/.../CONSTRUCCION FORMACION IA B2B/...`
+  // — unquoted. Claude Code parsed it through the shell, split on whitespace,
+  // and Node tried to load `/Users/.../CONSTRUCCION` as a module → cjs/loader
+  // MODULE_NOT_FOUND. Same class of bug as the hook + statusline + MCP shape
+  // bugs: outputs that look right under tests in `/tmp/...` (no spaces) but
+  // break in real user filesystems.
+  describe("shell-quoting of command paths (regression 2026-05-22)", () => {
+    test("hook commands quote the hookPath so spaces don't break the shell", () => {
+      // Force a path with spaces, just like the user's real install location.
+      const SPACEY = "/Users/test/path with spaces/dist/connectors/claude-code/hook.cjs";
+      const prev = process.env["LOGBOOK_HOOK_PATH"];
+      process.env["LOGBOOK_HOOK_PATH"] = SPACEY;
+      try {
+        for (const preset of ["minimal", "standard", "teaching", "full"]) {
+          const artifacts = buildArtifactsForPreset(preset);
+          const hookArtifacts = artifacts.filter((a) => a.kind === "hook");
+          expect(hookArtifacts.length).toBeGreaterThan(0);
+          for (const h of hookArtifacts) {
+            if (h.kind !== "hook") continue;
+            // The command MUST contain the path in a single shell token —
+            // wrapped in quotes. A bare unquoted path with spaces would have
+            // multiple whitespace-separated tokens.
+            expect(h.command, `[preset=${preset}] command must quote the path`).toContain(
+              `'${SPACEY}'`,
+            );
+            // And critically: it must NOT contain the unquoted form, which
+            // would mean the shell would split it on whitespace. We check
+            // the literal substring "node <unquoted-path>" is absent.
+            expect(h.command).not.toContain(`node ${SPACEY}`);
+          }
+        }
+      } finally {
+        if (prev === undefined) delete process.env["LOGBOOK_HOOK_PATH"];
+        else process.env["LOGBOOK_HOOK_PATH"] = prev;
+      }
+    });
+
+    test("teaching statusline command quotes the CLI binary path", () => {
+      const SPACEY_HOOK =
+        "/Users/test/path with spaces/dist/connectors/claude-code/hook.cjs";
+      const prev = process.env["LOGBOOK_HOOK_PATH"];
+      process.env["LOGBOOK_HOOK_PATH"] = SPACEY_HOOK;
+      try {
+        const artifacts = buildArtifactsForPreset("teaching");
+        const statusline = artifacts.find((a) => a.kind === "statusline");
+        expect(statusline).toBeDefined();
+        if (statusline?.kind === "statusline") {
+          // Path component must be in single quotes so the shell sees ONE token.
+          // We can't assert the exact dist path (it's __dirname-derived inside
+          // the bundle and machine-specific) but we can assert the structural
+          // `node '<...>' state --inline` shape.
+          expect(statusline.command).toMatch(
+            /^node '[^']+' state --inline$/,
+          );
+        }
+      } finally {
+        if (prev === undefined) delete process.env["LOGBOOK_HOOK_PATH"];
+        else process.env["LOGBOOK_HOOK_PATH"] = prev;
+      }
+    });
+  });
+
   test("no preset installs a .claude/settings.local.json gitignore entry", () => {
     // Reverted 2026-05-18 after user feedback: ignoring the whole file is too
     // aggressive because the user may write unrelated keys they want to commit.

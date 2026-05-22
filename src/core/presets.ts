@@ -15,6 +15,32 @@ import * as path from "node:path";
 import type { Artifact } from "../types/artifact.js";
 
 // ---------------------------------------------------------------------------
+// Shell-quoting helper.
+//
+// `hook.command` and `statusLine.command` in `.claude/settings.local.json`
+// are SHELL strings — Claude Code splits them on whitespace via the system
+// shell. If LogBook's install path contains spaces (e.g.
+// `/Users/.../CONSTRUCCION FORMACION IA B2B/LogBook-repo/...`), an unquoted
+// `node /that/path/with spaces/hook.cjs` decomposes into multiple argv
+// entries and Node fails with `cjs/loader:1408 MODULE_NOT_FOUND`. Real
+// user report 2026-05-22 ("PostToolUse:Bash hook error Failed with
+// non-blocking status code: node:internal/modules/cjs/loader:1408").
+//
+// On macOS/Linux, wrapping the path in single quotes is sufficient for
+// every character except a literal `'` (single-quote inside the path).
+// We escape `'` defensively. Backslashes and `$` are left alone — they are
+// literal inside single quotes.
+//
+// Why single quotes and not double quotes: double quotes still interpolate
+// `$VAR`, backticks, and history-expand `!` in some shells. Single quotes
+// are the safest no-interpolation wrapper.
+// ---------------------------------------------------------------------------
+function shellQuote(arg: string): string {
+  // Wrap in single quotes; escape any embedded single quote as `'\''`.
+  return `'${arg.replace(/'/g, "'\\''")}'`;
+}
+
+// ---------------------------------------------------------------------------
 // Hook bundle path resolution.
 // Production: dist/cli/index.cjs → __dirname = dist/cli/
 //             hook is at dist/connectors/claude-code/hook.cjs
@@ -140,7 +166,7 @@ export function buildMinimalArtifacts(): Artifact[] {
     {
       kind: "hook",
       hookEvent: "PostToolUse",
-      command: `node ${hookPath}`,
+      command: `node ${shellQuote(hookPath)}`,
       _logbookId: "lb-hook-posttooluse-001",
     },
     {
@@ -177,7 +203,7 @@ export function buildStandardArtifacts(): Artifact[] {
     {
       kind: "hook",
       hookEvent: "PostToolUse",
-      command: `node ${hookPath}`,
+      command: `node ${shellQuote(hookPath)}`,
       _logbookId: "lb-hook-posttooluse-001",
     },
     // 2. mcp_server (logbook-mcp → dist/mcp/server.cjs)
@@ -270,7 +296,9 @@ export function buildTeachingArtifacts(): Artifact[] {
   // at <distRoot>/cli/index.cjs regardless of which bundle is running.
   const distRoot = path.resolve(__dirname, "..");
   const cliAbsPath = path.resolve(distRoot, "cli/index.cjs");
-  const statuslineCommand = `node ${cliAbsPath} state --inline`;
+  // Shell-quote the binary path (see header). Subcommand + flags are static
+  // tokens with no spaces — they don't need quoting.
+  const statuslineCommand = `node ${shellQuote(cliAbsPath)} state --inline`;
 
   return [
     ...withoutGitignore,
@@ -300,7 +328,7 @@ export function buildTeachingArtifacts(): Artifact[] {
     {
       kind: "hook",
       hookEvent: "SessionStart",
-      command: `node ${hookPath}`,
+      command: `node ${shellQuote(hookPath)}`,
       _logbookId: "lb-hook-sessionstart-001",
     },
     // 17+. gitignore_entries (LAST — per iter1 install-order contract)
