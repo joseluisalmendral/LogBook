@@ -9,10 +9,19 @@
  *
  * Pure function — no I/O.
  * Deterministic: same RenderContext + remoteUrl → same bytes.
+ *
+ * ADR-21 (supersedes slice-3 ADR-04): commit SHAs are now clickable links
+ * when (a) origin remote URL is detected and (b) the host is allowlisted by
+ * src/export/sanitize-links.ts (github.com, gitlab.com, bitbucket.org).
+ * Unknown hosts → buildCommitLink returns undefined → plain SHA fallback.
+ *
+ * buildCommitLink already handles host detection and link construction;
+ * this doc simply calls it and falls back to plain text when it returns undefined.
  */
 
 import type { RenderContext, RenderEvent } from "./render-context.js";
 import { buildCommitLink } from "../connectors/git.js";
+import { buildHtmlTable } from "./html-table.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -93,15 +102,17 @@ export function buildCommitsDoc(
     lines.push(`Date: ${formatTs(earliestTs)}`);
     lines.push("");
 
-    // Events table.
-    lines.push("| Type | Timestamp | Summary |");
-    lines.push("|------|-----------|---------|");
-    for (const e of events) {
-      const type = e.type.replace(/\|/g, "\\|");
-      const ts = formatTs(e.ts).replace(/\|/g, "\\|");
-      const summary = eventSummary(e).replace(/\|/g, "\\|");
-      lines.push(`| ${type} | ${ts} | ${summary} |`);
-    }
+    // Events table — raw HTML instead of GFM pipe-tables (remark-gfm not installed).
+    const tableRows = events.map((e) => [
+      e.type,
+      formatTs(e.ts),
+      eventSummary(e),
+    ]);
+    lines.push(buildHtmlTable(
+      { headers: ["Type", "Timestamp", "Summary"] },
+      tableRows,
+      true, // escape plain-text cell values
+    ));
     lines.push("");
   }
 

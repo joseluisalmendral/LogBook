@@ -39,6 +39,14 @@ const STRUCTURAL_SCALARS = new Set<string>([
 // Crockford base32: digits 0-9, letters A-H, J-N, P-T, V-Z (no I, L, O, U). Length: 26.
 const ULID_RE = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 
+// Structural file-path or identifier-derived names that embed a ULID anywhere
+// and are otherwise composed of filename-safe chars only. These are derived
+// from structural IDs (e.g. adrPath "adrs/01H...J-use-vanilla-js.md") and are
+// NOT user secrets. The strict filename-safe charset prevents a leaked secret
+// from sneaking through alongside a ULID-shaped prefix.
+const STRUCTURAL_PATH_RE =
+  /^(?:[a-zA-Z0-9_.-]+\/)*[a-zA-Z0-9_.-]*[0-9A-HJKMNP-TV-Z]{26}[a-zA-Z0-9_.-]*$/;
+
 /**
  * Recursively walk a value tree and apply redact() to every string.
  * Returns the redacted tree and a boolean indicating whether any hit fired.
@@ -50,6 +58,11 @@ function walkDeep(value: unknown): { value: unknown; redactedAny: boolean } {
     // ULID-shaped reference IDs (errorId, relatedEventId, eventId, etc.) are
     // structural identifiers with high entropy by design — skip redaction.
     if (ULID_RE.test(value)) {
+      return { value, redactedAny: false };
+    }
+    // Structural paths that embed a ULID (e.g. adrPath "adrs/01H...J-foo.md")
+    // are also derived from IDs, not secrets.
+    if (STRUCTURAL_PATH_RE.test(value)) {
       return { value, redactedAny: false };
     }
     const result = redact(value);

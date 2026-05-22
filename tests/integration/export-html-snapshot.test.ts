@@ -312,6 +312,147 @@ describe("export-html-snapshot", () => {
     expect(report.externalRefs).toBe(0);
   });
 
+  // --- export-rich-interactive slice assertions (ADR-24, ADR-27) ---
+
+  it("output contains <nav class=\"lb-toc\"> (ADR-27)", async () => {
+    const dir = makeTmpProject();
+    const paths = makePaths(dir);
+    const outFile = path.join(dir, "out-toc.html");
+    await exportHtml({ paths, outFile });
+    const html = fs.readFileSync(outFile, "utf8");
+    expect(html).toContain('class="lb-toc"');
+  });
+
+  it("output contains <script type=\"application/json\" id=\"lb-data\"> (ADR-24)", async () => {
+    const dir = makeTmpProject();
+    const paths = makePaths(dir);
+    const outFile = path.join(dir, "out-data.html");
+    await exportHtml({ paths, outFile });
+    const html = fs.readFileSync(outFile, "utf8");
+    expect(html).toContain('type="application/json"');
+    expect(html).toContain('id="lb-data"');
+  });
+
+  it("output contains exactly two <script> blocks (data + inline JS) (ADR-24)", async () => {
+    const dir = makeTmpProject();
+    const paths = makePaths(dir);
+    const outFile = path.join(dir, "out-scripts.html");
+    await exportHtml({ paths, outFile });
+    const html = fs.readFileSync(outFile, "utf8");
+    const matches = html.match(/<script/gi) ?? [];
+    expect(matches.length).toBe(2);
+  });
+
+  it("output contains no <script src=> (ADR-24, IJ-8)", async () => {
+    const dir = makeTmpProject();
+    const paths = makePaths(dir);
+    const outFile = path.join(dir, "out-no-src.html");
+    await exportHtml({ paths, outFile });
+    const html = fs.readFileSync(outFile, "utf8");
+    expect(html).not.toContain("<script src=");
+    expect(html).not.toContain('<script src="');
+  });
+
+  it("ExportReport.allowedRefs is a number (ADR-20)", async () => {
+    const dir = makeTmpProject();
+    const paths = makePaths(dir);
+    const outFile = path.join(dir, "out-allowed.html");
+    const report = await exportHtml({ paths, outFile });
+    expect(typeof report.allowedRefs).toBe("number");
+    expect(report.allowedRefs).toBeGreaterThanOrEqual(0);
+  });
+
+  it("output sections appear in correct order: required sections present", async () => {
+    const dir = makeTmpProject();
+    const paths = makePaths(dir);
+    const outFile = path.join(dir, "out-order.html");
+    await exportHtml({ paths, outFile });
+    const html = fs.readFileSync(outFile, "utf8");
+
+    // Check that the required sections exist (Project Index, Timeline, Errors).
+    // New docs are optional and absent in this minimal fixture.
+    expect(html).toContain("Project Alpha");  // index.md content
+    expect(html).toContain("Timeline");       // timeline.md section
+    expect(html).toContain("Errors");         // errors-and-lessons.md section
+  });
+
+  it("lb-data block contains events array populated from events.jsonl", async () => {
+    // This test verifies the ctx → LbData wiring fix: the JSON data block must
+    // contain real events when events.jsonl is present, not an empty array.
+    const dir = makeTmpProject();
+    const paths = makePaths(dir);
+
+    // Write a minimal events.jsonl with two events.
+    fs.mkdirSync(path.join(dir, "logbook", "evidence"), { recursive: true });
+    const ev1 = JSON.stringify({
+      id: "ev-001",
+      ts: "2026-01-01T10:00:00.000Z",
+      type: "manual.decision",
+      title: "Use JSONL",
+      sessionId: "sess-aaa",
+      tags: ["storage"],
+      status: "open",
+      severity: "low",
+    });
+    const ev2 = JSON.stringify({
+      id: "ev-002",
+      ts: "2026-01-02T11:00:00.000Z",
+      type: "manual.error",
+      title: "Missing index",
+      sessionId: "sess-bbb",
+      status: "resolved",
+    });
+    fs.writeFileSync(path.join(dir, "logbook", "evidence", "events.jsonl"), `${ev1}\n${ev2}\n`, "utf8");
+
+    const outFile = path.join(dir, "out-lbdata.html");
+    await exportHtml({ paths, outFile });
+    const html = fs.readFileSync(outFile, "utf8");
+
+    // Extract the lb-data JSON block.
+    const match = html.match(/<script type="application\/json" id="lb-data">([\s\S]*?)<\/script>/);
+    expect(match).not.toBeNull();
+    const parsed = JSON.parse(match![1]!.replace(/\\\//g, "/"));
+
+    // Top-level shape.
+    expect(parsed.version).toBe(1);
+    expect(parsed.defaultRange).toBe("all");
+    expect(Array.isArray(parsed.events)).toBe(true);
+    expect(parsed.events.length).toBe(2);
+
+    // First event (sorted by ts — ev-001 should be first).
+    const first = parsed.events[0];
+    expect(first.id).toBe("ev-001");
+    expect(first.ts).toBe("2026-01-01T10:00:00.000Z");
+    expect(first.type).toBe("manual.decision");
+    expect(first.title).toBe("Use JSONL");
+    expect(first.sessionId).toBe("sess-aaa");
+    expect(first.tags).toEqual(["storage"]);
+    expect(first.status).toBe("open");
+    expect(first.severity).toBe("low");
+
+    // Second event.
+    const second = parsed.events[1];
+    expect(second.id).toBe("ev-002");
+    expect(second.type).toBe("manual.error");
+    expect(second.status).toBe("resolved");
+  });
+
+  it("lb-data block is valid JSON even when events.jsonl contains no events", async () => {
+    // readContext returns emptyContext() when events.jsonl is absent → events: [].
+    const dir = makeTmpProject();
+    const paths = makePaths(dir);
+    const outFile = path.join(dir, "out-lbdata-empty.html");
+    await exportHtml({ paths, outFile });
+    const html = fs.readFileSync(outFile, "utf8");
+
+    const match = html.match(/<script type="application\/json" id="lb-data">([\s\S]*?)<\/script>/);
+    expect(match).not.toBeNull();
+    const parsed = JSON.parse(match![1]!.replace(/\\\//g, "/"));
+    expect(parsed.version).toBe(1);
+    expect(Array.isArray(parsed.events)).toBe(true);
+    expect(parsed.events.length).toBe(0);
+  });
+
   it("body innerHTML snapshot — structural regression guard", async () => {
     const dir = makeTmpProject();
     const paths = makePaths(dir);

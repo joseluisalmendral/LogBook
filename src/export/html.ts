@@ -1,32 +1,36 @@
 /**
  * HTML export pipeline (T12).
  *
- * Reads the 3 generated docs from logbook/docs/, converts Markdown to HTML
+ * Reads the source docs from logbook/docs/, converts Markdown to HTML
  * via remark/rehype, inlines the CSS, asserts zero external refs, writes
  * the result atomically to logbook/exports/index.html.
  *
  * Design §7 — HTML export section.
  * Hard contract: assertNoExternalRefs throws if any external ref slips through.
+ *
+ * export-rich-interactive slice:
+ *   - SOURCE_DOCS extended from 4 to 9 entries (ADR-29).
+ *   - OPTIONAL_DOCS set extended to cover all 5 new docs.
+ *   - markdownToHtml extracted to shared module (ADR-23).
+ *   - buildHtmlDocument extracted to shared module (ADR-27).
+ *   - Inline JS + JSON data block injected (ADR-24).
  */
 
 import { readFile, writeFile, rename, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, dirname } from "pathe";
-import { unified } from "unified";
-import remarkParse from "remark-parse";
-import remarkRehype from "remark-rehype";
-import rehypeSlug from "rehype-slug";
-import rehypeStringify from "rehype-stringify";
 import { INLINE_CSS } from "./inline-css.js";
+import { INLINE_JS } from "./inline-js.js";
 import { assertNoExternalRefs } from "./sanitize-links.js";
 import { sanitizeForSafeExport, sanitizeCss } from "./safe.js";
-import { preprocessMermaidPlaceholders, injectMermaidSvgs } from "./mermaid.js";
+import { markdownToHtml } from "./markdown-to-html.js";
+import { buildHtmlDocument } from "./build-html-document.js";
 import {
   stripSpeakerBlocks,
   preprocessSpeakerPlaceholders,
-  injectSpeakerDivs,
   type SpeakerBlock,
 } from "../generate/speaker-blocks.js";
+import { readContext } from "../generate/render-context.js";
 import type { ProjectPaths } from "../core/paths.js";
 import type { ExportReport } from "../types/reports.js";
 
@@ -56,104 +60,56 @@ export interface ExportOptions {
 }
 
 /**
- * Names of the 4 source doc files under logbook/docs/.
+ * Names of the 9 source doc files under logbook/docs/.
  * ADR-01: explicit manifest — export order is authoritative here, not derived
- * from runAllGenerators. commits.md is gracefully skipped if absent.
+ * from runAllGenerators.
+ * ADR-29: all 5 new docs are in OPTIONAL_DOCS (graceful upgrade path).
+ *
+ * Section order (EH-1 spec):
+ *   Dashboard → Sessions → Decisions → Resources → Milestones
+ *   → Project Index → Commits → Errors and Lessons
+ *
+ * Note: "Timeline" is a pre-existing section (index.md adjacent) not mentioned
+ * in spec EH-1. It is placed after Project Index as an additive section.
+ * "Errors and Lessons" is the combined file serving both the Errors and Lessons
+ * spec sections; kept combined as a single file at the end per EH-1.
  */
 const SOURCE_DOCS = [
+  "dashboard.md",
+  "sessions.md",
+  "decisions.md",
+  "resources.md",
+  "milestones.md",
   "index.md",
   "timeline.md",
-  "errors-and-lessons.md",
   "commits.md",
+  "errors-and-lessons.md",
 ] as const;
 
 /** Section labels used when concatenating the docs. */
 const SECTION_LABELS: Record<string, string> = {
+  "dashboard.md": "Dashboard",
+  "sessions.md": "Sessions",
+  "decisions.md": "Decisions",
+  "resources.md": "Resources",
+  "milestones.md": "Milestones",
   "index.md": "Project Index",
   "timeline.md": "Timeline",
-  "errors-and-lessons.md": "Errors and Lessons",
   "commits.md": "Commits",
+  "errors-and-lessons.md": "Errors and Lessons",
 };
 
 /**
- * Build a full self-contained HTML document from a Markdown body string.
- * Inlines the CSS. Returns the complete HTML string (not yet sanitized).
- *
- * Pipeline (SG2c refactor — placeholder pattern, no rehype-raw):
- * 1. preprocessMermaidPlaceholders — replace ```mermaid fences with
- *    LBMERMAID_<n> bare-text placeholders (renders as <p>LBMERMAID_<n></p>); stash rendered SVGs.
- * 2. remark-parse — parse markdown AST
- * 3. remark-rehype — convert to hast (no allowDangerousHtml needed)
- * 4. rehype-slug — add id attributes to headings for anchor navigation
- * 5. rehype-stringify — serialize to HTML (comments preserved verbatim)
- * 6. injectMermaidSvgs — replace placeholder comments with
- *    <div class="mermaid"><svg>…</svg></div> via string-replace
- * 7. injectSpeakerDivs (if speakerBlocks provided) — replace <p>LBSPEAKER_N</p>
- *    paragraphs with <div class="speaker-note">...</div>
- */
-async function markdownToHtml(
-  markdown: string,
-  speakerBlocks?: SpeakerBlock[],
-): Promise<string> {
-  // Phase 1: extract mermaid fences → placeholders + SVG array.
-  const { markdown: withPlaceholders, svgs } =
-    await preprocessMermaidPlaceholders(markdown);
-
-  const processor = unified()
-    .use(remarkParse)
-    .use(remarkRehype)
-    .use(rehypeSlug)
-    .use(rehypeStringify);
-
-  const file = await processor.process(withPlaceholders);
-
-  // Phase 2: inject sanitized SVG divs in place of comment placeholders.
-  let html = injectMermaidSvgs(String(file), svgs);
-
-  // Phase 3 (speaker mode): inject speaker note divs.
-  if (speakerBlocks && speakerBlocks.length > 0) {
-    html = injectSpeakerDivs(html, speakerBlocks);
-  }
-
-  return html;
-}
-
-/**
- * Wrap an HTML body fragment in a complete HTML document with inlined CSS.
- *
- * ADR-05: the card layout requires two surfaces — body (page shell) and
- * .lb-doc (content card). The wrapper is added here, not in markdownToHtml,
- * so that function remains a pure markdown-to-fragment converter.
- *
- * @param css  The CSS string to inline (either INLINE_CSS or a sanitized theme).
- */
-function buildHtmlDocument(htmlBody: string, title: string, css: string): string {
-  return (
-    `<!DOCTYPE html>\n` +
-    `<html lang="en">\n` +
-    `<head>\n` +
-    `  <meta charset="utf-8">\n` +
-    `  <title>${title}</title>\n` +
-    `  <style>${css}</style>\n` +
-    `</head>\n` +
-    `<body>\n` +
-    `<main class="lb-doc">\n` +
-    htmlBody +
-    `\n</main>\n` +
-    `</body>\n` +
-    `</html>\n`
-  );
-}
-
-/**
- * Export all 3 generated docs to a single self-contained HTML file.
+ * Export all source docs to a single self-contained HTML file.
  *
  * Algorithm:
- * 1. Read logbook/docs/{index,timeline,errors-and-lessons}.md. Throw if missing.
+ * 1. Read logbook/docs/*.md (9 entries). Required docs throw if missing;
+ *    optional docs (ADR-29) are gracefully skipped.
  * 2. Concatenate with section dividers.
- * 3. Render Markdown → HTML via unified (remark-parse → remark-rehype → rehype-stringify).
- * 4. Build full HTML document with inlined CSS.
- * 5. assertNoExternalRefs — throws if any external ref slipped in.
+ * 3. Render Markdown → HTML via shared markdownToHtml (ADR-23).
+ * 4. Build full HTML document with inlined CSS, TOC nav, JSON data block,
+ *    and inline JS (buildHtmlDocument — ADR-24, ADR-27).
+ * 5. assertNoExternalRefs — throws if any non-allowlisted external ref slipped in.
  * 6. Write atomically (temp file + rename). Ensure parent dir exists.
  * 7. Return ExportReport.
  */
@@ -180,11 +136,19 @@ export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
     opts.outFile ?? join(paths.dataDir, "exports", "index.html");
 
   /**
-   * Docs that may be absent without aborting the export.
-   * commits.md is generated only when git history is present.
-   * Spec: "Project with no commits file" scenario.
+   * Docs that may be absent without aborting the export. ADR-29.
+   * commits.md: generated only when git history is present.
+   * New generator docs: may be absent on legacy projects that haven't run
+   * `logbook build` since the export-rich-interactive slice was added.
    */
-  const OPTIONAL_DOCS = new Set(["commits.md"]);
+  const OPTIONAL_DOCS = new Set([
+    "commits.md",
+    "sessions.md",
+    "dashboard.md",
+    "decisions.md",
+    "resources.md",
+    "milestones.md",
+  ]);
 
   // 1. Read source docs — fail fast if required docs are missing; skip optional ones.
   const markdownParts: string[] = [];
@@ -227,14 +191,54 @@ export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
     combinedMarkdown = stripSpeakerBlocks(combinedMarkdown);
   }
 
-  // 3 & 4. Convert to HTML and build the full document.
+  // 3. Convert markdown to HTML body fragment.
   const htmlBody = await markdownToHtml(combinedMarkdown, speakerBlocks);
-  const fullHtml = buildHtmlDocument(htmlBody, "LogBook", inlineCss);
 
-  // 5. Sanitize — throws if any external ref is detected.
+  // 4. Build data payload for inline JS (ADR-24).
+  // Read all events from JSONL, map to the narrow LbData shape (only fields
+  // needed for client-side filtering/searching — no raw blobs, no secrets).
+  const ctx = await readContext(paths);
+  const lbData = {
+    version: 1 as const,
+    defaultRange: "all" as const,
+    events: ctx.all.map((e) => {
+      // Build a narrowly-typed object; omit undefined fields to keep JSON small.
+      const entry: {
+        id: string;
+        ts: string;
+        type: string;
+        title?: string;
+        description?: string;
+        sessionId?: string;
+        phase?: string;
+        tags?: string[];
+        fileRefs?: string[];
+        severity?: string;
+        status?: string;
+      } = {
+        id: e.id,
+        ts: e.ts,
+        type: e.type,
+      };
+      if (typeof e["title"] === "string") entry.title = e["title"];
+      if (typeof e["description"] === "string") entry.description = e["description"];
+      if (typeof e["sessionId"] === "string") entry.sessionId = e["sessionId"];
+      if (typeof e["phase"] === "string") entry.phase = e["phase"];
+      if (Array.isArray(e["tags"])) entry.tags = e["tags"] as string[];
+      if (Array.isArray(e["fileRefs"])) entry.fileRefs = e["fileRefs"] as string[];
+      if (typeof e["severity"] === "string") entry.severity = e["severity"];
+      if (typeof e["status"] === "string") entry.status = e["status"];
+      return entry;
+    }),
+  };
+
+  // 5. Build the full HTML document with TOC nav, data block, and inline JS.
+  const fullHtml = buildHtmlDocument(htmlBody, "LogBook", inlineCss, INLINE_JS, lbData);
+
+  // 6. Sanitize — throws if any external ref is detected outside allowlist.
   const sanitizeResult = assertNoExternalRefs(fullHtml);
 
-  // 6. Write atomically (temp file + rename).
+  // 7. Write atomically (temp file + rename).
   const outDir = dirname(outFile);
   await mkdir(outDir, { recursive: true });
 
@@ -245,11 +249,12 @@ export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
   const bytes = Buffer.byteLength(fullHtml, "utf8");
   const durationMs = Date.now() - start;
 
-  // 7. Return ExportReport.
+  // 8. Return ExportReport.
   return {
     outFile,
     bytes,
     externalRefs: sanitizeResult.externalRefs,
+    allowedRefs: sanitizeResult.allowedRefs,
     durationMs,
   };
 }

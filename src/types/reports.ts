@@ -22,6 +22,8 @@ export interface ExportReport {
   bytes: number;
   /** Number of external references found (must be 0). */
   externalRefs: number;
+  /** Number of allowlisted external URLs (ADR-20: github.com, gitlab.com, bitbucket.org). */
+  allowedRefs: number;
   /** Wall-clock duration in milliseconds. */
   durationMs: number;
 }

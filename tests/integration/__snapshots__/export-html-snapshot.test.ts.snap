@@ -1,7 +1,23 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`export-html-snapshot > body innerHTML snapshot — structural regression guard 1`] = `
-"<h2 id="project-index">Project Index</h2>
+"<nav class="lb-toc" aria-label="Sections">
+ <ul>
+ <li><a href="#project-index">Project Index</a></li>
+ <li><a href="#section-one">Section One</a></li>
+ <li><a href="#section-two">Section Two</a></li>
+ <li><a href="#timeline">Timeline</a></li>
+ <li><a href="#2026-01-01">2026-01-01</a></li>
+ <li><a href="#2026-01-02">2026-01-02</a></li>
+ <li><a href="#2026-01-03">2026-01-03</a></li>
+ <li><a href="#commits">Commits</a></li>
+ <li><a href="#abc1234">abc1234</a></li>
+ <li><a href="#def5678">def5678</a></li>
+ <li><a href="#errors-and-lessons">Errors and Lessons</a></li>
+ <li><a href="#lessons-learned">Lessons Learned</a></li>
+ </ul>
+ </nav>
+<h2 id="project-index">Project Index</h2>
 <h1 id="project-alpha">Project Alpha</h1>
 <p>This is the index doc. It contains <strong>bold text</strong>, <em>italic</em>, and <code>inline code</code>.</p>
 <h2 id="section-one">Section One</h2>
@@ -19,9 +35,9 @@ No background fill, no italic.</p>
 | Row 3A | Row 3B | Row 3C |</p>
 <hr>
 <h2 id="section-two">Section Two</h2>
-<pre><code class="language-bash">echo "Hello from a code block"
+<div class="lb-pre-wrap"><pre><code class="language-bash">echo "Hello from a code block"
 ls -la
-</code></pre>
+</code></pre><button class="lb-copy" type="button" aria-label="Copy code">Copy</button></div>
 <p>A final paragraph before the end of the index document.</p>
 <hr>
 <h2 id="timeline">Timeline</h2>
@@ -39,6 +55,13 @@ ls -la
 <h2 id="2026-01-03">2026-01-03</h2>
 <p>Another session.</p>
 <hr>
+<h2 id="commits">Commits</h2>
+<h1 id="commits-1">Commits</h1>
+<h2 id="abc1234">abc1234</h2>
+<p>Initial commit — project scaffolding.</p>
+<h2 id="def5678">def5678</h2>
+<p>Add core JSONL append logic.</p>
+<hr>
 <h2 id="errors-and-lessons">Errors and Lessons</h2>
 <h1 id="errors-and-lessons-1">Errors and Lessons</h1>
 <h2 id="lessons-learned">Lessons Learned</h2>
@@ -48,12 +71,5 @@ ls -la
 </ul>
 <blockquote>
 <p>Remember: a small test suite is better than no test suite.</p>
-</blockquote>
-<hr>
-<h2 id="commits">Commits</h2>
-<h1 id="commits-1">Commits</h1>
-<h2 id="abc1234">abc1234</h2>
-<p>Initial commit — project scaffolding.</p>
-<h2 id="def5678">def5678</h2>
-<p>Add core JSONL append logic.</p>"
+</blockquote>"
 `;

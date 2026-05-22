@@ -231,6 +231,7 @@ export async function exportPdf(opts: ExportPdfOptions): Promise<ExportReport> {
       outFile,
       bytes: STUB_PDF.length,
       externalRefs: 0,
+      allowedRefs: 0,
       durationMs,
     };
   }
@@ -293,6 +294,7 @@ export async function exportPdf(opts: ExportPdfOptions): Promise<ExportReport> {
       outFile,
       bytes: (pdfBuffer as Buffer).length,
       externalRefs: 0,
+      allowedRefs: 0,
       durationMs,
     };
   } finally {

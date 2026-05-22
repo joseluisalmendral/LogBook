@@ -4,9 +4,12 @@
  * Exports:
  *  - readContext (from render-context)
  *  - upsertGeneratedBlock (from blocks)
- *  - runAllGenerators(opts) — runs all 3 deterministic generators
+ *  - runAllGenerators(opts) — runs all 9 deterministic generators
  *
  * BuildReport is defined in src/types/reports.ts.
+ *
+ * export-rich-interactive slice: 5 new generators wired (ADR-22).
+ * remoteUrl resolved once via getRemoteUrl() (ADR-21).
  */
 
 export { readContext } from "./render-context.js";
@@ -22,10 +25,16 @@ import { buildIndexDoc } from "./index-doc.js";
 import { buildTimelineDoc } from "./timeline-doc.js";
 import { buildErrorsDoc } from "./errors-doc.js";
 import { buildCommitsDoc } from "./commits-doc.js";
+import { buildSessionsDoc } from "./sessions-doc.js";
+import { buildDashboardDoc } from "./dashboard-doc.js";
+import { buildDecisionsDoc } from "./decisions-doc.js";
+import { buildResourcesDoc } from "./resources-doc.js";
+import { buildMilestonesDoc } from "./milestones-doc.js";
 import { readContext } from "./render-context.js";
 import { upsertGeneratedBlock } from "./blocks.js";
 import { sanitizeForSafeExport } from "../export/safe.js";
 import { readState } from "../core/state.js";
+import { getRemoteUrl } from "../connectors/git.js";
 import type { ProjectPaths } from "../core/paths.js";
 import type { BuildReport } from "../types/reports.js";
 
@@ -39,6 +48,7 @@ interface GeneratorSpec {
 
 function makeGenerators(remoteUrl: string | undefined): GeneratorSpec[] {
   return [
+    // Existing generators
     {
       filename: "index.md",
       markerName: "logbook:doc:index",
@@ -58,6 +68,32 @@ function makeGenerators(remoteUrl: string | undefined): GeneratorSpec[] {
       filename: "commits.md",
       markerName: "logbook:doc:commits",
       build: (ctx) => buildCommitsDoc(ctx, remoteUrl),
+    },
+    // New generators — export-rich-interactive slice (ADR-22)
+    {
+      filename: "sessions.md",
+      markerName: "logbook:doc:sessions",
+      build: buildSessionsDoc,
+    },
+    {
+      filename: "dashboard.md",
+      markerName: "logbook:doc:dashboard",
+      build: buildDashboardDoc,
+    },
+    {
+      filename: "decisions.md",
+      markerName: "logbook:doc:decisions",
+      build: buildDecisionsDoc,
+    },
+    {
+      filename: "resources.md",
+      markerName: "logbook:doc:resources",
+      build: buildResourcesDoc,
+    },
+    {
+      filename: "milestones.md",
+      markerName: "logbook:doc:milestones",
+      build: buildMilestonesDoc,
     },
   ];
 }
@@ -87,16 +123,26 @@ export async function runAllGenerators(opts: {
   // Read context once — shared by all generators
   const ctx = await readContext(opts.paths);
 
-  // Resolve remoteUrl for commits-doc: prefer explicit override, then state cache.
+  // Resolve remoteUrl: prefer explicit override, then getRemoteUrl() (ADR-21).
+  // getRemoteUrl() reads git origin once per build; result is used by commits-doc
+  // to generate clickable SHA links for allowlisted hosts (github/gitlab/bitbucket).
   let remoteUrl = opts.remoteUrl;
   if (remoteUrl === undefined) {
     try {
       const state = readState(opts.paths.statePath);
-      // remoteUrl is not in state yet — use undefined (no links in commits.md by default).
-      // A future slice (S2.x) may cache it in state. For now, state only has gitSha.
+      // remoteUrl is not in state yet — use undefined as fallback.
+      // State only has gitSha for now; a future slice may cache remoteUrl.
       void state; // acknowledged: no remoteUrl in state yet
     } catch {
       // ignore
+    }
+  }
+  if (remoteUrl === undefined) {
+    try {
+      remoteUrl = await getRemoteUrl(opts.paths.root);
+    } catch {
+      // Non-fatal: getRemoteUrl returns undefined on failure; commits-doc falls
+      // back to plain SHA text when remoteUrl is undefined.
     }
   }
 

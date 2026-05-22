@@ -534,6 +534,7 @@ export async function exportInstructorPack(
     outFile,
     bytes,
     externalRefs: sanitizeResult.externalRefs,
+    allowedRefs: sanitizeResult.allowedRefs,
     durationMs,
   };
 }

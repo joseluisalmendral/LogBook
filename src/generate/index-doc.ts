@@ -12,6 +12,7 @@
  */
 
 import type { RenderContext, RenderEvent } from "./render-context.js";
+import { buildHtmlTable } from "./html-table.js";
 
 // ---------------------------------------------------------------------------
 // Internal helpers
@@ -107,20 +108,31 @@ export function buildIndexDoc(ctx: RenderContext): string {
   if (sorted.length === 0) {
     lines.push("_No decisions recorded yet._");
   } else {
-    lines.push("| # | Title | Status | Link |");
-    lines.push("|---|-------|--------|------|");
-    for (const d of sorted) {
+    // Raw HTML <table> instead of GFM pipe-tables (remark-gfm not installed).
+    function escH(s: string): string {
+      return s
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+    }
+    const tableRows = sorted.map((d) => {
       const counter = typeof d["adrCounter"] === "number"
         ? String(d["adrCounter"]).padStart(4, "0")
         : "????";
-      const title = eventTitle(d);
-      const status = typeof d["status"] === "string" ? d["status"] : "Unknown";
+      const title = escH(eventTitle(d));
+      const status = escH(typeof d["status"] === "string" ? d["status"] : "Unknown");
       const adrPath = typeof d["adrPath"] === "string" ? d["adrPath"] : "";
       const link = adrPath
-        ? `[${counter}](../../${adrPath})`
+        ? `<a href="../../${escH(adrPath)}" rel="noopener">${counter}</a>`
         : counter;
-      lines.push(`| ${counter} | ${title} | ${status} | ${link} |`);
-    }
+      return [counter, title, status, link];
+    });
+    lines.push(buildHtmlTable(
+      { headers: ["#", "Title", "Status", "Link"] },
+      tableRows,
+      false, // cells pre-escaped above
+    ));
   }
   lines.push("");
 

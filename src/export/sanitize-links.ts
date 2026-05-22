@@ -1,8 +1,9 @@
 /**
  * HTML external-reference sanitizer (T12).
  *
- * Hard contract: the generated HTML must have ZERO external references.
- * This module provides regex-based detection and a throwing assertion.
+ * Hard contract: the generated HTML must have ZERO external references,
+ * except URLs from the host allowlist (ADR-20). Scripts/stylesheets/iframes
+ * are NEVER allowlisted — only navigation href URLs can pass the allowlist.
  *
  * Patterns matched:
  *   - External URLs:    /\bhttps?:\/\/[^\s"'<>]+/g
@@ -19,7 +20,49 @@
  * encoded by rehype (e.g., `>` → `&gt;`). The URL regex matches literal
  * `https?://`, which does NOT match entity-encoded text. Code block URLs
  * therefore do NOT trigger the sanitizer.
+ *
+ * ADR-20: allowlist of trusted git hosting providers.
+ * Exact hostname match (not substring) — defeats github.com.attacker.com spoofing.
+ * HTTPS only — blocks http:// downgrade attacks.
  */
+
+// ---------------------------------------------------------------------------
+// Allowlist — ADR-20
+// ---------------------------------------------------------------------------
+
+/**
+ * Exact-match set of allowed git hosting hostnames.
+ * Match is ALWAYS exact (new URL().hostname.toLowerCase()) — never substring.
+ * Only https:// protocol is accepted.
+ */
+export const ALLOWED_HOSTS: ReadonlySet<string> = new Set([
+  "github.com",
+  "gitlab.com",
+  "bitbucket.org",
+]);
+
+/**
+ * Return true if `raw` is an HTTPS URL whose hostname is exactly in ALLOWED_HOSTS.
+ *
+ * Strips trailing punctuation that glues to URLs in markdown/HTML output
+ * (e.g. ")" from "(https://github.com/foo)") before parsing.
+ *
+ * Security notes:
+ *   - `new URL().hostname` returns the raw host portion without port.
+ *     "github.com.attacker.com" → hostname = "github.com.attacker.com" → NOT in Set.
+ *   - Only https: is accepted; http: is always blocked (downgrade risk).
+ *   - Invalid URLs throw → caught → return false (fail-closed).
+ */
+export function isAllowlistedUrl(raw: string): boolean {
+  const cleaned = raw.replace(/[).,;:!?]+$/, "");
+  try {
+    const u = new URL(cleaned);
+    if (u.protocol !== "https:") return false;
+    return ALLOWED_HOSTS.has(u.hostname.toLowerCase());
+  } catch {
+    return false;
+  }
+}
 
 export interface SanitizeReport {
   externalUrls: string[];
@@ -53,32 +96,47 @@ export function sanitizeReport(html: string): SanitizeReport {
 
 /** Return value of assertNoExternalRefs on the success path. */
 export interface ExternalRefsResult {
-  /** Count of external references found (always 0 on the success path). */
+  /** Count of BLOCKED (non-allowlisted) external references (always 0 on success path). */
   externalRefs: number;
+  /** Count of allowlisted URLs that passed the allowlist check (ADR-20). */
+  allowedRefs: number;
 }
 
 /**
- * Assert that the HTML has no external references.
- * Throws an Error if any external ref is detected.
+ * Assert that the HTML has no external references outside the allowlist.
+ * Throws an Error if any non-allowlisted external ref is detected, or if
+ * scripts/stylesheets/iframes are present (these are NEVER allowlisted).
  *
- * Returns { externalRefs: 0 } on success so callers can forward the
- * count directly into ExportReport without hardcoding a constant.
+ * Returns { externalRefs: 0, allowedRefs: N } on success.
+ * `allowedRefs` counts URLs that matched the ALLOWED_HOSTS set (ADR-20).
  *
  * Used as the final gatekeeper in the exportHtml pipeline.
  * If this throws, the export is aborted (temp file is not renamed to outFile).
  *
- * ADR-02: per design, commits.md uses plain SHA text so externalRefs is
- * always 0 on the success path. The return shape is future-proof insurance
- * for policy changes that allow counted-but-not-blocked refs.
+ * ADR-20: allowlist relaxes the previously strict no-URL policy for git
+ * hosting providers. Scripts/stylesheets/iframes remain unconditionally blocked.
  */
 export function assertNoExternalRefs(html: string): ExternalRefsResult {
   const report = sanitizeReport(html);
 
+  const blocked: string[] = [];
+  let allowedRefs = 0;
+
+  // Partition URLs into allowed vs blocked.
+  for (const url of report.externalUrls) {
+    if (isAllowlistedUrl(url)) {
+      allowedRefs++;
+    } else {
+      blocked.push(url);
+    }
+  }
+
   const violations: string[] = [];
 
-  if (report.externalUrls.length > 0) {
+  if (blocked.length > 0) {
+    const blockedSamples = blocked.slice(0, 5);
     violations.push(
-      `External URLs found (${report.externalUrls.length}): ${report.externalUrls.slice(0, 3).join(", ")}`
+      `External URLs found (${blocked.length}): ${blockedSamples.join(", ")}`
     );
   }
   if (report.externalScripts.length > 0) {
@@ -104,5 +162,5 @@ export function assertNoExternalRefs(html: string): ExternalRefsResult {
     );
   }
 
-  return { externalRefs: 0 };
+  return { externalRefs: 0, allowedRefs };
 }
