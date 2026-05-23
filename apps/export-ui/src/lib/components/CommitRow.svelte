@@ -16,6 +16,11 @@
   const shortSha = $derived(sha.length > 7 ? sha.slice(0, 7) : sha);
   const message = $derived(typeof payload.message === "string" ? payload.message : (event.title ?? ""));
   const author = $derived(typeof payload.author === "string" ? payload.author : "");
+  // Slice-12 P3 (R-60, R-61, ADR-SC-C1): server-built commit URL. When present
+  // the SHA renders as a target=_blank anchor; otherwise as plain <code>.
+  const commitUrl = $derived(
+    typeof payload.commitUrl === "string" ? payload.commitUrl : "",
+  );
 
   function open(): void {
     inspector.open(event.id);
@@ -40,7 +45,20 @@
   onkeydown={onKey}
 >
   {#if shortSha}
-    <code class="sha lb-tnum">{shortSha}</code>
+    {#if commitUrl}
+      <a
+        class="sha sha-link lb-tnum"
+        href={commitUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label={`Open commit ${shortSha} on remote`}
+        onclick={(e) => e.stopPropagation()}
+        data-deep-link="commit"
+        data-testid="commit-sha-link"
+      >{shortSha}</a>
+    {:else}
+      <code class="sha lb-tnum">{shortSha}</code>
+    {/if}
   {/if}
   <span class="message">{message}</span>
   {#if author}
@@ -69,6 +87,18 @@
     border-radius: var(--radius-xs);
     font-family: var(--font-mono);
     font-size: var(--font-size-caption);
+  }
+
+  /* Slice 12 P3: anchor variant — same chip surface, native link semantics. */
+  .sha-link {
+    text-decoration: none;
+    cursor: pointer;
+    transition: background 150ms ease, color 150ms ease;
+  }
+  .sha-link:hover,
+  .sha-link:focus-visible {
+    background: var(--color-accent-primary);
+    color: var(--color-surface-sunken);
   }
 
   .message {
