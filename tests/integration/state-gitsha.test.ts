@@ -102,6 +102,7 @@ describe("event.gitSha is optional (backward compat)", () => {
       resources: [],
       visuals: [],
       milestones: [],
+      latestSessionId: "",
       all: [
         {
           id: "dec-001",
@@ -135,6 +136,7 @@ describe("buildCommitsDoc", () => {
       resources: [],
       visuals: [],
       milestones: [],
+      latestSessionId: "",
       all: [
         {
           id: "e-001",
@@ -145,7 +147,11 @@ describe("buildCommitsDoc", () => {
       ],
     };
     const doc = buildCommitsDoc(ctx, undefined);
-    expect(doc).toContain("No git-tagged events");
+    // visual-replay-redesign Phase 4 (V9) rewrote empty states to Spanish per
+    // cognitive-doc-design "lead with the answer" — assert on the lb-empty-state
+    // shell + the Spanish lead phrase, not the old English placeholder.
+    expect(doc).toContain("lb-empty-state");
+    expect(doc).toContain("Aún no hay commits");
   });
 
   it("groups events by gitSha and shows 7-char abbreviated SHA", () => {
@@ -168,6 +174,7 @@ describe("buildCommitsDoc", () => {
       resources: [],
       visuals: [],
       milestones: [],
+      latestSessionId: "",
       all: [
         {
           id: "dec-001",
@@ -197,6 +204,7 @@ describe("buildCommitsDoc", () => {
       resources: [],
       visuals: [],
       milestones: [],
+      latestSessionId: "",
       all: [
         {
           id: "snap-001",
@@ -223,6 +231,7 @@ describe("buildCommitsDoc", () => {
       resources: [],
       visuals: [],
       milestones: [],
+      latestSessionId: "",
       all: [
         {
           id: "snap-001",
@@ -249,6 +258,7 @@ describe("buildCommitsDoc", () => {
       resources: [],
       visuals: [],
       milestones: [],
+      latestSessionId: "",
       all: [
         {
           id: "e-001",
