@@ -1,0 +1,91 @@
+/*
+ * app.css — root stylesheet for the export-ui bundle.
+ *
+ * IMPORT ORDER IS LOAD-BEARING (design §9 D6 + slice-0 smoke check #4).
+ *
+ * Tokens MUST be imported BEFORE @tailwind base. Tailwind's JIT generates
+ * utilities that reference var(--color-*) — if the variables are declared
+ * AFTER the @tailwind directives, the cascade resolves them in the wrong
+ * order in some browsers (older Safari especially) and utilities render
+ * unstyled or fall back to literal "var(--color-*)" strings.
+ *
+ * Order:
+ *   1. primitives.css         raw values
+ *   2. semantic.css           light mode token mapping (default)
+ *   3. semantic-dark.css      dark mode token overrides
+ *   4. components.css         component-bound aliases
+ *   5. @tailwind base         resets + base styles (consumes tokens)
+ *   6. @tailwind components   component classes
+ *   7. @tailwind utilities    utility classes (last so they win)
+ */
+
+@import "./lib/tokens/primitives.css";
+@import "./lib/tokens/semantic.css";
+@import "./lib/tokens/semantic-dark.css";
+@import "./lib/tokens/components.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* Editorial baseline. Tokens drive every color so [data-theme] swap is total. */
+  html {
+    background-color: var(--color-surface);
+    color: var(--color-text-primary);
+    font-family: var(--font-body);
+    font-size: var(--font-size-body);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+  }
+
+  h1, h2, h3 {
+    font-family: var(--font-headline);
+    color: var(--color-text-primary);
+    letter-spacing: -0.01em;
+  }
+
+  /* Tabular numbers for timestamps + metrics (design §1.4). */
+  time, .lb-tnum {
+    font-feature-settings: "tnum", "cv11";
+  }
+
+  code, pre, kbd {
+    font-family: var(--font-mono);
+  }
+
+  /* Hide focus ring for mouse users; keep for keyboard users. */
+  :focus:not(:focus-visible) {
+    outline: none;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-accent-primary);
+    outline-offset: 2px;
+  }
+}
+
+/*
+ * Motion mode hooks — MotionRoot sets data-motion on <html>.
+ *   data-motion="reduced"  → prefers-reduced-motion OR mobile graceful-degrade
+ *   data-motion="allowed"  → everything else
+ *
+ * Components branch via attribute selector so reduced-motion behavior is
+ * declarative + auditable in CSS, not buried in JS conditionals.
+ */
+@layer base {
+  html[data-motion="reduced"] *,
+  html[data-motion="reduced"] *::before,
+  html[data-motion="reduced"] *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}

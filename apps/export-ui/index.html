@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>LogBook Export</title>
+    <!--
+      THEME BOOT — runs BEFORE the CSS link so the [data-theme] attribute is
+      set on <html> synchronously. Without this, dark-mode users see a flash
+      of light mode while the JS bundle parses (design §9 D2 — FOUC fix).
+
+      Resolution order:
+        1. localStorage["lb.theme"] (explicit user choice persists)
+        2. prefers-color-scheme: dark (OS-level preference)
+        3. "light" (default per design §1.2 — light is the default mode)
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem("lb.theme");
+          var theme =
+            stored === "light" || stored === "dark"
+              ? stored
+              : window.matchMedia &&
+                window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light";
+          document.documentElement.setAttribute("data-theme", theme);
+        } catch (_e) {
+          document.documentElement.setAttribute("data-theme", "light");
+        }
+      })();
+    </script>
+    <!--
+      Payload placeholder. At export time, src/export/html.ts will inject the
+      JSON-stringified ExportPayloadV2 between the script tags. Slice 10 (P5)
+      handles </script> escape in the injected payload (R-43).
+    -->
+    <script id="lb-data" type="application/json"></script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

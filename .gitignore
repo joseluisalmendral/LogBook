@@ -10,3 +10,9 @@ coverage/
 .logbook/
 logbook/
 # lb-gitignore-001
+
+# Vendored export-ui bundle — MUST be committed (R-4) so npm consumers can
+# install without re-running Vite. The blanket `dist/` rule above would
+# otherwise exclude it.
+!apps/export-ui/dist/
+!apps/export-ui/dist/index.html

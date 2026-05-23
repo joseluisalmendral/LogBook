@@ -1,0 +1,47 @@
+/*
+ * Semantic tokens — dark mode ("cinema dark"). Layer 2 of three-layer system.
+ *
+ * Activated by [data-theme="dark"] on <html>. The boot script in index.html
+ * sets this attribute BEFORE this CSS loads (FOUC fix, design §9 D2).
+ *
+ * Dark mode is NOT inverted from light — it's a deliberate cinema register
+ * with boosted accent saturation (design §1.3).
+ *
+ * WCAG AA verification (design §1.3):
+ *   - text-primary (#F0EDE6) on surface  (#0F1014) → ~16.0 : 1 ✓ AAA
+ *   - text-primary on surface-raised     (#1A1B22) → ~13.8 : 1 ✓ AAA
+ *   - text-secondary (#A8A4A0) on surface          → ~7.9  : 1 ✓ AA Normal
+ *   - text-tertiary  (#6E6B68) on surface          → ~3.5  : 1 ✓ AA Large only
+ *   - accent-primary (#5B8FD9) on surface-raised   → ~5.8  : 1 ✓ AA Normal
+ *   - accent-secondary (#D8824A) on surface        → ~6.4  : 1 ✓ AA Normal
+ *
+ * Risk D10: if motion AUDIT flags antique-gold question accent against the
+ * cinema-dark background, --color-question is the SINGLE knob to retune
+ * without touching component code.
+ */
+
+[data-theme="dark"] {
+  /* Surfaces */
+  --color-surface:         var(--p-ink-950);
+  --color-surface-raised:  var(--p-ink-900);
+  --color-surface-sunken:  var(--p-ink-1000);
+
+  /* Text */
+  --color-text-primary:    var(--p-paper-50);
+  --color-text-secondary:  var(--p-paper-400);
+  --color-text-tertiary:   var(--p-paper-600);
+
+  /* Borders */
+  --color-border-hairline: var(--p-paper-overlay-10);
+
+  /* Accents — boosted for dark surface */
+  --color-accent-primary:    var(--p-navy-400);
+  --color-accent-secondary:  var(--p-terracotta-400);
+  --color-success:           var(--p-sage-400);
+  --color-error:             var(--p-brick-400);
+  --color-warning:           var(--p-amber-400);
+  --color-decision:          var(--p-plum-400);
+  --color-fix:               var(--p-sage-400);
+  --color-lesson:            var(--p-terracotta-400);
+  --color-question:          var(--p-gold-400);
+}

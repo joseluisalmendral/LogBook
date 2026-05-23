@@ -1,0 +1,36 @@
+/*
+ * Component tokens — layer 3 of the three-layer system (design §1.1).
+ *
+ * Component-bound aliases that import semantic tokens. Tweaking
+ * --inspector-width here re-flows EVERY consumer without touching component
+ * files. Adding a new component token (e.g. --scrubber-thumb-radius) is the
+ * only way components are allowed to introduce new layout constants.
+ *
+ * Seeded with the 5 component tokens that P3 / P4 will consume directly.
+ * Later phases add more.
+ */
+
+:root {
+  /* Card chrome (design §1.5 — editorial card padding 32px = --p-space-6) */
+  --card-padding: var(--p-space-6);
+  --card-radius: var(--p-radius-md);
+  --card-border: 1px solid var(--color-border-hairline);
+
+  /* Reading column for body copy (design §1.5) */
+  --reading-max-width: 72ch;
+
+  /* Scrubber (P3 — design §2 row 6 + motion §4) */
+  --scrubber-track-height: 4px;
+  --scrubber-thumb-size: 12px;
+
+  /* Slide-in PromptInspector (P4 — design §2 row 15 + motion #11) */
+  --inspector-width: 480px;
+  --inspector-backdrop-color: rgba(0, 0, 0, 0.40);
+
+  /* Radius aliases (re-exported semantic → component for clarity) */
+  --radius-xs: var(--p-radius-xs);
+  --radius-sm: var(--p-radius-sm);
+  --radius-md: var(--p-radius-md);
+  --radius-lg: var(--p-radius-lg);
+  --radius-xl: var(--p-radius-xl);
+}

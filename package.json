@@ -7,14 +7,19 @@
   },
   "packageManager": "pnpm@10.28.0",
   "scripts": {
-    "build": "tsup",
+    "build": "pnpm build:ui && pnpm sync:export-ui && tsup",
+    "build:ui": "pnpm --filter export-ui build",
     "dev": "tsup --watch",
+    "dev:ui": "pnpm --filter export-ui dev",
+    "sync:export-ui": "tsx scripts/sync-export-ui.ts",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
+    "test:ui": "pnpm --filter export-ui test",
     "pretest:e2e": "pnpm build",
     "test:e2e": "vitest run --project e2e",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "pnpm build:ui && pnpm sync:export-ui && pnpm typecheck && pnpm test"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "3.0.78",
