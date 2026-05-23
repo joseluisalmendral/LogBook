@@ -3,6 +3,7 @@
 -->
 <script lang="ts">
   import type { RenderEvent } from "../types";
+  import { inspector } from "../stores/inspector";
 
   interface Props {
     event: RenderEvent;
@@ -15,9 +16,29 @@
   const shortSha = $derived(sha.length > 7 ? sha.slice(0, 7) : sha);
   const message = $derived(typeof payload.message === "string" ? payload.message : (event.title ?? ""));
   const author = $derived(typeof payload.author === "string" ? payload.author : "");
+
+  function open(): void {
+    inspector.open(event.id);
+  }
+
+  function onKey(e: KeyboardEvent): void {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      open();
+    }
+  }
 </script>
 
-<div class="commit-row" data-testid="commit-row">
+<div
+  class="commit-row"
+  data-testid="commit-row"
+  data-interactive
+  role="button"
+  tabindex="0"
+  aria-label={`Open commit ${shortSha || event.id}`}
+  onclick={open}
+  onkeydown={onKey}
+>
   {#if shortSha}
     <code class="sha lb-tnum">{shortSha}</code>
   {/if}

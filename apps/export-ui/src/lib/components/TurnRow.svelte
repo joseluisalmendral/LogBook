@@ -92,7 +92,13 @@
     <CommitRow {event} />
   {:else}
     <!-- Lesson / fix / generic — minimal row with click-to-inspect. -->
-    <button type="button" class="generic-row" data-kind-row={kind} onclick={openInspector}>
+    <button
+      type="button"
+      class="generic-row"
+      data-kind-row={kind}
+      data-interactive
+      onclick={openInspector}
+    >
       <span class="row-dot" aria-hidden="true"></span>
       <span class="row-eyebrow">{kind === "lesson" ? "Lesson" : kind === "fix" ? "Fix" : "Event"}</span>
       <span class="row-title">{event.title ?? "Untitled event"}</span>

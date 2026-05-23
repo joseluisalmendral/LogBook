@@ -37,6 +37,7 @@
     class="error-row"
     role="button"
     tabindex="0"
+    data-interactive
     onclick={openInspector}
     onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openInspector(); } }}
   >

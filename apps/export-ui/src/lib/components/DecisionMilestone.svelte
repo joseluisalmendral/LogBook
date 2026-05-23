@@ -53,6 +53,7 @@
   type="button"
   class="decision"
   data-testid="decision-milestone"
+  data-interactive
   data-in-view={inView}
   onclick={openInspector}
   bind:this={cardEl}

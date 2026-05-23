@@ -80,6 +80,7 @@
   aria-label={`Open session ${chapter.label}`}
   data-testid="session-tile"
   data-session-id={chapter.sessionId}
+  data-interactive
   style="view-transition-name: {vtName};"
   onclick={navigate}
   onkeydown={onKey}
