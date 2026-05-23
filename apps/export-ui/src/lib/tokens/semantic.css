@@ -47,6 +47,9 @@
   --color-fix:               var(--p-sage-600);   /* alias of success */
   --color-lesson:            var(--p-terracotta-600); /* alias of accent-secondary */
   --color-question:          var(--p-gold-700);
+  --color-milestone:         var(--p-navy-700);   /* alias of accent-primary */
+  --color-subagent:          var(--p-graphite-900); /* slice 12: matches scrubber chip mapping */
+  --color-generic:           var(--p-graphite-400); /* tertiary tone for unknown kinds */
 
   /* Type */
   --font-headline: var(--p-font-serif);

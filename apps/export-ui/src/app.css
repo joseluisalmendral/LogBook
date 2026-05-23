@@ -23,6 +23,7 @@
 @import "./lib/tokens/semantic.css";
 @import "./lib/tokens/semantic-dark.css";
 @import "./lib/tokens/components.css";
+@import "./lib/styles/affordance.css";
 
 @tailwind base;
 @tailwind components;
