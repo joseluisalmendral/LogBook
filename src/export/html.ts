@@ -39,7 +39,27 @@ export interface ExportOptions {
   themePath?: string;
   /** Reserved for parity with the legacy API. Currently unused. */
   speakerMode?: boolean;
+  /**
+   * Slice-12 P4 budget gate: skip the raw-transcript embed entirely. Maps to
+   * the CLI flag `--no-transcripts` and the env var
+   * `LOGBOOK_EXPORT_NO_TRANSCRIPTS=1`. When unset, the gate also kicks in
+   * automatically if the final HTML exceeds `BUDGET_GATE_MAX_BYTES`.
+   */
+  noTranscripts?: boolean;
 }
+
+/**
+ * Slice-12 P4: hard ceiling for the single-file HTML output. If a build hits
+ * this AND transcripts are present, we re-run the payload assembly with
+ * `noTranscripts: true` and emit a warning. The number was picked as a
+ * reasonable headroom over the P3 baseline (~167 KB raw) — large enough to
+ * accommodate normal transcript embed (≤512 KB × ~3-10 sessions) without
+ * tipping into ranges that hurt cold-load.
+ *
+ * This gate REPLACES the missing `pnpm doctor --measure` for slice 12 per
+ * ADR-SC-D2; doctor-measure is the long-term enforcement path.
+ */
+const BUDGET_GATE_MAX_BYTES = 5 * 1024 * 1024;
 
 /** Placeholder script tag inside the vendored UI bundle that receives the payload. */
 const LB_DATA_TAG_RE = /<script id="lb-data" type="application\/json">[\s\S]*?<\/script>/;
@@ -100,9 +120,19 @@ export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
     // Non-fatal: missing remote is normal for fresh repos.
   }
 
-  const { payload, oversize } = await buildExportPayload(ctx, paths, {
-    remoteUrl,
-  });
+  // Slice-12 P4 budget gate: caller flag OR env var disables transcripts up
+  // front. The post-build size check below also kicks in if the gate flag
+  // was not pre-set but the rendered HTML balloons past BUDGET_GATE_MAX_BYTES.
+  const envNoTranscripts = process.env["LOGBOOK_EXPORT_NO_TRANSCRIPTS"] === "1";
+  const initialNoTranscripts = opts.noTranscripts === true || envNoTranscripts;
+
+  const buildOpts: Parameters<typeof buildExportPayload>[2] = {
+    noTranscripts: initialNoTranscripts,
+  };
+  if (remoteUrl !== undefined) buildOpts.remoteUrl = remoteUrl;
+  let buildResult = await buildExportPayload(ctx, paths, buildOpts);
+  let payload = buildResult.payload;
+  const oversize = buildResult.oversize;
 
   // 3. Pre-render mermaid diagrams (best-effort).
   await attachMermaidSvgs(payload);
@@ -121,9 +151,34 @@ export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
   }
 
   // 5. Inject the payload into the vendored bundle (R-43 </script> escape).
-  const jsonPayload = escapeJsonForScriptTag(JSON.stringify(payload));
-  const injected = `<script id="lb-data" type="application/json">${jsonPayload}</script>`;
-  const html = UI_BUNDLE.replace(LB_DATA_TAG_RE, injected);
+  let jsonPayload = escapeJsonForScriptTag(JSON.stringify(payload));
+  let injected = `<script id="lb-data" type="application/json">${jsonPayload}</script>`;
+  let html = UI_BUNDLE.replace(LB_DATA_TAG_RE, injected);
+
+  // 5b. Slice-12 P4 budget gate (replaces missing `pnpm doctor --measure`):
+  // if the rendered HTML overshoots BUDGET_GATE_MAX_BYTES AND we had not
+  // pre-disabled transcripts, drop them and rebuild once. The single-file
+  // HTML mandate (R-1) is non-negotiable; transcripts are the first thing we
+  // shed when bytes are tight.
+  if (
+    !initialNoTranscripts &&
+    payload.transcripts !== undefined &&
+    Buffer.byteLength(html, "utf8") > BUDGET_GATE_MAX_BYTES
+  ) {
+    process.stderr.write(
+      `warning: export exceeded budget (${Buffer.byteLength(html, "utf8")} bytes > ${BUDGET_GATE_MAX_BYTES}); ` +
+        `re-rendering with --no-transcripts. Set LOGBOOK_EXPORT_NO_TRANSCRIPTS=1 to skip this work.\n`,
+    );
+    const rebuildOpts: Parameters<typeof buildExportPayload>[2] = {
+      noTranscripts: true,
+    };
+    if (remoteUrl !== undefined) rebuildOpts.remoteUrl = remoteUrl;
+    buildResult = await buildExportPayload(ctx, paths, rebuildOpts);
+    payload = buildResult.payload;
+    jsonPayload = escapeJsonForScriptTag(JSON.stringify(payload));
+    injected = `<script id="lb-data" type="application/json">${jsonPayload}</script>`;
+    html = UI_BUNDLE.replace(LB_DATA_TAG_RE, injected);
+  }
 
   if (html === UI_BUNDLE) {
     throw new Error(
