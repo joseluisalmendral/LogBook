@@ -48,6 +48,8 @@
   import MarkdownBlock from "./MarkdownBlock.svelte";
   import { inspector } from "../stores/inspector";
   import { linkifyText } from "../util/deep-link";
+  import { selection } from "../stores/selection";
+  import { router } from "../stores/router";
 
   interface Props {
     event: RenderEvent;
@@ -86,6 +88,14 @@
 
   function toggleExpand(): void {
     expanded = !expanded;
+    // Bidirectional link wiring (R-68 / ADR-SC-D3): emit selection + URL hash
+    // query so the transcript view can sync. The card lives inside
+    // #/chapter/<sid>, so we navigate to the same route but with ?event=<id>.
+    const route = router.get();
+    if (route.name === "chapter") {
+      selection._setFromRoute("chapter", event.id);
+      router.navigate({ name: "chapter", chapterId: route.chapterId, eventId: event.id });
+    }
   }
 
   function openInspector(e: MouseEvent): void {
@@ -126,6 +136,7 @@
   data-testid="sub-agent-card"
   data-expanded={expanded}
   data-in-view={inView}
+  data-event-id={event.id}
 >
   <button
     type="button"

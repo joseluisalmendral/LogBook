@@ -6,6 +6,8 @@
 <script lang="ts">
   import type { RenderEvent } from "../types";
   import { inspector } from "../stores/inspector";
+  import { selection } from "../stores/selection";
+  import { router } from "../stores/router";
 
   interface Props {
     event: RenderEvent;
@@ -15,6 +17,12 @@
 
   function open(): void {
     inspector.open(event.id);
+    // Slice-12 P7 (R-68): emit selection + URL hash query for transcript sync.
+    const route = router.get();
+    if (route.name === "chapter") {
+      selection._setFromRoute("chapter", event.id);
+      router.navigate({ name: "chapter", chapterId: route.chapterId, eventId: event.id });
+    }
   }
 
   function onKey(e: KeyboardEvent): void {
@@ -28,6 +36,7 @@
 <div
   class="resource"
   data-testid="resource-card"
+  data-event-id={event.id}
   data-interactive
   role="button"
   tabindex="0"
