@@ -5,21 +5,51 @@
 -->
 <script lang="ts">
   import type { RenderEvent } from "../types";
+  import { inspector } from "../stores/inspector";
+  import { selection } from "../stores/selection";
+  import { router } from "../stores/router";
 
   interface Props {
     event: RenderEvent;
   }
 
   const { event }: Props = $props();
+
+  function open(): void {
+    inspector.open(event.id);
+    // Slice-12 P7 (R-68): emit selection + URL hash query for transcript sync.
+    const route = router.get();
+    if (route.name === "chapter") {
+      selection._setFromRoute("chapter", event.id);
+      router.navigate({ name: "chapter", chapterId: route.chapterId, eventId: event.id });
+    }
+  }
+
+  function onKey(e: KeyboardEvent): void {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      open();
+    }
+  }
 </script>
 
-<aside class="resource" data-testid="resource-card">
+<div
+  class="resource"
+  data-testid="resource-card"
+  data-event-id={event.id}
+  data-interactive
+  role="button"
+  tabindex="0"
+  aria-label={`Open resource ${event.title ?? event.id}`}
+  onclick={open}
+  onkeydown={onKey}
+>
   <p class="eyebrow">Resource</p>
   <p class="title">{event.title ?? "Untitled resource"}</p>
   {#if event.description}
     <p class="description">{event.description}</p>
   {/if}
-</aside>
+</div>
 
 <style>
   .resource {

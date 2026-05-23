@@ -44,4 +44,7 @@
   --color-fix:               var(--p-sage-400);
   --color-lesson:            var(--p-terracotta-400);
   --color-question:          var(--p-gold-400);
+  --color-milestone:         var(--p-navy-400);
+  --color-subagent:          var(--p-paper-50);
+  --color-generic:           var(--p-paper-600);
 }

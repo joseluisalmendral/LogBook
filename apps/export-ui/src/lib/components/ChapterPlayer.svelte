@@ -18,7 +18,9 @@
   import { onMount } from "svelte";
   import { payload } from "../stores/data";
   import { router } from "../stores/router";
-  import { subscribeMotion } from "../stores/motion";
+  import { subscribeMotion, getMotionState } from "../stores/motion";
+  import { playhead } from "../stores/playhead";
+  import { selection } from "../stores/selection";
   import type { Chapter, RenderEvent } from "../types";
   import ChapterHeader from "./ChapterHeader.svelte";
   import TurnRow from "./TurnRow.svelte";
@@ -32,6 +34,10 @@
   // with native page scroll on iOS Safari, so mobile uses MobileTimeline).
   let isMobile = $state(false);
   onMount(() => subscribeMotion((s) => { isMobile = s.isMobile; }));
+
+  // Slice 12 P6 / Bucket F: playhead drives the active-event scroll + heartbeat.
+  let activeEventId = $state<string | null>(null);
+  let playMode = $state<"scroll" | "play">("scroll");
 
   interface Props {
     chapterId: string;
@@ -72,6 +78,115 @@
   function back(): void {
     router.navigate({ name: "toc" });
   }
+
+  /**
+   * Compute the event index whose timestamp matches the playhead's t in [0,1].
+   * Mirrors PlaybackController.currentIndex(): map t to wall time, then find
+   * the event whose ts is the floor.
+   */
+  function activeIndexForT(ch: Chapter, t: number): number {
+    const evs = ch.events;
+    if (evs.length === 0) return -1;
+    if (evs.length === 1) return 0;
+    const first = new Date(evs[0]!.ts).getTime();
+    const last = new Date(evs[evs.length - 1]!.ts).getTime();
+    const span = last - first;
+    if (!Number.isFinite(span) || span <= 0) {
+      return Math.min(evs.length - 1, Math.floor(t * evs.length));
+    }
+    const targetMs = first + t * span;
+    let best = 0;
+    for (let i = 0; i < evs.length; i++) {
+      if (new Date(evs[i]!.ts).getTime() <= targetMs) best = i;
+      else break;
+    }
+    return best;
+  }
+
+  // Subscribe to the playhead. On every t-change while mode='play', recompute
+  // the active event and scrollIntoView programmatically. R-73 + ADR-SC-F2.
+  onMount(() => {
+    let lastId: string | null = null;
+    const unsub = playhead.subscribe((s) => {
+      playMode = s.mode;
+      if (!chapter) return;
+      // Only auto-scroll when the playhead is the driver. When the user is
+      // scroll-driving, we don't push them around.
+      if (s.mode !== "play") {
+        // Still expose activeEventId for the highlight class so the user sees
+        // where they were when they pause — but no programmatic scroll.
+        return;
+      }
+      const idx = activeIndexForT(chapter, s.t);
+      if (idx < 0) return;
+      const nextId = chapter.events[idx]!.id;
+      if (nextId === lastId) return;
+      lastId = nextId;
+      activeEventId = nextId;
+      const el = document.querySelector<HTMLElement>(`[data-event-id="${nextId}"]`);
+      if (!el) return;
+      // Mark the suppression window BEFORE scrolling so the TimelineScrubber
+      // listener distinguishes this from a user scroll (INV-16).
+      playhead.markProgrammaticScroll();
+      const motion = getMotionState();
+      el.scrollIntoView({
+        behavior: motion.motionAllowed ? "smooth" : "auto",
+        block: "center",
+      });
+    });
+    return unsub;
+  });
+
+  /*
+   * Slice-12 P7 — Selection-driven acknowledge pulse (R-68 highlight ring).
+   *
+   * When `selection.chapterEventId` changes (via card click OR via the
+   * transcript route's "Jump to card"), find the matching DOM node, scroll it
+   * into view, and apply `.lb-pulse-once` for 1200ms as a functional
+   * acknowledge. The pulse is functional feedback (NOT a 6th delight motion
+   * moment per INV-15 § exceptions).
+   *
+   * IMPORTANT: If the playhead is currently `playing`, the heartbeat
+   * (`.is-active`) is already animating the target row — running both at the
+   * same time would double-animate. We skip the one-shot pulse during
+   * playback.
+   */
+  onMount(() => {
+    let lastPulsedId: string | null = null;
+    let pulseTimer: ReturnType<typeof setTimeout> | null = null;
+    const unsub = selection.subscribe((snap) => {
+      const id = snap.chapterEventId;
+      if (!id || id === lastPulsedId) return;
+      // Only act when we are actually on a chapter route.
+      const route = router.get();
+      if (route.name !== "chapter") return;
+      const el = document.querySelector<HTMLElement>(`[data-event-id="${id}"]`);
+      if (!el) return;
+      lastPulsedId = id;
+      // Scroll the target card into view (R-68). Programmatic scroll suppression
+      // ensures the TimelineScrubber listener doesn't read this as user input.
+      playhead.markProgrammaticScroll();
+      const motion = getMotionState();
+      el.scrollIntoView({
+        behavior: motion.motionAllowed ? "smooth" : "auto",
+        block: "center",
+      });
+      // Skip the pulse if the heartbeat is already animating the target row
+      // (playhead.playing). The heartbeat is enough visual acknowledgement.
+      if (playhead.get().playing) return;
+      // Apply the one-shot pulse for 1200ms.
+      el.classList.add("lb-pulse-once");
+      if (pulseTimer) clearTimeout(pulseTimer);
+      pulseTimer = setTimeout(() => {
+        el.classList.remove("lb-pulse-once");
+        pulseTimer = null;
+      }, 1200);
+    });
+    return () => {
+      unsub();
+      if (pulseTimer) clearTimeout(pulseTimer);
+    };
+  });
 </script>
 
 <section class="chapter-player" data-testid="chapter-player">
@@ -93,7 +208,12 @@
           {:else}
             <div class="events-stream">
               {#each group.events as ev (ev.id)}
-                <div id={`event-${ev.id}`} class="event-anchor">
+                <div
+                  id={`event-${ev.id}`}
+                  class="event-anchor"
+                  class:is-active={activeEventId === ev.id && playMode === "play"}
+                  data-event-id={ev.id}
+                >
                   <TurnRow event={ev} />
                 </div>
               {/each}

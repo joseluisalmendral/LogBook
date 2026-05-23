@@ -14,12 +14,17 @@
 -->
 <script lang="ts">
   import type { Chapter } from "../types";
+  import { router } from "../stores/router";
 
   interface Props {
     chapter: Chapter;
   }
 
   const { chapter }: Props = $props();
+
+  function openTranscript(): void {
+    router.navigate({ name: "transcript", sessionId: chapter.sessionId, eventId: null });
+  }
 
   const tsDisplay = $derived.by(() => {
     const d = new Date(chapter.ts);
@@ -72,6 +77,16 @@
         <span class="meta-value lb-tnum">{durationLabel}</span>
       </span>
     {/if}
+    <button
+      type="button"
+      class="meta-pill meta-transcript-link"
+      onclick={openTranscript}
+      data-interactive
+      aria-label="View raw transcript for this session"
+    >
+      <span class="meta-label">Raw</span>
+      <span class="meta-value">View transcript →</span>
+    </button>
   </div>
 </header>
 
@@ -173,6 +188,24 @@
 
   .meta-outcome .meta-label {
     color: var(--color-success);
+  }
+
+  /* Slice 12 P5: raw transcript link styled as a pill button (consistent with
+     the rest of the meta row). */
+  .meta-transcript-link {
+    appearance: none;
+    cursor: pointer;
+    color: var(--color-text-primary);
+    font-family: inherit;
+    transition: border-color 150ms ease-out;
+  }
+  .meta-transcript-link:hover,
+  .meta-transcript-link:focus-visible {
+    border-color: var(--color-accent-primary);
+    color: var(--color-accent-primary);
+  }
+  .meta-transcript-link .meta-label {
+    color: var(--color-accent-primary);
   }
 
   @media (max-width: 767px) {

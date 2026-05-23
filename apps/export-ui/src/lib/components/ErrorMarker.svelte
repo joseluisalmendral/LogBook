@@ -9,6 +9,8 @@
 <script lang="ts">
   import type { RenderEvent } from "../types";
   import { inspector } from "../stores/inspector";
+  import { selection } from "../stores/selection";
+  import { router } from "../stores/router";
 
   interface Props {
     event: RenderEvent;
@@ -25,10 +27,16 @@
 
   function openInspector(): void {
     inspector.open(event.id);
+    // Slice-12 P7 (R-68): emit selection + URL hash query for transcript sync.
+    const route = router.get();
+    if (route.name === "chapter") {
+      selection._setFromRoute("chapter", event.id);
+      router.navigate({ name: "chapter", chapterId: route.chapterId, eventId: event.id });
+    }
   }
 </script>
 
-<article class="error" data-testid="error-marker">
+<article class="error" data-testid="error-marker" data-event-id={event.id}>
   <!--
     Row uses role=button so the inner expand <button> isn't a button-in-button.
     Keyboard activation (Enter/Space) is preserved via onkeydown.
@@ -37,6 +45,7 @@
     class="error-row"
     role="button"
     tabindex="0"
+    data-interactive
     onclick={openInspector}
     onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openInspector(); } }}
   >

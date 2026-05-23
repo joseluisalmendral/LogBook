@@ -24,6 +24,9 @@
   import { onMount } from "svelte";
   import type { RenderEvent } from "../types";
   import { scrub } from "../stores/scrub";
+  import { playhead } from "../stores/playhead";
+  import LegendKey from "./LegendKey.svelte";
+  import PlaybackController from "./PlaybackController.svelte";
 
   interface Props {
     events: RenderEvent[];
@@ -35,6 +38,7 @@
 
   let progress = $state(0);
   let rafId: number | null = null;
+  let playMode = $state<"scroll" | "play">("scroll");
 
   function recompute(): void {
     rafId = null;
@@ -44,12 +48,24 @@
     const max = target.scrollHeight - target.clientHeight;
     const p = max > 0 ? target.scrollTop / max : 0;
     progress = Math.max(0, Math.min(1, p));
+    // Slice 12 P6 / ADR-SC-F2: when the playhead is driving, the scroll
+    // store yields. Without this, the playhead's programmatic scroll would
+    // bounce back into --scroll-progress and produce a double-driver flicker.
+    if (playMode === "play") return;
     scrub.set(progress);
-    // Mirror to CSS variable on <html> so any descendant can animate from it.
     document.documentElement.style.setProperty("--scrub-progress", String(progress));
   }
 
   function onScroll(): void {
+    // INV-16: distinguish programmatic scroll (caused by playhead.scrollIntoView)
+    // from a user scroll. The programmatic call set suppressUserScrollUntil =
+    // now() + 350ms BEFORE invoking scrollIntoView, so any scroll firing inside
+    // that window is ours and must NOT trigger pause-on-user-scroll.
+    const isProgrammatic = playhead.isSuppressingScroll();
+    if (!isProgrammatic && playhead.get().playing) {
+      // User scrolled while playing → pause and revert to scroll-mode.
+      playhead.pause("user");
+    }
     if (rafId !== null) return;
     rafId = window.requestAnimationFrame(recompute);
   }
@@ -58,11 +74,14 @@
     if (typeof window === "undefined") return;
     const target = scrollContainer ?? window;
     target.addEventListener("scroll", onScroll, { passive: true });
-    // Seed.
+    const unsub = playhead.subscribe((s) => {
+      playMode = s.mode;
+    });
     recompute();
     return () => {
       target.removeEventListener("scroll", onScroll);
       if (rafId !== null) cancelAnimationFrame(rafId);
+      unsub();
     };
   });
 
@@ -125,9 +144,21 @@
 
 <svelte:window onkeydown={onKey} />
 
-<div class="scrubber" data-testid="timeline-scrubber" aria-label="Chapter timeline">
-  <div class="track" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100}>
-    <div class="track-fill" style="width: {progress * 100}%"></div>
+<div
+  class="scrubber"
+  data-testid="timeline-scrubber"
+  aria-label="Chapter timeline"
+  data-play-mode={playMode}
+>
+  <!-- Slice 12 P1 R-51: collapsible legend mounted above the dock. -->
+  <LegendKey variant="inline" />
+
+  <!-- Slice 12 P6 R-72: playback controls live in the dock alongside the scrubber. -->
+  <div class="dock-row">
+    <div class="track" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100}>
+      <div class="track-fill" style="width: {progress * 100}%"></div>
+    </div>
+    <PlaybackController {events} />
   </div>
   <div class="chips" role="list">
     {#each events as ev}
@@ -161,7 +192,20 @@
     gap: var(--p-space-2);
   }
 
+  /* Slice 12 P6 R-72: when playhead is driving (mode=play), dim the scroll-
+     driven progress so the user sees who's in charge. */
+  .scrubber[data-play-mode="play"] .track-fill {
+    opacity: 0.45;
+  }
+
+  .dock-row {
+    display: flex;
+    align-items: center;
+    gap: var(--p-space-3);
+  }
+
   .track {
+    flex: 1;
     height: var(--scrubber-track-height);
     background: var(--color-surface-sunken);
     border-radius: 999px;
@@ -178,6 +222,24 @@
 
   :global(html[data-motion="reduced"]) .track-fill {
     transition: none !important;
+  }
+
+  /* Slice 12 P1 R-76 / ADR-SC-G1: scroll-timeline driven progress on Chromium 115+.
+     When <html data-scroll-timeline="native"> the inline width still applies
+     (so SSR / first paint reads correctly) but the @keyframes animation tied
+     to scroll() takes over during scroll, eliminating the rAF tick. Browsers
+     without scroll-timeline (Safari/Firefox) keep the rAF + inline-width path.
+     Reduced-motion suppresses the animation entirely. */
+  @supports (animation-timeline: scroll()) {
+    :global(html[data-scroll-timeline="native"][data-motion="allowed"]) .track-fill {
+      animation: lb-scroll-progress linear;
+      animation-timeline: scroll(root);
+    }
+  }
+
+  @keyframes lb-scroll-progress {
+    from { width: 0%; }
+    to   { width: 100%; }
   }
 
   .chips {

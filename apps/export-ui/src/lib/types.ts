@@ -72,6 +72,39 @@ export interface Chapter {
   events: RenderEvent[];
 }
 
+/**
+ * Slice-12 P4 (ADR-SC-D2): role + kind for sanitized raw transcript events.
+ * MUST stay in sync with `src/export/transcript-sanitize.ts`.
+ */
+export type SanitizedRole = "user" | "assistant" | "system" | "tool";
+export type SanitizedKind =
+  | "message"
+  | "tool_use"
+  | "tool_result"
+  | "thinking"
+  | "meta";
+
+export interface SanitizedTranscriptEvent {
+  id: string;
+  timestamp: number;
+  role: SanitizedRole;
+  type: SanitizedKind;
+  name?: string;
+  content: string;
+  truncated: boolean;
+  droppedFields?: string[];
+}
+
+export interface SanitizedTranscript {
+  sessionId: string;
+  events: SanitizedTranscriptEvent[];
+  /** Byte position at which the session was capped (null when not hit). */
+  truncatedAtBytes: number | null;
+  droppedEvents: number;
+  originalEventCount: number;
+  sanitizedEventCount: number;
+}
+
 export interface ExportPayloadV2 {
   version: 2;
   exportedAt: string;
@@ -93,6 +126,12 @@ export interface ExportPayloadV2 {
   commits: RenderEvent[];
   bodies: Record<string, string>;
   mermaid: Record<string, string>;
+  /**
+   * Slice-12 P4: sanitized raw transcripts keyed by sessionId. `null` means
+   * the JSONL file wasn't accessible on the build machine. The whole field is
+   * optional so older payloads stay loadable.
+   */
+  transcripts?: Record<string, SanitizedTranscript | null>;
 }
 
 /**

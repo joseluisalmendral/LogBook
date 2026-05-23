@@ -58,10 +58,10 @@
     if (typeof document !== "undefined" && "startViewTransition" in document) {
       (document as Document & { startViewTransition: (cb: () => void) => unknown })
         .startViewTransition(() => {
-          router.navigate({ name: "chapter", chapterId: chapter.sessionId });
+          router.navigate({ name: "chapter", chapterId: chapter.sessionId, eventId: null });
         });
     } else {
-      router.navigate({ name: "chapter", chapterId: chapter.sessionId });
+      router.navigate({ name: "chapter", chapterId: chapter.sessionId, eventId: null });
     }
   }
 
@@ -80,6 +80,7 @@
   aria-label={`Open session ${chapter.label}`}
   data-testid="session-tile"
   data-session-id={chapter.sessionId}
+  data-interactive
   style="view-transition-name: {vtName};"
   onclick={navigate}
   onkeydown={onKey}

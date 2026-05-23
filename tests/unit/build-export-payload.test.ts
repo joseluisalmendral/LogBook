@@ -196,6 +196,73 @@ describe("buildExportPayload", () => {
     expect(body).not.toContain("<html");
   });
 
+  it("populates commitUrl per commit when remoteUrl is a known host (R-60 / ADR-SC-C1)", async () => {
+    const commitGh: RenderEvent = {
+      id: "evt-c1",
+      type: "commit",
+      ts: "2026-05-23T11:00:00.000Z",
+      sessionId: "sess-1",
+      title: "fix(x): y",
+      payload: { sha: "abcdef1234567890abcdef1234567890abcdef12" },
+    };
+    const ctx = mkCtx({ all: [commitGh] });
+    const { payload } = await buildExportPayload(ctx, mkPaths(), {
+      remoteUrl: "git@github.com:joseluisalmendral/LogBook.git",
+    });
+    expect(payload.commits).toHaveLength(1);
+    const p0 = payload.commits[0]!.payload as Record<string, unknown>;
+    expect(p0["commitUrl"]).toBe(
+      "https://github.com/joseluisalmendral/LogBook/commit/abcdef1234567890abcdef1234567890abcdef12",
+    );
+  });
+
+  it("leaves commitUrl undefined when no remoteUrl is provided (R-60 graceful)", async () => {
+    const commit: RenderEvent = {
+      id: "evt-c2",
+      type: "commit",
+      ts: "2026-05-23T11:00:00.000Z",
+      sessionId: "sess-1",
+      title: "feat: y",
+      payload: { sha: "abcdef1" },
+    };
+    const ctx = mkCtx({ all: [commit] });
+    const { payload } = await buildExportPayload(ctx, mkPaths());
+    const p0 = payload.commits[0]!.payload as Record<string, unknown>;
+    expect(p0["commitUrl"]).toBeUndefined();
+  });
+
+  it("omits payload.transcripts when noTranscripts is true (slice-12 P4 budget gate)", async () => {
+    const session: RenderEvent = {
+      id: "sess-1",
+      type: "manual.session_start",
+      ts: "2026-05-23T10:00:00.000Z",
+      title: "Demo",
+      sessionId: "sess-1",
+    };
+    const ctx = mkCtx({ sessions: [session as unknown as RenderContext["sessions"][number]] });
+    const { payload } = await buildExportPayload(ctx, mkPaths(), {
+      noTranscripts: true,
+    });
+    expect(payload.transcripts).toBeUndefined();
+  });
+
+  it("populates payload.transcripts with null for sessions whose JSONL is missing (ADR-SC-D2)", async () => {
+    // mkPaths() points at /tmp/fixture-project which has no encoded directory
+    // under ~/.claude/projects/, so every session should resolve to null
+    // without throwing.
+    const session: RenderEvent = {
+      id: "sess-missing",
+      type: "manual.session_start",
+      ts: "2026-05-23T10:00:00.000Z",
+      title: "Missing on this machine",
+      sessionId: "sess-missing",
+    };
+    const ctx = mkCtx({ sessions: [session as unknown as RenderContext["sessions"][number]] });
+    const { payload } = await buildExportPayload(ctx, mkPaths());
+    expect(payload.transcripts).toBeDefined();
+    expect(payload.transcripts!["sess-missing"]).toBeNull();
+  });
+
   it("flags oversize when serialized payload exceeds the 5 MB cap (INV-12)", async () => {
     // Build a single event with a body large enough to push the payload past 5 MB.
     const huge = "x".repeat(PAYLOAD_CAP_BYTES_FOR_TESTS + 1024);

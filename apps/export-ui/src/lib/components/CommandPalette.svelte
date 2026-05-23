@@ -129,7 +129,7 @@
   function activate(idx: number): void {
     const r = results[idx];
     if (!r) return;
-    router.navigate({ name: "chapter", chapterId: r.chapterId });
+    router.navigate({ name: "chapter", chapterId: r.chapterId, eventId: null });
     // Scroll to event after route change if it's not the chapter itself.
     palette.closePalette();
     if (r.kind !== "chapter") {

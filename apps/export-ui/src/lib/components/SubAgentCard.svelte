@@ -1,56 +1,55 @@
 <!--
-  SubAgentCard — the centerpiece of the editorial replay.
+  SubAgentCard — slice 12 P2 (R-56, R-57, R-58, R-59, INV-15 M1).
 
-  Spec R-24 / motion #3 / S-2 / AG-4. This is the moment a student sees the
-  AI's sub-agent invocation laid open. Two faces:
+  Pattern: compact-then-expand inline (Graphite stacked-PR rows + Emil Kowalski
+  clip-path reveal). Replaces slice 10's 3D card-flip (R-24 superseded by R-57).
 
-    FRONT (collapsed):  pill / preview — agent name + model + duration.
-    BACK  (expanded):   full prompt (MarkdownBlock-rendered) + skills loaded
-                        + tool calls + response synthesis.
+  COMPACT ROW (default state)
+    Single line: colored left-border (var(--color-subagent)) + monogram ⟳ +
+    agent name + one-line summary peek + badge strip (skills / tools /
+    duration) + always-visible chevron rotated by P1 affordance.css when
+    [aria-expanded="true"].
 
-  THE 3D FLIP — load-bearing CSS that's exotic enough to deserve comments:
+  EXPAND MECHANISM (ADR-SC-B1)
+    CSS Grid grid-template-rows: auto 0fr → auto 1fr (250ms,
+    cubic-bezier(0.77, 0, 0.175, 1)) on the wrapper; inner content has
+    overflow: hidden + clip-path: inset(0 0 100% 0) → inset(0) for the
+    Kowalski reveal (R-58 / brief pattern #6). No JS height measurement.
 
-    `perspective: 1200px` on the OUTER `.card-wrap`.
-      Gives the browser a vanishing-point so rotateY produces foreshortening
-      rather than a flat 2D mirror. Lower = more dramatic; 1200px is the
-      Linear / Stripe Press "calm" register, not the marketing-page punch.
+  MOMENT 1 — sub-agent deploy entrance (INV-15 M1)
+    When the card first scrolls into the viewport, an IntersectionObserver
+    triggers a staggered reveal: outer card clip-path inset(100% 0 0 0) → 0
+    over 280ms + color bleed-in via pseudo-element (50ms delay) + child
+    content stagger (30ms each, capped). Total perceived 400ms.
+    Skipped under reduced-motion AND when keyboard focus drives the mount
+    (we gate with `:focus-visible` inside the entrance selector so focused
+    navigation does not animate the entrance).
 
-    `transform-style: preserve-3d` on the INNER `.card`.
-      Without this, the back face is clipped to the front face's 2D plane and
-      you see a flat mirror instead of two distinct surfaces.
+  REDUCED-MOTION (R-58 / R-59 / INV-15)
+    html[data-motion="reduced"]:
+      - Expand: instant (grid-template-rows snaps to auto 1fr, clip-path: inset(0)).
+      - Entrance Moment 1: skipped (card appears in final state).
+      - Chevron rotation: kept (it is a state indicator, not delight motion).
 
-    `backface-visibility: hidden` on each face.
-      Hides whichever face is rotated away from the camera. Front rotates 0deg
-      → 180deg; back is pre-rotated 180deg → 360deg (modulo 360 == 0).
+  ACCESSIBILITY
+    - Toggle is a real <button>, aria-expanded, aria-controls referencing the
+      expanded region.
+    - Expanded container is role="region" with the id referenced by
+      aria-controls.
+    - Inspector affordance becomes a separate <button> in the expanded region
+      (no nested-button anti-pattern).
 
-    `transition-behavior: allow-discrete` + `@starting-style` on `display`.
-      Lets us animate the back face IN from `display: none` (NOT in the layout
-      tree) to `display: grid` (in the tree). Without `allow-discrete`, the
-      browser snaps non-animatable properties (display, visibility) at the
-      cycle start and the entry transition collapses to instant.
-
-    `interpolate-size: allow-keywords` on the wrap.
-      Makes height: auto transitions animatable. The back face has more content
-      than the front, so the wrap's resolved height differs between states.
-
-  REDUCED MOTION (R-33 / S-5):
-    `data-motion="reduced"` on <html> kills every transition + animation via
-    app.css's global rule. We additionally short-circuit the rotate by setting
-    `transform: none` on the inner card in reduced-motion mode — without this,
-    even an instant transition still resolves the back face mirrored on top of
-    the front face. The card swaps INSTANTLY: no flip, no animation, just a
-    state change. Verify by Emulating reduced-motion in Chromium DevTools.
-
-  BROWSER SUPPORT:
-    `transition-behavior: allow-discrete`: Chromium 117+, Safari 17.4+, Firefox 129+.
-    `@starting-style`: same browsers.
-    Older browsers fall back to instant swap (graceful — the content is still
-    accessible). Detection via @supports inside the style block.
+  Flip implementation fully removed. R-24 superseded by R-57/R-58. AG-25
+  enforces zero residue (verified by grep).
 -->
 <script lang="ts">
+  import { onMount } from "svelte";
   import type { RenderEvent } from "../types";
   import MarkdownBlock from "./MarkdownBlock.svelte";
   import { inspector } from "../stores/inspector";
+  import { linkifyText } from "../util/deep-link";
+  import { selection } from "../stores/selection";
+  import { router } from "../stores/router";
 
   interface Props {
     event: RenderEvent;
@@ -58,7 +57,12 @@
 
   const { event }: Props = $props();
 
-  let flipped = $state(false);
+  let expanded = $state(false);
+  let inView = $state(false);
+  let cardEl: HTMLElement | undefined;
+
+  // Stable region id for aria-controls.
+  const regionId = $derived(`sub-agent-region-${event.id}`);
 
   // Pull sub-agent metadata from event.payload (validated permissively — the
   // event source is the transcript scraper, and that may evolve).
@@ -82,247 +86,245 @@
     return `${(durationMs / 1000).toFixed(1)} s`;
   });
 
-  function toggleFlip(): void {
-    flipped = !flipped;
-  }
-
-  function onKey(e: KeyboardEvent): void {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      toggleFlip();
+  function toggleExpand(): void {
+    expanded = !expanded;
+    // Bidirectional link wiring (R-68 / ADR-SC-D3): emit selection + URL hash
+    // query so the transcript view can sync. The card lives inside
+    // #/chapter/<sid>, so we navigate to the same route but with ?event=<id>.
+    const route = router.get();
+    if (route.name === "chapter") {
+      selection._setFromRoute("chapter", event.id);
+      router.navigate({ name: "chapter", chapterId: route.chapterId, eventId: event.id });
     }
   }
 
   function openInspector(e: MouseEvent): void {
-    // Inspector is a secondary action — only when the user explicitly clicks
-    // the meta button, not the whole card (clicking the card flips it).
     e.stopPropagation();
     inspector.open(event.id);
   }
+
+  // Moment 1: gate the entrance on first viewport intersection. We use a
+  // single observer per card; once fired, we disconnect to avoid replaying.
+  // Under reduced-motion the entrance CSS is a no-op (see styles below), so
+  // we still set inView so the card lands in its final state without delay.
+  onMount(() => {
+    if (!cardEl) return;
+    if (typeof IntersectionObserver === "undefined") {
+      inView = true;
+      return;
+    }
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            inView = true;
+            io.disconnect();
+            break;
+          }
+        }
+      },
+      { rootMargin: "0px 0px -10% 0px", threshold: 0.1 },
+    );
+    io.observe(cardEl);
+    return () => io.disconnect();
+  });
 </script>
 
-<div class="card-wrap" data-testid="sub-agent-card" data-flipped={flipped}>
-  <!--
-    The outer "button" is a div with role=button so we can host a nested
-    <button> inside the back face (the Open-in-inspector affordance). Native
-    <button>-inside-<button> is invalid HTML; role=button + tabindex + key
-    handler is the standard escape hatch.
-  -->
-  <div
+<article
+  bind:this={cardEl}
+  class="card-wrap"
+  data-testid="sub-agent-card"
+  data-expanded={expanded}
+  data-in-view={inView}
+  data-event-id={event.id}
+>
+  <button
+    type="button"
     class="card"
-    class:is-flipped={flipped}
-    role="button"
-    tabindex="0"
-    aria-pressed={flipped}
-    aria-label={flipped ? `Collapse ${agent}` : `Expand ${agent}`}
-    onclick={toggleFlip}
-    onkeydown={onKey}
+    data-interactive
+    aria-expanded={expanded}
+    aria-controls={regionId}
+    aria-label={expanded ? `Collapse ${agent}` : `Expand ${agent}`}
+    onclick={toggleExpand}
   >
-    <!-- FRONT FACE: collapsed pill -->
-    <div class="face face-front">
-      <div class="face-row">
-        <span class="agent-glyph" aria-hidden="true">
-          <svg viewBox="0 0 16 16" width="16" height="16">
-            <circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.4" />
-            <circle cx="8" cy="8" r="2.5" fill="currentColor" />
-          </svg>
-        </span>
-        <div class="agent-meta">
-          <p class="agent-eyebrow">Sub-agent</p>
-          <p class="agent-name">{agent}</p>
-        </div>
+    <!-- COMPACT ROW: monogram + meta + badges + chevron. R-57 / R-59 -->
+    <div class="compact-row">
+      <span class="agent-monogram" aria-hidden="true">⟳</span>
+      <div class="agent-meta">
+        <p class="agent-eyebrow">Sub-agent</p>
+        <p class="agent-name">{agent}</p>
+      </div>
+      {#if promptSummary}
+        <p class="agent-summary" title={promptSummary}>{promptSummary}</p>
+      {/if}
+      <div class="badge-strip" aria-hidden="true">
+        {#if skillsLoaded.length > 0}
+          <span class="badge" title="Skills loaded">{skillsLoaded.length}&nbsp;skill{skillsLoaded.length === 1 ? "" : "s"}</span>
+        {/if}
+        {#if tools.length > 0}
+          <span class="badge" title="Tool calls">{tools.length}&nbsp;tool{tools.length === 1 ? "" : "s"}</span>
+        {/if}
+        {#if durationLabel}
+          <span class="badge lb-tnum" title="Duration">{durationLabel}</span>
+        {/if}
         {#if model}
           <span class="badge badge-model lb-tnum" title="Model">{model}</span>
         {/if}
-        {#if durationLabel}
-          <span class="badge badge-time lb-tnum" title="Duration">{durationLabel}</span>
-        {/if}
-        <span class="hint" aria-hidden="true">flip</span>
       </div>
-      {#if promptSummary}
-        <p class="agent-summary">{promptSummary}</p>
-      {/if}
+      <!-- P1 chevron — rotated 90° via affordance.css when [aria-expanded="true"]. -->
+      <span class="lb-chevron card-chevron" aria-hidden="true">
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="5 3 11 8 5 13" />
+        </svg>
+      </span>
     </div>
+  </button>
 
-    <!-- BACK FACE: full prompt + skills + tools + response -->
-    <div class="face face-back">
-      <header class="back-header">
-        <div>
-          <p class="agent-eyebrow">Sub-agent · expanded</p>
-          <p class="back-title">{agent}</p>
-        </div>
-        <span class="hint" aria-hidden="true">close</span>
-      </header>
+  <!-- EXPANDED REGION — animated via CSS Grid `auto 0fr → auto 1fr`. R-58 / ADR-SC-B1 -->
+  <div class="expand-grid" id={regionId} role="region" aria-label={`${agent} details`}>
+    <div class="expand-inner">
+      <div class="expand-content">
+        {#if fullPrompt}
+          <section class="back-section" aria-label="Full prompt">
+            <h4 class="back-section-title">Full prompt</h4>
+            <pre class="back-pre">{fullPrompt}</pre>
+          </section>
+        {/if}
 
-      {#if fullPrompt}
-        <section class="back-section" aria-label="Full prompt">
-          <h4 class="back-section-title">Full prompt</h4>
-          <pre class="back-pre">{fullPrompt}</pre>
-        </section>
-      {/if}
+        {#if skillsLoaded.length > 0}
+          <section class="back-section" aria-label="Skills loaded">
+            <h4 class="back-section-title">Skills loaded</h4>
+            <div class="chip-row">
+              {#each skillsLoaded as skill}
+                <span class="skill-chip">{skill}</span>
+              {/each}
+            </div>
+          </section>
+        {/if}
 
-      {#if skillsLoaded.length > 0}
-        <section class="back-section" aria-label="Skills loaded">
-          <h4 class="back-section-title">Skills loaded</h4>
-          <div class="chip-row">
-            {#each skillsLoaded as skill}
-              <span class="skill-chip">{skill}</span>
-            {/each}
-          </div>
-        </section>
-      {/if}
+        {#if tools.length > 0}
+          <section class="back-section" aria-label="Tool calls">
+            <h4 class="back-section-title">Tool calls</h4>
+            <ul class="tool-list">
+              {#each tools as t}
+                <li class="tool-row">
+                  <code class="tool-name">{t.name ?? "tool"}</code>
+                  {#if t.input}
+                    <!-- Slice-12 P3 (R-63): wrap detected file paths inside
+                         tool-input prose in vscode://file/ anchors. linkifyText
+                         HTML-escapes everything else, so the splat is safe. -->
+                    <span class="tool-input">{@html linkifyText(t.input).html}</span>
+                  {/if}
+                </li>
+              {/each}
+            </ul>
+          </section>
+        {/if}
 
-      {#if tools.length > 0}
-        <section class="back-section" aria-label="Tool calls">
-          <h4 class="back-section-title">Tool calls</h4>
-          <ul class="tool-list">
-            {#each tools as t}
-              <li class="tool-row">
-                <code class="tool-name">{t.name ?? "tool"}</code>
-                {#if t.input}<span class="tool-input">{t.input}</span>{/if}
-              </li>
-            {/each}
-          </ul>
-        </section>
-      {/if}
+        {#if response}
+          <section class="back-section" aria-label="Response synthesis">
+            <h4 class="back-section-title">Response synthesis</h4>
+            <MarkdownBlock body={`<p>${response}</p>`} />
+          </section>
+        {/if}
 
-      {#if response}
-        <section class="back-section" aria-label="Response synthesis">
-          <h4 class="back-section-title">Response synthesis</h4>
-          <MarkdownBlock body={`<p>${response}</p>`} />
-        </section>
-      {/if}
-
-      <footer class="back-footer">
-        <button
-          type="button"
-          class="inspector-btn"
-          onclick={openInspector}
-          aria-label="Open in inspector"
-        >
-          Open in inspector →
-        </button>
-      </footer>
+        <footer class="back-footer">
+          <button
+            type="button"
+            class="inspector-btn"
+            onclick={openInspector}
+            aria-label="Open in inspector"
+          >
+            Open in inspector →
+          </button>
+        </footer>
+      </div>
     </div>
   </div>
-</div>
+</article>
 
 <style>
-  /* OUTER WRAP — vanishing-point perspective. */
+  /*
+   * OUTER WRAP — Moment 1 entrance host.
+   *
+   * The wrap stacks two rows in a grid: (1) the compact button row, (2) the
+   * expandable grid row whose grid-template-rows animates auto 0fr → auto 1fr.
+   * interpolate-size: allow-keywords lets `auto` be a transition target on
+   * supporting browsers; older browsers fall through to instant resize.
+   */
   .card-wrap {
-    perspective: 1200px;
-    /* interpolate-size: allow-keywords lets the wrap animate height: auto when
-       the back face has more content than the front. Chrome 129+; older
-       browsers fall through to instant resize, which is fine here. */
-    interpolate-size: allow-keywords;
+    display: block;
     margin: var(--p-space-3) 0;
-  }
-
-  /* INNER CARD — the 3D plane. */
-  .card {
-    background: transparent;
-    width: 100%;
-    cursor: pointer;
-    color: inherit;
-
-    /* preserve-3d keeps the back face IN a 3D plane behind the front rather
-       than flattening it. Without this, rotateY produces a mirror, not a
-       flip. */
-    transform-style: preserve-3d;
-    transition:
-      transform 500ms cubic-bezier(0.16, 1, 0.3, 1);
-    display: grid;
-    grid-template-areas: "stack";
-    border-radius: var(--card-radius);
-  }
-
-  .card.is-flipped {
-    transform: rotateY(180deg);
-  }
-
-  /* Reduced-motion override: NO rotation, NO transition. The face we want
-     visible is swapped via @media query below. */
-  :global(html[data-motion="reduced"]) .card {
-    transform: none !important;
-    transition: none !important;
-  }
-
-  /* FACES — both faces stack at the same grid cell. backface-visibility hides
-     the one rotated away from the camera. */
-  .face {
-    grid-area: stack;
     background: var(--color-surface-raised);
     border: var(--card-border);
     border-radius: var(--card-radius);
-    padding: var(--card-padding);
-    backface-visibility: hidden;
-    -webkit-backface-visibility: hidden;
-    min-height: 88px;
-  }
-
-  .face-front {
-    /* Front face is in its natural rotation: rotateY(0). */
-    display: flex;
-    flex-direction: column;
-    gap: var(--p-space-2);
-    /* Subtle border accent so the card is recognizably "interactive". */
-    border-color: var(--color-border-hairline);
+    border-left: 3px solid var(--color-subagent);
     box-shadow: 0 1px 0 var(--color-border-hairline);
+    interpolate-size: allow-keywords;
+    overflow: hidden;
+    position: relative;
   }
 
-  .face-back {
-    /* Back face is pre-rotated 180deg so when the card is flipped, this face
-       presents at rotateY(0) to the viewer. */
-    transform: rotateY(180deg);
-    display: grid;
-    gap: var(--p-space-4);
-    background: var(--color-surface-raised);
-    border-color: var(--color-accent-primary);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.10);
+  /* ---- MOMENT 1: sub-agent deploy entrance --------------------------- */
+  /* Pre-state (before viewport hit). clip-path inset hides the card from
+     above; opacity stays at 1 so the color bleed feels like "deploying". */
+  .card-wrap[data-in-view="false"] {
+    clip-path: inset(100% 0 0 0);
+  }
+  .card-wrap[data-in-view="true"] {
+    clip-path: inset(0 0 0 0);
+    transition: clip-path 280ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  /* Color bleed pseudo-element — paints the kind border-color across the
+     surface with a quick fade, then settles. 50ms delay per brief moment #1. */
+  .card-wrap[data-in-view="true"]::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(90deg, rgba(var(--brand-rgb), 0.08), transparent 40%);
+    opacity: 0;
+    animation: lb-color-bleed 350ms ease-out 50ms 1 both;
+  }
+  @keyframes lb-color-bleed {
+    0%   { opacity: 0; }
+    40%  { opacity: 1; }
+    100% { opacity: 0; }
   }
 
-  /* Reduced-motion: hide one face via display rather than rotation. */
-  :global(html[data-motion="reduced"]) .face-front {
-    display: flex;
+  /* Reduced-motion: skip entrance entirely; the card lands in final state. */
+  :global(html[data-motion="reduced"]) .card-wrap[data-in-view="false"],
+  :global(html[data-motion="reduced"]) .card-wrap[data-in-view="true"] {
+    clip-path: none;
+    transition: none;
   }
-  :global(html[data-motion="reduced"]) .card.is-flipped .face-front {
-    display: none;
-  }
-  :global(html[data-motion="reduced"]) .face-back {
-    display: none;
-    transform: none;
-  }
-  :global(html[data-motion="reduced"]) .card.is-flipped .face-back {
-    display: grid;
+  :global(html[data-motion="reduced"]) .card-wrap[data-in-view="true"]::before {
+    animation: none;
   }
 
-  /* @starting-style — when the back face mounts (display goes from none to
-     grid), animate IN from opacity 0 + slight translate. Requires
-     transition-behavior: allow-discrete on the parent. Chromium 117+. */
-  @supports (transition-behavior: allow-discrete) {
-    .face-back {
-      transition:
-        transform 500ms cubic-bezier(0.16, 1, 0.3, 1),
-        opacity 300ms ease-out,
-        display 500ms allow-discrete;
-    }
-    @starting-style {
-      .card.is-flipped .face-back {
-        opacity: 0;
-        transform: rotateY(180deg) translateY(8px);
-      }
-    }
+  /* ---- COMPACT ROW ---------------------------------------------------- */
+  .card {
+    /* Reset native button chrome so it lays out like a row. */
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    width: 100%;
+    text-align: left;
+    cursor: pointer;
+    padding: 0;
+    font: inherit;
   }
 
-  /* ------ FRONT FACE CHROME ------ */
-  .face-row {
+  .compact-row {
     display: flex;
     align-items: center;
     gap: var(--p-space-3);
-    flex-wrap: wrap;
+    padding: var(--card-padding);
+    min-height: 56px;
   }
 
-  .agent-glyph {
+  .agent-monogram {
     width: 28px;
     height: 28px;
     display: inline-flex;
@@ -330,7 +332,9 @@
     justify-content: center;
     border-radius: 50%;
     background: var(--color-surface-sunken);
-    color: var(--color-accent-primary);
+    color: var(--color-subagent);
+    font-size: 16px;
+    line-height: 1;
     flex-shrink: 0;
   }
 
@@ -339,7 +343,7 @@
     flex-direction: column;
     gap: 2px;
     min-width: 0;
-    flex: 1 1 auto;
+    flex: 0 1 auto;
   }
 
   .agent-eyebrow {
@@ -353,9 +357,31 @@
   .agent-name {
     margin: 0;
     font-family: var(--font-headline);
-    font-size: var(--font-size-lead);
+    font-size: var(--font-size-meta);
     color: var(--color-text-primary);
     line-height: 1.2;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .agent-summary {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-meta);
+    line-height: 1.4;
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .badge-strip {
+    display: flex;
+    align-items: center;
+    gap: var(--p-space-2);
+    flex-shrink: 0;
   }
 
   .badge {
@@ -373,40 +399,52 @@
     color: var(--color-accent-primary);
   }
 
-  .agent-summary {
-    margin: 0;
-    color: var(--color-text-secondary);
-    font-size: var(--font-size-meta);
-    line-height: 1.5;
+  .card-chevron {
+    margin-left: var(--p-space-2);
   }
 
-  .hint {
-    margin-left: auto;
-    font-size: var(--font-size-caption);
-    color: var(--color-text-tertiary);
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    flex-shrink: 0;
+  /* ---- EXPAND GRID — ADR-SC-B1 --------------------------------------- */
+  .expand-grid {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 250ms cubic-bezier(0.77, 0, 0.175, 1);
   }
 
-  /* ------ BACK FACE CHROME ------ */
-  .back-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: var(--p-space-3);
-    padding-bottom: var(--p-space-3);
-    border-bottom: var(--card-border);
+  .card-wrap[data-expanded="true"] .expand-grid {
+    grid-template-rows: 1fr;
   }
 
-  .back-title {
-    font-family: var(--font-headline);
-    font-size: var(--font-size-h3);
-    margin: 0;
-    color: var(--color-text-primary);
-    line-height: 1.2;
+  .expand-inner {
+    overflow: hidden;
+    min-height: 0;
   }
 
+  /* Kowalski clip-path reveal on inner content. */
+  .expand-content {
+    padding: 0 var(--card-padding) var(--card-padding);
+    display: grid;
+    gap: var(--p-space-4);
+    clip-path: inset(0 0 100% 0);
+    transition: clip-path 250ms cubic-bezier(0.77, 0, 0.175, 1);
+    border-top: var(--card-border);
+    margin-top: 0;
+  }
+
+  .card-wrap[data-expanded="true"] .expand-content {
+    clip-path: inset(0 0 0 0);
+    padding-top: var(--card-padding);
+  }
+
+  /* Reduced-motion: instant expand, no clip-path animation. */
+  :global(html[data-motion="reduced"]) .expand-grid,
+  :global(html[data-motion="reduced"]) .expand-content {
+    transition: none;
+  }
+  :global(html[data-motion="reduced"]) .card-wrap[data-expanded="true"] .expand-content {
+    clip-path: inset(0 0 0 0);
+  }
+
+  /* ---- EXPANDED CONTENT CHROME (carried from slice 10 back-face) ---- */
   .back-section-title {
     font-size: var(--font-size-caption);
     color: var(--color-text-secondary);
@@ -478,6 +516,18 @@
     font-family: var(--font-mono);
     font-size: var(--font-size-caption);
     word-break: break-all;
+  }
+
+  /* Slice 12 P3 (R-63): file-path anchors embedded by linkifyText. */
+  .tool-input :global(a[data-deep-link="file"]) {
+    color: var(--color-accent-primary);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+  .tool-input :global(a[data-deep-link="file"]:hover) {
+    text-decoration-thickness: 2px;
   }
 
   .back-footer {

@@ -32,6 +32,11 @@
   import { onMount, tick } from "svelte";
   import { payload } from "../stores/data";
   import { inspector } from "../stores/inspector";
+  import { toast } from "../stores/toast";
+  import {
+    buildResumeCommand,
+    buildWarpTabUri,
+  } from "../util/deep-link";
   import type { RenderEvent } from "../types";
   import MarkdownBlock from "./MarkdownBlock.svelte";
 
@@ -39,6 +44,9 @@
   let asideEl: HTMLElement | undefined = $state();
   let closeBtnEl: HTMLButtonElement | undefined = $state();
   let previousFocus: HTMLElement | null = null;
+  // Slice 12 P5 (R-69 / AG-33): per-event raw JSON tab. Closes back to body
+  // whenever the inspector opens on a NEW event.
+  let showRawJson = $state(false);
 
   const event = $derived.by<RenderEvent | null>(() => {
     if (!openEventId) return null;
@@ -65,6 +73,8 @@
     const unsub = inspector.subscribe(async (id) => {
       const wasOpen = openEventId !== null;
       openEventId = id;
+      // Reset the raw JSON tab whenever the user opens a different event.
+      showRawJson = false;
       if (id !== null && !wasOpen) {
         previousFocus = (document.activeElement as HTMLElement | null) ?? null;
         // Move focus to the close button on next tick (after the aside mounts).
@@ -119,6 +129,34 @@
       // Clipboard API may be denied in file://; non-fatal.
     }
   }
+
+  // Slice-12 P3 (R-64 / INV-19 / AG-29): "Resume in terminal" affordance.
+  // Per INV-19 we do NOT fabricate a claude:// scheme. Instead we copy the
+  // exact `claude --resume <id>` command to the clipboard, open a Warp tab
+  // cwd'd at the project root, and show a 2-second toast confirming the
+  // paste payload is ready.
+  async function resumeInTerminal(): Promise<void> {
+    if (!event?.sessionId) return;
+    const cmd = buildResumeCommand(event.sessionId);
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(cmd);
+      } catch {
+        // Clipboard API may be denied in file://; non-fatal — we still open
+        // Warp and surface the toast so the user knows to paste manually.
+      }
+    }
+    toast.show("Command copied — paste into Warp");
+    const projectRoot = payload.project?.root ?? "";
+    if (projectRoot && typeof window !== "undefined") {
+      try {
+        window.open(buildWarpTabUri(projectRoot), "_blank");
+      } catch {
+        // Some browsers block window.open from non-user-gesture contexts;
+        // the click handler is user-initiated so this is rare.
+      }
+    }
+  }
 </script>
 
 <svelte:window onkeydown={onKey} />
@@ -171,18 +209,57 @@
       </p>
     </header>
 
+    <!-- Slice 12 P5 (R-69 / AG-33 / INV-18): per-event view toggle. The "Body"
+         tab keeps the editorial rendering; the "Raw JSON" tab renders the
+         event's full payload inside a sunken monospace surface. The tab
+         coexists with the dedicated `/transcript/<sid>` route — they serve
+         per-event vs. per-session scopes. -->
+    <div class="ins-tabs" role="tablist" aria-label="Event view">
+      <button
+        type="button"
+        class="ins-tab"
+        class:is-active={!showRawJson}
+        role="tab"
+        aria-selected={!showRawJson}
+        onclick={() => (showRawJson = false)}
+      >Body</button>
+      <button
+        type="button"
+        class="ins-tab"
+        class:is-active={showRawJson}
+        role="tab"
+        aria-selected={showRawJson}
+        onclick={() => (showRawJson = true)}
+      >Raw JSON</button>
+    </div>
+
     <div class="ins-body">
-      {#if event.description}
-        <p class="ins-description">{event.description}</p>
-      {/if}
-      {#if body}
-        <MarkdownBlock {body} />
-      {:else if !event.description}
-        <p class="ins-empty">No body content for this event.</p>
+      {#if showRawJson}
+        <pre class="ins-raw" data-testid="inspector-raw-json">{JSON.stringify(event, null, 2)}</pre>
+      {:else}
+        {#if event.description}
+          <p class="ins-description">{event.description}</p>
+        {/if}
+        {#if body}
+          <MarkdownBlock {body} />
+        {:else if !event.description}
+          <p class="ins-empty">No body content for this event.</p>
+        {/if}
       {/if}
     </div>
 
     <footer class="ins-footer">
+      {#if event.sessionId}
+        <button
+          type="button"
+          class="copy-btn resume-btn"
+          onclick={resumeInTerminal}
+          aria-label={`Copy 'claude --resume ${event.sessionId}' and open Warp tab`}
+          data-testid="inspector-resume"
+        >
+          Resume in terminal
+        </button>
+      {/if}
       <button type="button" class="copy-btn" onclick={copyBody}>
         Copy body
       </button>
@@ -300,11 +377,60 @@
     color: var(--color-text-tertiary);
   }
 
+  /* Slice 12 P5: tab strip above the body. */
+  .ins-tabs {
+    display: flex;
+    gap: var(--p-space-2);
+    padding: var(--p-space-3) var(--p-space-5) 0;
+    flex-shrink: 0;
+  }
+  .ins-tab {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    border-bottom: 2px solid transparent;
+    color: var(--color-text-secondary);
+    font-family: var(--font-body);
+    font-size: var(--font-size-meta);
+    padding: var(--p-space-2) var(--p-space-3);
+    cursor: pointer;
+    transition: color 150ms ease-out, border-color 150ms ease-out;
+  }
+  .ins-tab:hover {
+    color: var(--color-text-primary);
+  }
+  .ins-tab.is-active {
+    color: var(--color-text-primary);
+    border-bottom-color: var(--color-accent-primary);
+  }
+  .ins-tab:focus-visible {
+    outline: 1px solid var(--color-accent-primary);
+    outline-offset: 2px;
+    border-radius: var(--radius-xs);
+  }
+
   .ins-body {
     flex: 1;
     overflow-y: auto;
     padding: var(--p-space-5);
     min-height: 0;
+  }
+
+  /* Slice 12 P5 (R-69 / INV-18): raw JSON pane uses the dev-tools register —
+     sunken surface + monospace, contained inside the editorial inspector frame. */
+  .ins-raw {
+    margin: 0;
+    padding: var(--p-space-4);
+    background: var(--color-surface-sunken);
+    color: var(--color-text-primary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    line-height: 1.5;
+    border-radius: var(--radius-xs);
+    border: 1px solid var(--color-border-hairline);
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
   }
 
   .ins-description {
@@ -325,7 +451,19 @@
     border-top: var(--card-border);
     display: flex;
     justify-content: flex-end;
+    gap: var(--p-space-3);
     flex-shrink: 0;
+  }
+
+  /* Slice 12 P3: resume-in-terminal is the lead action — use accent border. */
+  .resume-btn {
+    color: var(--color-text-primary);
+    border-color: var(--color-accent-primary);
+  }
+  .resume-btn:hover,
+  .resume-btn:focus-visible {
+    background: var(--color-accent-primary);
+    color: var(--color-surface-sunken);
   }
 
   .copy-btn {

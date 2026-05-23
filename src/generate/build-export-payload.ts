@@ -12,9 +12,17 @@
  * Spec references: R-11, R-12, R-13, R-14, R-15, INV-12.
  */
 
+import { readFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import type { ProjectPaths } from "../core/paths.js";
 import type { RenderContext, RenderEvent } from "./render-context.js";
 import { renderEventBody } from "./markdown-body.js";
+import { buildCommitLink } from "../connectors/git.js";
+import {
+  sanitizeTranscriptSession,
+  type SanitizedTranscript,
+} from "../export/transcript-sanitize.js";
 
 // ---------------------------------------------------------------------------
 // Payload v2 types (design §5.1 — co-located with the builder)
@@ -111,6 +119,18 @@ export interface ExportPayloadV2 {
   bodies: Record<string, string>;
   /** Pre-rendered mermaid SVG keyed by diagram id. STUB in P2 — P5 wires it. */
   mermaid: Record<string, string>;
+  /**
+   * Sanitized raw transcripts keyed by sessionId (slice 12 P4, ADR-SC-D2).
+   *
+   * `null` indicates the JSONL file exists in payload's session list but the
+   * transcript could not be read (missing file, parse failure, machine that
+   * never ran the session). The UI must fall back to "Transcript unavailable"
+   * for those sessions.
+   *
+   * Field is optional so older payload consumers (and the budget-gate
+   * `--no-transcripts` path) can skip it without a schema break.
+   */
+  transcripts?: Record<string, SanitizedTranscript | null>;
 }
 
 /**
@@ -135,6 +155,68 @@ export interface BuildExportPayloadResult {
 
 /** R-14 / INV-12 — inline payload cap. Above this, the export emits a sidecar. */
 const PAYLOAD_CAP_BYTES = 5 * 1024 * 1024;
+
+/**
+ * Encode a project root path the same way Claude Code does when persisting
+ * per-project JSONL transcripts under `~/.claude/projects/<encoded>/`.
+ *
+ * Convention (verified against the live `~/.claude/projects` directory on a
+ * machine that has run Claude Code against this repo):
+ *   - Forward slashes (`/`) → `-`
+ *   - Spaces             → `-`
+ *   - Dots (`.`)         → `-`  (so `joseluis.fernandez` becomes
+ *                                 `joseluis-fernandez` in the encoded path)
+ *
+ * Anything else (alphanumerics, underscores, hyphens) is preserved verbatim.
+ * The leading absolute slash becomes a single leading dash.
+ *
+ * NOTE: the original P4 spec text suggested spaces would be preserved as-is.
+ * On the developer's machine the actual directory is
+ *   `-Users-joseluis-fernandez-Documents-CONSTRUCCION-FORMACION-IA-B2B-LogBook-repo`
+ * — confirming dots, slashes, and spaces ALL collapse to `-`. We follow the
+ * observed convention; if a future Claude Code version changes the encoding,
+ * this is the single point to update.
+ */
+function encodeProjectPath(root: string): string {
+  return root.replace(/[/\s.]/g, "-");
+}
+
+/**
+ * Read a session's raw JSONL transcript from Claude Code's per-project
+ * directory and run it through `sanitizeTranscriptSession`.
+ *
+ * Returns `null` (NEVER throws) when the file is missing or the parse fails.
+ * Callers treat null as "transcript unavailable" and continue.
+ *
+ * PASSIVE per INV-1: we only READ files that Claude Code already wrote. No
+ * capture-pipeline change, no hook side-effects.
+ */
+async function loadSanitizedTranscript(
+  sessionId: string,
+  projectRoot: string,
+): Promise<SanitizedTranscript | null> {
+  if (!sessionId) return null;
+  try {
+    const encoded = encodeProjectPath(projectRoot);
+    const filePath = join(homedir(), ".claude", "projects", encoded, `${sessionId}.jsonl`);
+    const raw = await readFile(filePath, "utf8");
+    const lines = raw.split("\n");
+    const events: unknown[] = [];
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        events.push(JSON.parse(trimmed));
+      } catch {
+        // Skip individual malformed lines — don't poison the whole session.
+      }
+    }
+    if (events.length === 0) return null;
+    return sanitizeTranscriptSession(events, sessionId);
+  } catch {
+    return null;
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -195,7 +277,17 @@ function projectNameFrom(root: string): string {
 export async function buildExportPayload(
   ctx: RenderContext,
   paths: ProjectPaths,
-  opts: { exportedAt?: string; gitSha?: string } = {},
+  opts: {
+    exportedAt?: string;
+    gitSha?: string;
+    remoteUrl?: string;
+    /**
+     * When true, skip the raw-transcript embed entirely. Driven by the
+     * `--no-transcripts` CLI flag and the `LOGBOOK_EXPORT_NO_TRANSCRIPTS=1`
+     * env var (see budget gate in src/export/html.ts).
+     */
+    noTranscripts?: boolean;
+  } = {},
 ): Promise<BuildExportPayloadResult> {
   // --- Sessions / chapters -------------------------------------------------
   const sessions = ctx.sessions;
@@ -304,9 +396,51 @@ export async function buildExportPayload(
   // Commits live in their own bucket per R-13. Until the upstream
   // commit-ingestion pipeline lands an explicit ctx.commits field, we lift
   // them from `ctx.all` by type prefix.
-  const commits = (ctx.all ?? []).filter(
+  //
+  // R-60 / ADR-SC-C1 — populate `payload.commitUrl` per commit using the
+  // shared `buildCommitLink(remoteUrl, sha)` helper. The remoteUrl is threaded
+  // in from `src/generate/index.ts` (single `git remote get-url origin` per
+  // build). Unknown hosts / missing remote → leave `commitUrl` undefined; the
+  // UI's `<CommitRow>` renders plain `<code>` in that case.
+  const rawCommits = (ctx.all ?? []).filter(
     (e) => e.type === "commit" || e.type === "manual.commit",
   );
+  const commits: RenderEvent[] = rawCommits.map((e) => {
+    const payloadRecord = (e.payload ?? {}) as Record<string, unknown>;
+    const sha =
+      typeof payloadRecord["sha"] === "string"
+        ? (payloadRecord["sha"] as string)
+        : "";
+    if (!sha) return e;
+    const url = buildCommitLink(opts.remoteUrl, sha);
+    if (!url) return e;
+    return {
+      ...e,
+      payload: { ...payloadRecord, commitUrl: url },
+    };
+  });
+
+  // --- Raw transcripts (slice 12 P4, ADR-SC-D2, R-66) ----------------------
+  // PASSIVE per INV-1 — we read the JSONL files Claude Code already wrote at
+  // `~/.claude/projects/<encoded>/<sessionId>.jsonl`. Missing files (e.g. the
+  // session ran on a different machine, or this is a fresh checkout) produce
+  // a null entry; the UI's P5 transcript route shows "unavailable" for those.
+  //
+  // The whole step is wrapped in try/catch at the per-session level so one
+  // broken transcript never fails the entire export.
+  let transcripts: Record<string, SanitizedTranscript | null> | undefined;
+  if (!opts.noTranscripts && sessions.length > 0) {
+    transcripts = {};
+    await Promise.all(
+      sessions.map(async (s) => {
+        const sid = typeof s["id"] === "string" ? (s["id"] as string) : "";
+        if (!sid) return;
+        const t = await loadSanitizedTranscript(sid, paths.root);
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+        transcripts![sid] = t;
+      }),
+    );
+  }
 
   const totals: CourseTotals = {
     sessions: sessions.length,
@@ -350,6 +484,7 @@ export async function buildExportPayload(
     commits,
     bodies,
     mermaid,
+    ...(transcripts !== undefined && { transcripts }),
   };
 
   // --- 5 MB cap detection (R-14 / INV-12 / S-12) ---------------------------

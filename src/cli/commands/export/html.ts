@@ -69,6 +69,12 @@ export default defineCommand({
       default: false,
       description: "Include speaker notes in output (default: stripped)",
     },
+    "no-transcripts": {
+      type: "boolean",
+      default: false,
+      description:
+        "Skip embedding raw Claude Code transcripts (slice-12 P4 budget gate)",
+    },
   },
   async run({ args }) {
     let root: string;
@@ -108,6 +114,7 @@ export default defineCommand({
 
     const safeMode = args["safe"] === true;
     const speakerMode = args["speaker-mode"] === true;
+    const noTranscripts = args["no-transcripts"] === true;
     const themeArg =
       typeof args["theme"] === "string" && args["theme"]
         ? nodePath.resolve(process.cwd(), args["theme"])
@@ -117,6 +124,7 @@ export default defineCommand({
       paths,
       safe: safeMode,
       ...(speakerMode && { speakerMode }),
+      ...(noTranscripts && { noTranscripts }),
       ...(outArg !== undefined && { outFile: outArg }),
       ...(themeArg !== undefined && { themePath: themeArg }),
     };

@@ -20,6 +20,8 @@
   import type { RenderEvent } from "../types";
   import { subscribeMotion } from "../stores/motion";
   import { onMount } from "svelte";
+  import LegendKey from "./LegendKey.svelte";
+  import PlaybackController from "./PlaybackController.svelte";
 
   interface Props {
     events: RenderEvent[];
@@ -92,6 +94,14 @@
 </script>
 
 <nav class="mobile-timeline" aria-label="Chapter timeline" data-testid="mobile-timeline">
+  <!-- Slice 12 P1 R-51: legend parity at the top of the mobile timeline. -->
+  <LegendKey variant="mobile" />
+
+  <!-- Slice 12 P6 R-72: compact playback controls (single cycle speed button). -->
+  <div class="mobile-playback">
+    <PlaybackController {events} compact />
+  </div>
+
   <p class="title">Timeline</p>
   <ol class="anchor-list">
     {#each events as ev (ev.id)}
@@ -120,6 +130,12 @@
     background: var(--color-surface-raised);
     padding: var(--p-space-4);
     margin: var(--p-space-5) 0;
+  }
+
+  .mobile-playback {
+    margin: 0 0 var(--p-space-3) 0;
+    display: flex;
+    justify-content: flex-end;
   }
 
   .title {

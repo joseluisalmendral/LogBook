@@ -68,11 +68,23 @@
 
   // Track whether THIS row is the selected one in the inspector.
   import { onMount } from "svelte";
+  import { selection } from "../stores/selection";
+  import { router } from "../stores/router";
   onMount(() => {
     return inspector.subscribe((id) => {
       selected = id === event.id;
     });
   });
+
+  function openInspectorWithSelection(): void {
+    inspector.open(event.id);
+    // Slice-12 P7 (R-68): emit selection + URL hash query for transcript sync.
+    const route = router.get();
+    if (route.name === "chapter") {
+      selection._setFromRoute("chapter", event.id);
+      router.navigate({ name: "chapter", chapterId: route.chapterId, eventId: event.id });
+    }
+  }
 </script>
 
 <div class="turn-row" data-testid="turn-row" data-kind={kind} class:is-selected={selected}>
@@ -92,7 +104,13 @@
     <CommitRow {event} />
   {:else}
     <!-- Lesson / fix / generic — minimal row with click-to-inspect. -->
-    <button type="button" class="generic-row" data-kind-row={kind} onclick={openInspector}>
+    <button
+      type="button"
+      class="generic-row"
+      data-kind-row={kind}
+      data-interactive
+      onclick={openInspectorWithSelection}
+    >
       <span class="row-dot" aria-hidden="true"></span>
       <span class="row-eyebrow">{kind === "lesson" ? "Lesson" : kind === "fix" ? "Fix" : "Event"}</span>
       <span class="row-title">{event.title ?? "Untitled event"}</span>

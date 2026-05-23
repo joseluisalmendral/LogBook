@@ -1,0 +1,191 @@
+/*
+ * Affordance polish — slice 12 P1 (R-52, R-53, R-79, AG-22, AG-23).
+ *
+ * Centralized hover/focus/lift rules for interactive rows. Any component that
+ * is row-clickable opts in by adding `data-interactive` to its root element.
+ * That keeps the affordance contract declarative + auditable from one place
+ * (research brief #289 fix #1 + pattern #7 Linear ghost actions).
+ *
+ * Brand RGB token: derived from --color-accent-primary (navy 700 / boosted
+ * navy 400). We expose --brand-rgb so the hover tint uses an alpha-blended
+ * brand color without bleeding outside the cascade. Component CSS can override
+ * locally if a kind-specific accent is required.
+ *
+ * Motion contract:
+ *   - Default: 150ms ease transition on background + transform.
+ *   - data-motion="reduced": app.css zeroes transition-duration globally; the
+ *     hover/lift visual still resolves (just instant). cursor:pointer remains.
+ *
+ * Accessibility:
+ *   - Focus-visible outlines apply universally to interactive surfaces.
+ *   - :focus:not(:focus-visible) suppresses mouse-induced outlines (mirrors
+ *     app.css base layer; repeated here for [data-interactive] specificity).
+ */
+
+:root {
+  /* Light-mode navy as r,g,b for rgba()/color-mix() consumers. */
+  --brand-rgb: 30, 58, 95;
+  /* Focus outline color — falls back to currentColor if accent token absent. */
+  --color-focus: var(--color-accent-primary, currentColor);
+}
+
+[data-theme="dark"],
+:root[data-theme="dark"] {
+  /* Dark-mode boosted navy 400 (#5b8fd9). */
+  --brand-rgb: 91, 143, 217;
+}
+
+/* -----------------------------------------------------------------------
+ * The affordance contract. Apply [data-interactive] to any row root that
+ * is clickable. Pairs with role/button semantics — this stylesheet is
+ * styling only, no behavior.
+ * --------------------------------------------------------------------- */
+[data-interactive] {
+  cursor: pointer;
+  transition:
+    background-color 150ms ease,
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+
+[data-interactive]:hover {
+  background-color: rgba(var(--brand-rgb), 0.05);
+  transform: translateY(-1px);
+}
+
+[data-interactive]:focus-visible {
+  outline: 1px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+/* Mouse focus shows no outline. Re-stated for [data-interactive] specificity. */
+[data-interactive]:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Reduced motion: zero translate, no transition. cursor:pointer stays. */
+html[data-motion="reduced"] [data-interactive] {
+  transition: none !important;
+}
+html[data-motion="reduced"] [data-interactive]:hover {
+  transform: none !important;
+}
+
+/* -----------------------------------------------------------------------
+ * Chevron affordance (R-54, AG-24).
+ *
+ * Always visible at rest; rotates 90deg clockwise when the host element has
+ * [data-expanded="true"]. The icon IS the affordance signal — do NOT
+ * hover-reveal it (research brief affordance fix #2).
+ * --------------------------------------------------------------------- */
+.lb-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  transform: rotate(0deg);
+  transition: transform 200ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+[data-expanded="true"] .lb-chevron,
+[data-flipped="true"] .lb-chevron,
+[aria-expanded="true"] .lb-chevron {
+  transform: rotate(90deg);
+}
+
+html[data-motion="reduced"] .lb-chevron {
+  transition: none !important;
+}
+
+/* -----------------------------------------------------------------------
+ * Slice 12 P6 — Bucket F (R-71, R-75, INV-15 Moment 3).
+ *
+ * --play-progress mirrors the playhead store's `t` (0..1). The playhead store
+ * pushes its value onto <html> via inline style in the loop; descendants
+ * can branch on it the same way --scroll-progress works for the scrub store.
+ * Independent so the two drivers don't fight (ADR-SC-F2 + INV-16).
+ *
+ * Heartbeat pulse (Moment 3): when `.is-active` is set on the active event
+ * anchor during playhead playback, the rim pulses outward. 1.5s loop is
+ * exempt from the R-80 600ms motion cap because it's a CONTINUOUS indicator,
+ * not a one-shot play.
+ *
+ * Reduced-motion fallback: static 3px ring, no animation. Spec R-75.
+ * --------------------------------------------------------------------- */
+:root {
+  --play-progress: 0;
+}
+
+.is-active {
+  position: relative;
+  border-radius: var(--radius-sm, 4px);
+  animation: lb-heartbeat 1500ms ease-out infinite;
+  box-shadow: 0 0 0 0 rgba(var(--brand-rgb), 0.4);
+}
+
+@keyframes lb-heartbeat {
+  0%   { box-shadow: 0 0 0 0 rgba(var(--brand-rgb), 0.4); }
+  70%  { box-shadow: 0 0 0 8px rgba(var(--brand-rgb), 0); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--brand-rgb), 0); }
+}
+
+html[data-motion="reduced"] .is-active {
+  animation: none !important;
+  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.4) !important;
+}
+
+/* -----------------------------------------------------------------------
+ * Slice 12 P7 — Selection-driven acknowledge pulse (R-68 highlight ring).
+ *
+ * `.lb-pulse-once` is added by ChapterPlayer for 1200ms when the selection
+ * store flips to a new chapter event (card click or transcript "Jump to
+ * card"). The pulse is FUNCTIONAL FEEDBACK — it confirms "yes, this is the
+ * card you asked for" — and therefore does NOT consume a slot from the
+ * INV-15 5-moment delight motion cap. Documented as an INV-15 § exception.
+ *
+ * Coordination with the heartbeat (.is-active):
+ *   ChapterPlayer skips applying `.lb-pulse-once` when `playhead.playing`
+ *   is true, because the heartbeat is already animating the target row.
+ *   Running both at the same time double-animates the box-shadow and looks
+ *   jittery.
+ *
+ * Reduced-motion fallback: outline stays static for the same 1200ms window
+ * via the same class application/removal — but the animation is disabled
+ * and replaced by a static outline so the user still sees the focus.
+ * --------------------------------------------------------------------- */
+.lb-pulse-once {
+  animation: lb-pulse-once 1200ms ease-out forwards;
+}
+
+@keyframes lb-pulse-once {
+  0%   { box-shadow: 0 0 0 0 rgba(var(--brand-rgb), 0.6); }
+  100% { box-shadow: 0 0 0 12px rgba(var(--brand-rgb), 0); }
+}
+
+html[data-motion="reduced"] .lb-pulse-once {
+  animation: none !important;
+  outline: 2px solid rgba(var(--brand-rgb), 0.6);
+  outline-offset: 4px;
+}
+
+/* -----------------------------------------------------------------------
+ * Slice 12 final motion audit (INV-15 + R-80 + AG-41).
+ *
+ * Five named delight motion moments now active in the export:
+ *   Moment 1  — SubAgentCard deploy entrance        (P2; ≤ 400ms perceived; R-58)
+ *   Moment 2  — AgentQuestionCard SVG branch fork   (P7; 600ms total; R-78)
+ *   Moment 3  — Heartbeat pulse during playback     (P6; 1500ms continuous loop; R-75)
+ *   Moment G2 — Chapter scroll-timeline progress    (P1; scroll-driven; R-76)
+ *   Moment G4 — KPI count-up                        (P1; 800ms one-shot; R-77)
+ *
+ * Functional feedback (NOT a 6th delight moment per INV-15 § exceptions):
+ *   - lb-pulse-once — 1200ms acknowledge ring on selection-driven card focus
+ *     (R-68 highlight ring). Functional, not delight motion.
+ *   - chevron rotation (.lb-chevron) — state indicator, not delight.
+ *   - hover background tints (data-interactive) — affordance, not delight.
+ *
+ * Reduced-motion contract: every above motion has a documented fallback
+ * either by `animation: none` + static visual OR by being scroll-driven
+ * (which Chrome disables automatically under prefers-reduced-motion: reduce).
+ * --------------------------------------------------------------------- */
