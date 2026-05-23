@@ -47,6 +47,7 @@
   import type { RenderEvent } from "../types";
   import MarkdownBlock from "./MarkdownBlock.svelte";
   import { inspector } from "../stores/inspector";
+  import { linkifyText } from "../util/deep-link";
 
   interface Props {
     event: RenderEvent;
@@ -197,7 +198,12 @@
               {#each tools as t}
                 <li class="tool-row">
                   <code class="tool-name">{t.name ?? "tool"}</code>
-                  {#if t.input}<span class="tool-input">{t.input}</span>{/if}
+                  {#if t.input}
+                    <!-- Slice-12 P3 (R-63): wrap detected file paths inside
+                         tool-input prose in vscode://file/ anchors. linkifyText
+                         HTML-escapes everything else, so the splat is safe. -->
+                    <span class="tool-input">{@html linkifyText(t.input).html}</span>
+                  {/if}
                 </li>
               {/each}
             </ul>
@@ -499,6 +505,18 @@
     font-family: var(--font-mono);
     font-size: var(--font-size-caption);
     word-break: break-all;
+  }
+
+  /* Slice 12 P3 (R-63): file-path anchors embedded by linkifyText. */
+  .tool-input :global(a[data-deep-link="file"]) {
+    color: var(--color-accent-primary);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 2px;
+    cursor: pointer;
+  }
+  .tool-input :global(a[data-deep-link="file"]:hover) {
+    text-decoration-thickness: 2px;
   }
 
   .back-footer {
