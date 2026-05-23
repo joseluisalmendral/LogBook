@@ -62,7 +62,7 @@ describe("visual-replay — T6.16 PASSIVE invariant", () => {
     const inlineCssPath = resolve(ROOT, "src/export/inline-css.ts");
     expect(existsSync(inlineCssPath)).toBe(true);
     const src = readFileSync(inlineCssPath, "utf8");
-    // Sanity: contains the violet accent token.
-    expect(src).toContain("--lb-accent: #7C3AED");
+    // Sanity: contains the Linear-inspired accent token (slice 10 redesign).
+    expect(src).toContain("--lb-accent: #5e6ad2");
   });
 });
