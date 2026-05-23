@@ -113,7 +113,9 @@
     class:is-flipped={flipped}
     role="button"
     tabindex="0"
+    data-interactive
     aria-pressed={flipped}
+    aria-expanded={flipped}
     aria-label={flipped ? `Collapse ${agent}` : `Expand ${agent}`}
     onclick={toggleFlip}
     onkeydown={onKey}
@@ -137,7 +139,12 @@
         {#if durationLabel}
           <span class="badge badge-time lb-tnum" title="Duration">{durationLabel}</span>
         {/if}
-        <span class="hint" aria-hidden="true">flip</span>
+        <!-- R-54 / AG-24: always-visible chevron rotates 90° via affordance.css when [data-flipped="true"]. -->
+        <span class="lb-chevron card-chevron" aria-hidden="true">
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="5 3 11 8 5 13" />
+          </svg>
+        </span>
       </div>
       {#if promptSummary}
         <p class="agent-summary">{promptSummary}</p>
@@ -387,6 +394,11 @@
     text-transform: uppercase;
     letter-spacing: 0.1em;
     flex-shrink: 0;
+  }
+
+  /* R-54: pin the always-visible chevron to the right edge of the compact row. */
+  .card-chevron {
+    margin-left: auto;
   }
 
   /* ------ BACK FACE CHROME ------ */
