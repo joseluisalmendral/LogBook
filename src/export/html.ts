@@ -18,7 +18,7 @@
  * Spec: R-5, R-41, R-42, R-43, R-44, R-45, INV-2, INV-3, INV-12, S-13.
  */
 
-import { writeFile, rename, mkdir } from "node:fs/promises";
+import { writeFile, rename, mkdir, stat } from "node:fs/promises";
 import { join, dirname } from "pathe";
 import { UI_BUNDLE } from "./ui-bundle.js";
 import { assertNoExternalRefs } from "./sanitize-links.js";
@@ -105,6 +105,22 @@ export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
 
   const outFile =
     opts.outFile ?? join(paths.dataDir, "exports", "index.html");
+
+  // Pre-flight: `logbook build` is the prerequisite that materializes
+  // logbook/docs/. The new export pipeline reads events.jsonl directly and
+  // does not consume the docs markdown, but their absence is a reliable
+  // signal that build has never run — and an empty export is rarely what
+  // the user wants. Fail loud with the actionable next step instead.
+  try {
+    const docsStat = await stat(join(paths.dataDir, "docs"));
+    if (!docsStat.isDirectory()) {
+      throw new Error("not a directory");
+    }
+  } catch {
+    throw new Error(
+      "logbook/docs/ not found — run `logbook build` first to generate session/timeline/error docs before exporting.",
+    );
+  }
 
   // 1-2. Load context + build payload (also detects 5 MB cap).
   const ctx = await readContext(paths);
