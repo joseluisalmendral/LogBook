@@ -409,6 +409,259 @@ describe("buildExportPayload", () => {
       expect(foo?.action).toBe("write");
     });
 
+    it("upgrades the first chronological write on a path to 'create'", async () => {
+      // Single Write on a fresh path → create (the file did not exist before).
+      const writeFreshPath: RenderEvent = {
+        id: "tr-create-1",
+        type: "tool_result.write",
+        ts: "2026-05-24T11:00:00.000Z",
+        sessionId: "sess-files-1",
+        tool_name: "Write",
+        raw: { tool_input: { file_path: "/repo/src/brand-new.ts" } },
+        meta: { subagentId: "agent-explorer-x" },
+      } as unknown as RenderEvent;
+
+      const ctx = mkCtx({
+        sessions: [sessionStart],
+        conversation: [subagent, writeFreshPath],
+        all: [sessionStart, subagent, writeFreshPath],
+      });
+      const { payload } = await buildExportPayload(ctx, mkPaths());
+      const chapter = payload.chapters[0]!;
+      const touch = chapter.filesTouched!.find((f) => f.path === "/repo/src/brand-new.ts");
+      expect(touch?.action).toBe("create");
+    });
+
+    it("keeps subsequent writes on a previously-touched path as 'write' (overwrite)", async () => {
+      // Read happens first → write becomes a real overwrite, not a create.
+      const readFirst: RenderEvent = {
+        id: "tr-read-first",
+        type: "tool_result.read",
+        ts: "2026-05-24T10:00:30.000Z",
+        sessionId: "sess-files-1",
+        tool_name: "Read",
+        raw: { tool_input: { file_path: "/repo/src/existing.ts" } },
+        meta: { subagentId: "agent-explorer-x" },
+      } as unknown as RenderEvent;
+
+      const writeAfter: RenderEvent = {
+        id: "tr-write-after",
+        type: "tool_result.write",
+        ts: "2026-05-24T10:01:00.000Z",
+        sessionId: "sess-files-1",
+        tool_name: "Write",
+        raw: { tool_input: { file_path: "/repo/src/existing.ts" } },
+        meta: { subagentId: "agent-explorer-x" },
+      } as unknown as RenderEvent;
+
+      const ctx = mkCtx({
+        sessions: [sessionStart],
+        conversation: [subagent, readFirst, writeAfter],
+        all: [sessionStart, subagent, readFirst, writeAfter],
+      });
+      const { payload } = await buildExportPayload(ctx, mkPaths());
+      const chapter = payload.chapters[0]!;
+      const touch = chapter.filesTouched!.find((f) => f.path === "/repo/src/existing.ts");
+      // write beats read in strength order → final action stays write, not read.
+      expect(touch?.action).toBe("write");
+    });
+
+    it("keeps 'create' even when an edit happens later on the same path (strongest action wins)", async () => {
+      const writeCreates: RenderEvent = {
+        id: "tr-create-then-edit",
+        type: "tool_result.write",
+        ts: "2026-05-24T10:00:30.000Z",
+        sessionId: "sess-files-1",
+        tool_name: "Write",
+        raw: { tool_input: { file_path: "/repo/src/newer.ts" } },
+        meta: { subagentId: "agent-explorer-x" },
+      } as unknown as RenderEvent;
+
+      const editLater: RenderEvent = {
+        id: "tr-edit-later",
+        type: "tool_result.edit",
+        ts: "2026-05-24T10:02:00.000Z",
+        sessionId: "sess-files-1",
+        tool_name: "Edit",
+        raw: { tool_input: { file_path: "/repo/src/newer.ts" } },
+        meta: { subagentId: "agent-explorer-x" },
+      } as unknown as RenderEvent;
+
+      const ctx = mkCtx({
+        sessions: [sessionStart],
+        conversation: [subagent, writeCreates, editLater],
+        all: [sessionStart, subagent, writeCreates, editLater],
+      });
+      const { payload } = await buildExportPayload(ctx, mkPaths());
+      const chapter = payload.chapters[0]!;
+      const touch = chapter.filesTouched!.find((f) => f.path === "/repo/src/newer.ts");
+      // create (strength 5) > edit (strength 3) → create wins.
+      expect(touch?.action).toBe("create");
+    });
+
+    it("correlates tool_result events via raw.agent_id when meta.subagentId is absent (slice-15 fix)", async () => {
+      // Real PostToolUse hook events carry the sub-agent attribution at
+      // `raw.agent_id`, not `meta.subagentId` (only transcript-scraper-
+      // synthesized events use meta.subagentId). The aggregation must match
+      // both paths.
+      const hookOriginEdit: RenderEvent = {
+        id: "tr-hook-edit",
+        type: "tool_result.edit",
+        ts: "2026-05-24T10:01:00.000Z",
+        sessionId: "sess-files-1",
+        tool_name: "Edit",
+        raw: {
+          agent_id: "agent-explorer-x",  // <- correlation key from PostToolUse
+          tool_input: { file_path: "/repo/src/from-hook.ts" },
+        },
+        // No meta.subagentId — this is the hook origin path.
+        meta: {},
+      } as unknown as RenderEvent;
+
+      const ctx = mkCtx({
+        sessions: [sessionStart],
+        conversation: [subagent, hookOriginEdit],
+        all: [sessionStart, subagent, hookOriginEdit],
+      });
+      const { payload } = await buildExportPayload(ctx, mkPaths());
+      const sa = payload.chapters[0]!.events.find((e) => e.type === "subagent_complete");
+      const p = (sa as unknown as { payload?: Record<string, unknown> }).payload;
+      const filesTouched = p?.["filesTouched"] as Array<{ path: string; action: string }>;
+      expect(filesTouched).toHaveLength(1);
+      expect(filesTouched[0]?.path).toBe("/repo/src/from-hook.ts");
+      const tools = p?.["tools"] as Array<{ name: string; input: string }>;
+      expect(tools).toHaveLength(1);
+      expect(tools[0]?.name).toBe("Edit");
+    });
+
+    it("re-nests payload.tools synthesized from child tool_result events (slice-15 bug fix)", async () => {
+      const bashChild: RenderEvent = {
+        id: "tr-bash",
+        type: "tool_result.bash",
+        ts: "2026-05-24T10:00:45.000Z",
+        sessionId: "sess-files-1",
+        tool_name: "Bash",
+        raw: { tool_input: { command: "pnpm vitest run --coverage" } },
+        meta: { subagentId: "agent-explorer-x" },
+      } as unknown as RenderEvent;
+
+      const readChild: RenderEvent = {
+        id: "tr-read",
+        type: "tool_result.read",
+        ts: "2026-05-24T10:00:50.000Z",
+        sessionId: "sess-files-1",
+        tool_name: "Read",
+        raw: { tool_input: { file_path: "/repo/src/foo.ts" } },
+        meta: { subagentId: "agent-explorer-x" },
+      } as unknown as RenderEvent;
+
+      const ctx = mkCtx({
+        sessions: [sessionStart],
+        conversation: [subagent, bashChild, readChild],
+        all: [sessionStart, subagent, bashChild, readChild],
+      });
+      const { payload } = await buildExportPayload(ctx, mkPaths());
+      const sa = payload.chapters[0]!.events.find((e) => e.type === "subagent_complete");
+      const p = (sa as unknown as { payload?: Record<string, unknown> }).payload;
+      const tools = p?.["tools"] as Array<{ name: string; input: string }>;
+      expect(tools).toBeDefined();
+      // Bash + Read — both surface, with the right input summary.
+      expect(tools.length).toBe(2);
+      const bash = tools.find((t) => t.name === "Bash");
+      expect(bash?.input).toBe("pnpm vitest run --coverage");
+      const read = tools.find((t) => t.name === "Read");
+      expect(read?.input).toBe("/repo/src/foo.ts");
+    });
+
+    it("truncates oversized tool input summaries at 80 chars with ellipsis", async () => {
+      const longCmd = "a".repeat(200);
+      const bashChild: RenderEvent = {
+        id: "tr-bash-long",
+        type: "tool_result.bash",
+        ts: "2026-05-24T10:00:45.000Z",
+        sessionId: "sess-files-1",
+        tool_name: "Bash",
+        raw: { tool_input: { command: longCmd } },
+        meta: { subagentId: "agent-explorer-x" },
+      } as unknown as RenderEvent;
+      const ctx = mkCtx({
+        sessions: [sessionStart],
+        conversation: [subagent, bashChild],
+        all: [sessionStart, subagent, bashChild],
+      });
+      const { payload } = await buildExportPayload(ctx, mkPaths());
+      const sa = payload.chapters[0]!.events.find((e) => e.type === "subagent_complete");
+      const tools = (sa as unknown as { payload?: { tools?: Array<{ input: string }> } }).payload?.tools;
+      expect(tools?.[0]?.input.length).toBe(80);
+      expect(tools?.[0]?.input.endsWith("...")).toBe(true);
+    });
+
+    it("aggregates skillsLoaded from child skill_invoked events (deduped)", async () => {
+      const skillA: RenderEvent = {
+        id: "skill-a",
+        type: "skill_invoked",
+        ts: "2026-05-24T10:00:35.000Z",
+        sessionId: "sess-files-1",
+        skillName: "engram:memory",
+        meta: { subagentId: "agent-explorer-x" },
+      } as unknown as RenderEvent;
+      const skillB: RenderEvent = {
+        id: "skill-b",
+        type: "skill_invoked",
+        ts: "2026-05-24T10:00:40.000Z",
+        sessionId: "sess-files-1",
+        skillName: "verify",
+        meta: { subagentId: "agent-explorer-x" },
+      } as unknown as RenderEvent;
+      // Same skill name as the first → must dedupe.
+      const skillADup: RenderEvent = {
+        id: "skill-a-dup",
+        type: "skill_invoked",
+        ts: "2026-05-24T10:00:55.000Z",
+        sessionId: "sess-files-1",
+        skillName: "engram:memory",
+        meta: { subagentId: "agent-explorer-x" },
+      } as unknown as RenderEvent;
+
+      const ctx = mkCtx({
+        sessions: [sessionStart],
+        conversation: [subagent, skillA, skillB, skillADup],
+        all: [sessionStart, subagent, skillA, skillB, skillADup],
+      });
+      const { payload } = await buildExportPayload(ctx, mkPaths());
+      const sa = payload.chapters[0]!.events.find((e) => e.type === "subagent_complete");
+      const p = (sa as unknown as { payload?: { skillsLoaded?: string[] } }).payload;
+      expect(p?.skillsLoaded).toEqual(["engram:memory", "verify"]);
+    });
+
+    it("sets payload.agent from attributionAgent when present, falling back to agentId", async () => {
+      const ctx = mkCtx({
+        sessions: [sessionStart],
+        conversation: [subagent],
+        all: [sessionStart, subagent],
+      });
+      const { payload } = await buildExportPayload(ctx, mkPaths());
+      const sa = payload.chapters[0]!.events.find((e) => e.type === "subagent_complete");
+      const p = (sa as unknown as { payload?: Record<string, unknown> }).payload;
+      // subagent fixture has no attributionAgent → falls back to agentId.
+      expect(p?.["agent"]).toBe("agent-explorer-x");
+
+      // Now with attributionAgent set:
+      const subagentWithAttr: RenderEvent = {
+        ...subagent,
+        attributionAgent: "sdd-apply",
+      } as unknown as RenderEvent;
+      const ctx2 = mkCtx({
+        sessions: [sessionStart],
+        conversation: [subagentWithAttr],
+        all: [sessionStart, subagentWithAttr],
+      });
+      const { payload: p2 } = await buildExportPayload(ctx2, mkPaths());
+      const sa2 = p2.chapters[0]!.events.find((e) => e.type === "subagent_complete");
+      const pl2 = (sa2 as unknown as { payload?: Record<string, unknown> }).payload;
+      expect(pl2?.["agent"]).toBe("sdd-apply");
+    });
+
     it("returns empty filesTouched arrays when no tool_result.edit/write/multiedit/read events exist", async () => {
       const onlyMessages: RenderEvent[] = [
         sessionStart,
@@ -430,7 +683,9 @@ describe("buildExportPayload", () => {
     });
   });
 
-  it("flags oversize when serialized payload exceeds the 5 MB cap (INV-12)", async () => {
+  // Bumped from the default 5s — the 5 MB serialization can be slow under
+  // parallel-run resource contention even though isolated runs finish in ~1.4s.
+  it("flags oversize when serialized payload exceeds the 5 MB cap (INV-12)", { timeout: 15000 }, async () => {
     // Build a single event with a body large enough to push the payload past 5 MB.
     const huge = "x".repeat(PAYLOAD_CAP_BYTES_FOR_TESTS + 1024);
     const evt: RenderEvent = {

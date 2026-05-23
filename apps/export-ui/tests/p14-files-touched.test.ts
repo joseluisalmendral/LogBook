@@ -47,13 +47,21 @@ describe("slice 14 Bucket E — FileChangeStrip atom", () => {
     expect(src).toContain("aria-label={ariaLabel}");
   });
 
-  it("renders distinct glyphs per action", () => {
+  it("renders distinct glyphs per action including create (slice-15)", () => {
     const src = readSource("components", "FileChangeStrip.svelte");
-    // The action → glyph dictionary uses 4 shapes to keep colors/glyphs in sync.
+    // The action → glyph dictionary uses 5 shapes to keep colors/glyphs in sync.
+    expect(src).toContain("create");
     expect(src).toContain("write");
     expect(src).toContain("edit");
     expect(src).toContain("multi_edit");
     expect(src).toContain("read");
+  });
+
+  it("highlights `create` chips with a green accent (slice-15)", () => {
+    const src = readSource("components", "FileChangeStrip.svelte");
+    expect(src).toContain('chip[data-action="create"]');
+    // Create chips ride the "fix" success token so they pop visually.
+    expect(src).toContain("var(--color-fix");
   });
 
   it("honors reduced-motion by zeroing the hover transform", () => {
@@ -123,9 +131,10 @@ describe("slice 14 Bucket E — ChapterHeader wiring", () => {
 });
 
 describe("slice 14 Bucket E — types contract", () => {
-  it("types.ts exports FileTouch with the 4 documented actions", () => {
+  it("types.ts exports FileTouch with the 5 documented actions (slice-15 adds create)", () => {
     const src = readSource("types.ts");
     expect(src).toContain("export interface FileTouch");
+    expect(src).toContain('"create"');
     expect(src).toContain('"write"');
     expect(src).toContain('"edit"');
     expect(src).toContain('"multi_edit"');
