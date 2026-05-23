@@ -144,8 +144,14 @@
   }
 </script>
 
-<!-- svelte-ignore a11y_no_noninteractive_element_to_interactive_role -->
-<article
+<!--
+  Slice-13 hygiene: switched from <article role="button"> to <div role="button">.
+  Svelte's a11y lint flagged article (semantically non-interactive) being given
+  the interactive `button` role. <div> is the permissive interactive container
+  (a real <button> would impose restrictive default styling and can't contain
+  the structured grid of sub-elements without breaking layout/AT semantics).
+-->
+<div
   class="aq-card"
   data-testid="agent-question-card"
   data-visible={isVisible}
@@ -240,7 +246,7 @@
       <p class="notes-body">{notes}</p>
     </section>
   {/if}
-</article>
+</div>
 
 <style>
   /*

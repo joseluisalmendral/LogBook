@@ -123,14 +123,26 @@ const PATTERN_LINK_STYLESHEET = /<link[^>]+rel=["']?stylesheet/gi;
 const PATTERN_IFRAME = /<iframe[^>]/gi;
 
 /**
+ * Slice-12 P3+P4 embed an opaque JSON payload inside
+ * `<script id="lb-data" type="application/json">…</script>`. URLs inside that
+ * block are event-body markdown text — they are NOT browser-fetched at parse
+ * time. The Svelte UI renders them as `<a>` tags client-side, where the
+ * runtime ADR-20 allowlist applies. We exclude the block from this scan so
+ * that data does not falsely trip the self-contained gate.
+ */
+const PATTERN_LB_DATA_BLOCK =
+  /<script id="lb-data" type="application\/json">[\s\S]*?<\/script>/gi;
+
+/**
  * Scan HTML for external references and return a report.
  * Does not throw — callers that want an assertion should use assertNoExternalRefs.
  */
 export function sanitizeReport(html: string): SanitizeReport {
-  const externalUrls = html.match(PATTERN_EXTERNAL_URL) ?? [];
-  const externalScripts = html.match(PATTERN_SCRIPT_SRC) ?? [];
-  const externalStylesheets = html.match(PATTERN_LINK_STYLESHEET) ?? [];
-  const externalIframes = html.match(PATTERN_IFRAME) ?? [];
+  const scannable = html.replace(PATTERN_LB_DATA_BLOCK, "");
+  const externalUrls = scannable.match(PATTERN_EXTERNAL_URL) ?? [];
+  const externalScripts = scannable.match(PATTERN_SCRIPT_SRC) ?? [];
+  const externalStylesheets = scannable.match(PATTERN_LINK_STYLESHEET) ?? [];
+  const externalIframes = scannable.match(PATTERN_IFRAME) ?? [];
 
   return {
     externalUrls: [...new Set(externalUrls)],
