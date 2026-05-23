@@ -1,34 +1,85 @@
 /*
  * router store — hash-based routing for the file:// export.
  *
- * Spec R-17: hash-routed multi-page with chapterId in the hash only. No
- * history API (file:// safe; the export must work offline from disk).
+ * Spec R-17 (slice 10): hash-routed multi-page with chapterId in the hash
+ * only. No history API (file:// safe; the export must work offline from disk).
  *
- * Route shape:
- *   #/                       → { name: "toc" }
- *   #/chapter/<sessionId>    → { name: "chapter", chapterId: <sessionId> }
+ * Slice 12 P5 extension (R-65 + ADR-SC-D3):
+ *   New `transcript` route + optional `?event=<id>` query suffix on BOTH the
+ *   chapter and transcript routes. The query carries the bidirectional link
+ *   selection (active raw row / active card). Parsing is permissive: missing
+ *   query → eventId null; malformed query → eventId null.
  *
- * Anything else (empty, unrecognized) falls back to the TOC route. We keep
- * the grammar tiny so a URL pasted by a teacher into chat opens predictably.
+ * Route shape (slice 12):
+ *   #/                                 → { name: "toc" }
+ *   #/chapter/<sessionId>              → { name: "chapter", chapterId, eventId: null }
+ *   #/chapter/<sessionId>?event=<id>   → { name: "chapter", chapterId, eventId: <id> }
+ *   #/transcript/<sessionId>           → { name: "transcript", sessionId, eventId: null }
+ *   #/transcript/<sessionId>?event=<id> → { name: "transcript", sessionId, eventId: <id> }
+ *
+ * Anything else (empty, unrecognized) falls back to the TOC route.
  *
  * Sort mode, theme, inspector state are NOT in the hash — pure UI state per
- * Q2 + design §3.
+ * Q2 + design §3. The selection slot lives in selection.ts but mirrors the URL
+ * via `_setFromRoute` on every hashchange (URL is the source of truth).
  */
+
+import { selection } from "./selection";
 
 export type Route =
   | { name: "toc" }
-  | { name: "chapter"; chapterId: string };
+  | { name: "chapter"; chapterId: string; eventId: string | null }
+  | { name: "transcript"; sessionId: string; eventId: string | null };
 
 type Listener = (route: Route) => void;
+
+function parseEventQuery(query: string): string | null {
+  // query is the part AFTER `?` (without the leading `?`). Format: a=b&c=d.
+  if (!query) return null;
+  for (const pair of query.split("&")) {
+    const eq = pair.indexOf("=");
+    if (eq < 0) continue;
+    const key = pair.slice(0, eq);
+    if (key === "event") {
+      const raw = pair.slice(eq + 1);
+      if (!raw) return null;
+      try {
+        return decodeURIComponent(raw);
+      } catch {
+        return null;
+      }
+    }
+  }
+  return null;
+}
 
 function parseHash(hash: string): Route {
   // window.location.hash includes the leading "#". Strip it before matching.
   const h = hash.startsWith("#") ? hash.slice(1) : hash;
   if (h === "" || h === "/" || h === "#") return { name: "toc" };
 
-  const match = /^\/?chapter\/([^/?]+)/.exec(h);
-  if (match) {
-    return { name: "chapter", chapterId: decodeURIComponent(match[1]!) };
+  // Split into path + query at the first `?`.
+  const qIdx = h.indexOf("?");
+  const path = qIdx >= 0 ? h.slice(0, qIdx) : h;
+  const query = qIdx >= 0 ? h.slice(qIdx + 1) : "";
+  const eventId = parseEventQuery(query);
+
+  const chapterMatch = /^\/?chapter\/([^/?]+)/.exec(path);
+  if (chapterMatch) {
+    return {
+      name: "chapter",
+      chapterId: decodeURIComponent(chapterMatch[1]!),
+      eventId,
+    };
+  }
+
+  const transcriptMatch = /^\/?transcript\/([^/?]+)/.exec(path);
+  if (transcriptMatch) {
+    return {
+      name: "transcript",
+      sessionId: decodeURIComponent(transcriptMatch[1]!),
+      eventId,
+    };
   }
   return { name: "toc" };
 }
@@ -37,8 +88,18 @@ function routeToHash(route: Route): string {
   switch (route.name) {
     case "toc":
       return "#/";
-    case "chapter":
-      return `#/chapter/${encodeURIComponent(route.chapterId)}`;
+    case "chapter": {
+      const base = `#/chapter/${encodeURIComponent(route.chapterId)}`;
+      return route.eventId
+        ? `${base}?event=${encodeURIComponent(route.eventId)}`
+        : base;
+    }
+    case "transcript": {
+      const base = `#/transcript/${encodeURIComponent(route.sessionId)}`;
+      return route.eventId
+        ? `${base}?event=${encodeURIComponent(route.eventId)}`
+        : base;
+    }
   }
 }
 
@@ -54,6 +115,30 @@ function notify(): void {
   for (const fn of listeners) fn(current);
 }
 
+function syncSelectionFromRoute(r: Route): void {
+  // Mirror the URL into the selection store. URL-then-store: back button stays
+  // honest (the browser flips the hash, the listener runs, the store updates).
+  if (r.name === "chapter") {
+    selection._setFromRoute("chapter", r.eventId);
+  } else if (r.name === "transcript") {
+    selection._setFromRoute("transcript", r.eventId);
+  } else {
+    selection.clear();
+  }
+}
+
+function routesEqual(a: Route, b: Route): boolean {
+  if (a.name !== b.name) return false;
+  if (a.name === "toc" && b.name === "toc") return true;
+  if (a.name === "chapter" && b.name === "chapter") {
+    return a.chapterId === b.chapterId && a.eventId === b.eventId;
+  }
+  if (a.name === "transcript" && b.name === "transcript") {
+    return a.sessionId === b.sessionId && a.eventId === b.eventId;
+  }
+  return false;
+}
+
 let attached = false;
 
 function attachOnce(): void {
@@ -61,11 +146,14 @@ function attachOnce(): void {
   attached = true;
   window.addEventListener("hashchange", () => {
     const next = parseHash(window.location.hash);
-    if (next.name !== current.name || (next.name === "chapter" && current.name === "chapter" && next.chapterId !== current.chapterId)) {
+    if (!routesEqual(next, current)) {
       current = next;
+      syncSelectionFromRoute(current);
       notify();
     }
   });
+  // Initial sync (in case the page loaded directly at #/chapter/...?event=...).
+  syncSelectionFromRoute(current);
 }
 
 attachOnce();
@@ -81,6 +169,7 @@ export const router = {
       // Test environment without a window — still update internal state so
       // subscribers can verify navigation intent.
       current = route;
+      syncSelectionFromRoute(current);
       notify();
       return;
     }

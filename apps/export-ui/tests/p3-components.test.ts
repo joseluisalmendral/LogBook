@@ -88,11 +88,13 @@ describe("router store", () => {
     expect(router._parseHash("#/chapter/sess-001")).toEqual({
       name: "chapter",
       chapterId: "sess-001",
+      eventId: null,
     });
     // URL-encoded chapterId round-trips.
     expect(router._parseHash("#/chapter/sess%2Fwith-slash")).toEqual({
       name: "chapter",
       chapterId: "sess/with-slash",
+      eventId: null,
     });
     // Unknown path falls back to TOC.
     expect(router._parseHash("#/garbage")).toEqual({ name: "toc" });
@@ -101,9 +103,9 @@ describe("router store", () => {
   it("_routeToHash round-trips the chapter route", async () => {
     const { router } = await import("../src/lib/stores/router");
     expect(router._routeToHash({ name: "toc" })).toBe("#/");
-    expect(router._routeToHash({ name: "chapter", chapterId: "sess-001" })).toBe(
-      "#/chapter/sess-001",
-    );
+    expect(
+      router._routeToHash({ name: "chapter", chapterId: "sess-001", eventId: null }),
+    ).toBe("#/chapter/sess-001");
   });
 });
 
