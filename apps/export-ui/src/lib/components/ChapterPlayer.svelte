@@ -20,6 +20,7 @@
   import { router } from "../stores/router";
   import { subscribeMotion, getMotionState } from "../stores/motion";
   import { playhead } from "../stores/playhead";
+  import { selection } from "../stores/selection";
   import type { Chapter, RenderEvent } from "../types";
   import ChapterHeader from "./ChapterHeader.svelte";
   import TurnRow from "./TurnRow.svelte";
@@ -134,6 +135,57 @@
       });
     });
     return unsub;
+  });
+
+  /*
+   * Slice-12 P7 — Selection-driven acknowledge pulse (R-68 highlight ring).
+   *
+   * When `selection.chapterEventId` changes (via card click OR via the
+   * transcript route's "Jump to card"), find the matching DOM node, scroll it
+   * into view, and apply `.lb-pulse-once` for 1200ms as a functional
+   * acknowledge. The pulse is functional feedback (NOT a 6th delight motion
+   * moment per INV-15 § exceptions).
+   *
+   * IMPORTANT: If the playhead is currently `playing`, the heartbeat
+   * (`.is-active`) is already animating the target row — running both at the
+   * same time would double-animate. We skip the one-shot pulse during
+   * playback.
+   */
+  onMount(() => {
+    let lastPulsedId: string | null = null;
+    let pulseTimer: ReturnType<typeof setTimeout> | null = null;
+    const unsub = selection.subscribe((snap) => {
+      const id = snap.chapterEventId;
+      if (!id || id === lastPulsedId) return;
+      // Only act when we are actually on a chapter route.
+      const route = router.get();
+      if (route.name !== "chapter") return;
+      const el = document.querySelector<HTMLElement>(`[data-event-id="${id}"]`);
+      if (!el) return;
+      lastPulsedId = id;
+      // Scroll the target card into view (R-68). Programmatic scroll suppression
+      // ensures the TimelineScrubber listener doesn't read this as user input.
+      playhead.markProgrammaticScroll();
+      const motion = getMotionState();
+      el.scrollIntoView({
+        behavior: motion.motionAllowed ? "smooth" : "auto",
+        block: "center",
+      });
+      // Skip the pulse if the heartbeat is already animating the target row
+      // (playhead.playing). The heartbeat is enough visual acknowledgement.
+      if (playhead.get().playing) return;
+      // Apply the one-shot pulse for 1200ms.
+      el.classList.add("lb-pulse-once");
+      if (pulseTimer) clearTimeout(pulseTimer);
+      pulseTimer = setTimeout(() => {
+        el.classList.remove("lb-pulse-once");
+        pulseTimer = null;
+      }, 1200);
+    });
+    return () => {
+      unsub();
+      if (pulseTimer) clearTimeout(pulseTimer);
+    };
   });
 </script>
 

@@ -134,3 +134,58 @@ html[data-motion="reduced"] .is-active {
   animation: none !important;
   box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.4) !important;
 }
+
+/* -----------------------------------------------------------------------
+ * Slice 12 P7 — Selection-driven acknowledge pulse (R-68 highlight ring).
+ *
+ * `.lb-pulse-once` is added by ChapterPlayer for 1200ms when the selection
+ * store flips to a new chapter event (card click or transcript "Jump to
+ * card"). The pulse is FUNCTIONAL FEEDBACK — it confirms "yes, this is the
+ * card you asked for" — and therefore does NOT consume a slot from the
+ * INV-15 5-moment delight motion cap. Documented as an INV-15 § exception.
+ *
+ * Coordination with the heartbeat (.is-active):
+ *   ChapterPlayer skips applying `.lb-pulse-once` when `playhead.playing`
+ *   is true, because the heartbeat is already animating the target row.
+ *   Running both at the same time double-animates the box-shadow and looks
+ *   jittery.
+ *
+ * Reduced-motion fallback: outline stays static for the same 1200ms window
+ * via the same class application/removal — but the animation is disabled
+ * and replaced by a static outline so the user still sees the focus.
+ * --------------------------------------------------------------------- */
+.lb-pulse-once {
+  animation: lb-pulse-once 1200ms ease-out forwards;
+}
+
+@keyframes lb-pulse-once {
+  0%   { box-shadow: 0 0 0 0 rgba(var(--brand-rgb), 0.6); }
+  100% { box-shadow: 0 0 0 12px rgba(var(--brand-rgb), 0); }
+}
+
+html[data-motion="reduced"] .lb-pulse-once {
+  animation: none !important;
+  outline: 2px solid rgba(var(--brand-rgb), 0.6);
+  outline-offset: 4px;
+}
+
+/* -----------------------------------------------------------------------
+ * Slice 12 final motion audit (INV-15 + R-80 + AG-41).
+ *
+ * Five named delight motion moments now active in the export:
+ *   Moment 1  — SubAgentCard deploy entrance        (P2; ≤ 400ms perceived; R-58)
+ *   Moment 2  — AgentQuestionCard SVG branch fork   (P7; 600ms total; R-78)
+ *   Moment 3  — Heartbeat pulse during playback     (P6; 1500ms continuous loop; R-75)
+ *   Moment G2 — Chapter scroll-timeline progress    (P1; scroll-driven; R-76)
+ *   Moment G4 — KPI count-up                        (P1; 800ms one-shot; R-77)
+ *
+ * Functional feedback (NOT a 6th delight moment per INV-15 § exceptions):
+ *   - lb-pulse-once — 1200ms acknowledge ring on selection-driven card focus
+ *     (R-68 highlight ring). Functional, not delight motion.
+ *   - chevron rotation (.lb-chevron) — state indicator, not delight.
+ *   - hover background tints (data-interactive) — affordance, not delight.
+ *
+ * Reduced-motion contract: every above motion has a documented fallback
+ * either by `animation: none` + static visual OR by being scroll-driven
+ * (which Chrome disables automatically under prefers-reduced-motion: reduce).
+ * --------------------------------------------------------------------- */
