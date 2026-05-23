@@ -44,8 +44,9 @@
 -->
 <script lang="ts">
   import { onMount } from "svelte";
-  import type { RenderEvent } from "../types";
+  import type { RenderEvent, FileTouch } from "../types";
   import MarkdownBlock from "./MarkdownBlock.svelte";
+  import FileChangeStrip from "./FileChangeStrip.svelte";
   import { inspector } from "../stores/inspector";
   import { linkifyText } from "../util/deep-link";
   import { selection } from "../stores/selection";
@@ -77,6 +78,18 @@
   const tools = $derived(
     Array.isArray(payload.tools)
       ? (payload.tools as Array<{ name?: string; input?: string }>)
+      : [],
+  );
+  /**
+   * Slice-14 Bucket E: list of files this sub-agent's child tool_use events
+   * touched. Build-derived (see backend `build-export-payload.ts`). Strict
+   * runtime guard — coerce to [] when absent or malformed.
+   */
+  const filesTouched = $derived(
+    Array.isArray(payload.filesTouched)
+      ? ((payload.filesTouched as FileTouch[]).filter(
+          (f) => f && typeof f.path === "string" && typeof f.action === "string",
+        ) as FileTouch[])
       : [],
   );
 
@@ -170,6 +183,11 @@
         {#if model}
           <span class="badge badge-model lb-tnum" title="Model">{model}</span>
         {/if}
+        {#if filesTouched.length > 0}
+          <span class="badge lb-tnum" title={`${filesTouched.length} file${filesTouched.length === 1 ? "" : "s"} touched`}>
+            {filesTouched.length}&nbsp;file{filesTouched.length === 1 ? "" : "s"}
+          </span>
+        {/if}
       </div>
       <!-- P1 chevron — rotated 90° via affordance.css when [aria-expanded="true"]. -->
       <span class="lb-chevron card-chevron" aria-hidden="true">
@@ -218,6 +236,16 @@
                 </li>
               {/each}
             </ul>
+          </section>
+        {/if}
+
+        {#if filesTouched.length > 0}
+          <!-- Slice-14 Bucket E: files this sub-agent touched. The strip is
+               always rendered when there's content; the data is build-derived
+               from tool_result events (PASSIVE per INV-1). -->
+          <section class="back-section" aria-label="Files touched">
+            <h4 class="back-section-title">Files touched</h4>
+            <FileChangeStrip files={filesTouched} ariaLabel="Files touched by this sub-agent" />
           </section>
         {/if}
 

@@ -76,6 +76,15 @@
       "endTs": "2026-05-15T12:48:00.000Z",
       "goal": "Land the persistence schema for events.jsonl + redaction",
       "outcome": "All 12 unit tests green; redaction layer covers entropy + Gitleaks rules",
+      "filesTouched": [
+        { "path": "src/store/event-schema.ts", "action": "write" },
+        { "path": "src/store/redact-rules.ts", "action": "write" },
+        { "path": "src/store/append.ts", "action": "edit" },
+        { "path": "tests/unit/redact-rules.test.ts", "action": "write" },
+        { "path": "tests/unit/event-schema.test.ts", "action": "write" },
+        { "path": "gitleaks/config/gitleaks.toml", "action": "read" },
+        { "path": "package.json", "action": "edit" }
+      ],
       "phases": [
         {
           "id": "w1",
@@ -150,8 +159,13 @@
                 "input": "src/store/redact-rules.ts"
               }
             ],
-            "response": "Selected 47 patterns; added 3 LogBook-specific rules (Notion API tokens, Sentry DSN, Linear API keys). All patterns capped at 180 chars. Verified zero false positives on the seeded transcript corpus."
-          }
+            "response": "Selected 47 patterns; added 3 LogBook-specific rules (Notion API tokens, Sentry DSN, Linear API keys). All patterns capped at 180 chars. Verified zero false positives on the seeded transcript corpus.",
+          "filesTouched": [
+            { "path": "src/store/redact-rules.ts", "action": "write" },
+            { "path": "src/store/event-schema.ts", "action": "edit" },
+            { "path": "gitleaks/config/gitleaks.toml", "action": "read" },
+            { "path": "tests/unit/redact-rules.test.ts", "action": "write" }
+          ]
         }
       ]
     },

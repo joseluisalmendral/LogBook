@@ -87,6 +87,23 @@ export interface Chapter {
   outcome?: string;
   phases: PhaseRef[];
   events: RenderEvent[];
+  /**
+   * Slice-14 Bucket E (seed obs #287 item 5): list of files touched during
+   * this chapter, derived from tool_result events for Edit/Write/MultiEdit/Read
+   * tool invocations. Build-derived (PASSIVE per INV-1) — no capture changes.
+   * Deduped by path; when the same path is touched by multiple actions, the
+   * "strongest" wins (write > edit > multi_edit > read).
+   */
+  filesTouched?: FileTouch[];
+}
+
+/**
+ * Single file-touch record. `action` indicates the operation strength so the
+ * UI can pick an icon and the dedupe step can prefer the strongest signal.
+ */
+export interface FileTouch {
+  path: string;
+  action: "write" | "edit" | "multi_edit" | "read";
 }
 
 /**
@@ -232,6 +249,71 @@ function extractBodyMarkdown(event: RenderEvent): string {
   return "";
 }
 
+/**
+ * Slice-14 Bucket E: extract a file-touch from a tool_result event when the
+ * tool wrote/edited/read a file. Returns null for events that don't touch a
+ * file (Bash, WebFetch, MCP tools, etc.). Build-derived from the event shape
+ * persisted by the PostToolUse hook — see src/normalize/event.ts.
+ *
+ * Action mapping (lowercased tool_name → action):
+ *   - write       → write
+ *   - edit        → edit
+ *   - multiedit   → multi_edit
+ *   - read        → read
+ * Anything else returns null.
+ */
+function extractFileTouch(event: RenderEvent): FileTouch | null {
+  if (typeof event.type !== "string" || !event.type.startsWith("tool_result.")) {
+    return null;
+  }
+  const toolName = (
+    typeof (event as Record<string, unknown>)["tool_name"] === "string"
+      ? ((event as Record<string, unknown>)["tool_name"] as string)
+      : ""
+  ).toLowerCase();
+  const map: Record<string, FileTouch["action"]> = {
+    write: "write",
+    edit: "edit",
+    multiedit: "multi_edit",
+    read: "read",
+  };
+  const action = map[toolName];
+  if (action === undefined) return null;
+  const raw = (event as Record<string, unknown>)["raw"] as
+    | Record<string, unknown>
+    | undefined;
+  const toolInput = raw?.["tool_input"] as Record<string, unknown> | undefined;
+  const path = toolInput?.["file_path"];
+  if (typeof path !== "string" || path.length === 0) return null;
+  return { path, action };
+}
+
+/**
+ * Slice-14 Bucket E: aggregate a list of FileTouch from a list of events,
+ * deduping by path and keeping the strongest action seen for each path.
+ * Strength order: write > edit > multi_edit > read.
+ */
+const ACTION_STRENGTH: Record<FileTouch["action"], number> = {
+  write: 4,
+  edit: 3,
+  multi_edit: 2,
+  read: 1,
+};
+
+function aggregateFileTouches(events: RenderEvent[]): FileTouch[] {
+  const byPath = new Map<string, FileTouch>();
+  for (const ev of events) {
+    const touch = extractFileTouch(ev);
+    if (!touch) continue;
+    const existing = byPath.get(touch.path);
+    if (!existing || ACTION_STRENGTH[touch.action] > ACTION_STRENGTH[existing.action]) {
+      byPath.set(touch.path, touch);
+    }
+  }
+  // Stable sort: alphabetical by path. Keeps UI rendering deterministic.
+  return [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
+}
+
 /** Group conversation events by sessionId for chapter assembly. */
 function groupEventsBySession(
   events: RenderEvent[] | undefined,
@@ -342,12 +424,63 @@ export async function buildExportPayload(
       return { id: pid, label: plabel, ts: p.ts };
     });
 
+    // Slice-14 Bucket E: enrich subagent_complete events with the list of
+    // files touched by their child tool_result.edit/write/multiedit/read
+    // events (correlated via meta.subagentId === payload.agentId, set by the
+    // transcript scraper). Re-nest under `payload` to match the SubAgentCard
+    // read pattern (slice-12 P3 commits do the same). PASSIVE per INV-1.
+    const enrichedEvents = chapterEvents.map((ev) => {
+      if (ev.type !== "subagent_complete") return ev;
+      const agentId =
+        typeof (ev as Record<string, unknown>)["agentId"] === "string"
+          ? ((ev as Record<string, unknown>)["agentId"] as string)
+          : "";
+      if (!agentId) return ev;
+      const children = chapterEvents.filter((c) => {
+        const meta = (c as Record<string, unknown>)["meta"] as
+          | Record<string, unknown>
+          | undefined;
+        return meta?.["subagentId"] === agentId;
+      });
+      const filesTouched = aggregateFileTouches(children);
+      const existingPayload = (
+        (ev as Record<string, unknown>)["payload"] as
+          | Record<string, unknown>
+          | undefined
+      ) ?? {};
+      // Preserve the top-level fields that downstream UI components read off
+      // payload (slice-12 SubAgentCard convention: agent/durationMs/etc. live
+      // under payload). Bring back what the normalize-flattening removed so a
+      // single read pattern works.
+      const reNestedPayload: Record<string, unknown> = {
+        ...existingPayload,
+      };
+      const topLevel = ev as Record<string, unknown>;
+      for (const key of [
+        "agentId",
+        "toolCallCount",
+        "durationMs",
+        "attributionAgent",
+      ]) {
+        if (topLevel[key] !== undefined && reNestedPayload[key] === undefined) {
+          reNestedPayload[key] = topLevel[key];
+        }
+      }
+      reNestedPayload["filesTouched"] = filesTouched;
+      return {
+        ...ev,
+        payload: reNestedPayload,
+        filesTouched,
+      } as RenderEvent;
+    });
+
     const chapter: Chapter = {
       sessionId: id,
       label: labelRaw || id || "session",
       ts: s.ts,
       phases,
-      events: chapterEvents,
+      events: enrichedEvents,
+      filesTouched: aggregateFileTouches(enrichedEvents),
     };
     if (typeof s["endTs"] === "string") chapter.endTs = s["endTs"] as string;
     if (typeof s["goal"] === "string") chapter.goal = s["goal"] as string;
