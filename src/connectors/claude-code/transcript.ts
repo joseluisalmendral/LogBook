@@ -22,7 +22,8 @@ import * as os from "node:os";
 import { appendEvent } from "../../store/index.js";
 import { readState, writeState } from "../../core/state.js";
 import type { ProjectPaths } from "../../core/paths.js";
-import type { EventInput } from "../../types/event.js";
+import type { AgentQuestionPayload, EventInput } from "../../types/event.js";
+import { redact } from "../../redact/redactor.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -33,6 +34,9 @@ const MAX_DELTA_BYTES = 5_000_000; // 5 MB
 
 /** Maximum number of cursor entries in transcriptCursors before LRU prune. */
 const MAX_CURSOR_ENTRIES = 500;
+
+/** export-replan P2 R-9: agent_question `notes` are truncated at 4 KB before persistence. */
+const AGENT_QUESTION_NOTES_MAX_BYTES = 4096;
 
 // ---------------------------------------------------------------------------
 // Claude Code transcript line types
@@ -254,6 +258,317 @@ export function detectSkillRead(filePath: string): { skillName: string; skillPat
   // parts last element is "SKILL.md"; element before that is the skill directory name.
   const skillName = parts.length >= 2 ? parts[parts.length - 2]! : "unknown";
   return { skillName, skillPath: filePath };
+}
+
+// ---------------------------------------------------------------------------
+// AskUserQuestion pairing — agent_question synthesis (export-replan P2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Raw question shape inside an AskUserQuestion `tool_use.input.questions[i]`.
+ *
+ * The Claude Code transcript stores the original question payload verbatim.
+ * Fields are best-effort; missing values fall back to empty strings.
+ */
+interface AskUserQuestionInput {
+  question?: string;
+  header?: string;
+  multiSelect?: boolean;
+  options?: Array<{ label?: string; description?: string }>;
+}
+
+interface PendingAskRecord {
+  toolUseId: string;
+  askedAt: string;
+  questions: AskUserQuestionInput[];
+}
+
+/**
+ * Parsed answer for a single question inside a tool_result block.
+ *
+ * `chosen` is `string[]` only when the original question declared `multiSelect: true`;
+ * the scraper coerces single-select answers to a plain string.
+ */
+interface ParsedAnswer {
+  question: string;
+  chosen: string | string[];
+  notes?: string;
+}
+
+/**
+ * Truncate a string to at most `maxBytes` UTF-8 bytes. Appends a deterministic
+ * marker `…[truncated N bytes]` describing how many bytes were dropped.
+ *
+ * Pure function — used for `notes` capping per R-9.
+ */
+function truncateUtf8(input: string, maxBytes: number): string {
+  const buf = Buffer.from(input, "utf8");
+  if (buf.byteLength <= maxBytes) return input;
+  const droppedBytes = buf.byteLength - maxBytes;
+  // Slice on the byte boundary then re-decode; the marker is plain ASCII so it
+  // does not push us past `maxBytes` for downstream readers that care about
+  // shape, only about overall string length growth.
+  const head = buf.slice(0, maxBytes).toString("utf8");
+  return `${head}…[truncated ${droppedBytes} bytes]`;
+}
+
+/**
+ * Coerce a `tool_result.content` field into a flat string for parsing.
+ * Claude Code stores tool_result content as a string OR an array of
+ * `{ type: "text", text: string }` blocks. We tolerate both.
+ */
+function toolResultText(content: unknown): string {
+  if (typeof content === "string") return content;
+  if (Array.isArray(content)) {
+    const parts: string[] = [];
+    for (const block of content) {
+      if (
+        block !== null &&
+        typeof block === "object" &&
+        !Array.isArray(block) &&
+        (block as Record<string, unknown>)["type"] === "text" &&
+        typeof (block as Record<string, unknown>)["text"] === "string"
+      ) {
+        parts.push((block as Record<string, unknown>)["text"] as string);
+      }
+    }
+    return parts.join("\n");
+  }
+  return "";
+}
+
+/**
+ * Parse the rendered answer block emitted by AskUserQuestion.
+ *
+ * Claude Code's tool_result body for AskUserQuestion looks like:
+ *
+ *   Your questions have been answered:
+ *   "Question A text" = "Choice A1"
+ *   "Question B text" = "Choice B2"
+ *
+ *   Annotations:
+ *   "Question A text": "free-text notes here"
+ *
+ * The parser is intentionally lenient — fields that are missing simply
+ * produce `undefined` and the caller falls back to `<unanswered>`.
+ *
+ * Exported for unit tests.
+ */
+export function parseAskAnswerBlock(text: string): {
+  answers: Map<string, string | string[]>;
+  notes: Map<string, string>;
+} {
+  const answers = new Map<string, string | string[]>();
+  const notes = new Map<string, string>();
+
+  // Match `"<question>" = "<choice>"` OR `"<question>"="<choice>"`.
+  // Allows escaped quotes via a non-greedy inner pattern; Claude Code does not
+  // emit escaped quotes in practice but we tolerate them just in case.
+  const ANSWER_RE = /"((?:[^"\\]|\\.)*)"\s*=\s*"((?:[^"\\]|\\.)*)"/g;
+
+  let m: RegExpExecArray | null;
+  while ((m = ANSWER_RE.exec(text)) !== null) {
+    const q = m[1] ?? "";
+    const choice = m[2] ?? "";
+    if (!q) continue;
+    // Multi-select answers may be repeated for the same question. Coerce to
+    // array if we see a second entry for the same key.
+    const existing = answers.get(q);
+    if (existing === undefined) {
+      answers.set(q, choice);
+    } else if (Array.isArray(existing)) {
+      existing.push(choice);
+    } else {
+      answers.set(q, [existing, choice]);
+    }
+  }
+
+  // Match `"<question>": "<notes>"` for the annotations block. Use a separate
+  // regex to keep ordering independent of the answer block layout.
+  const NOTES_RE = /"((?:[^"\\]|\\.)*)"\s*:\s*"((?:[^"\\]|\\.)*)"/g;
+  while ((m = NOTES_RE.exec(text)) !== null) {
+    const q = m[1] ?? "";
+    const n = m[2] ?? "";
+    if (!q || !n) continue;
+    notes.set(q, n);
+  }
+
+  return { answers, notes };
+}
+
+/**
+ * Sanitize a free-text `notes` field via the Gitleaks redactor and truncate
+ * to AGENT_QUESTION_NOTES_MAX_BYTES.
+ *
+ * Returns `undefined` when input is empty or whitespace-only so the payload
+ * field can be omitted entirely.
+ */
+function sanitizeNotes(raw: string | undefined): string | undefined {
+  if (raw === undefined) return undefined;
+  const trimmed = raw.trim();
+  if (!trimmed) return undefined;
+  const redacted = redact(trimmed).redacted;
+  return truncateUtf8(redacted, AGENT_QUESTION_NOTES_MAX_BYTES);
+}
+
+/**
+ * Scan a batch of transcript lines for AskUserQuestion `tool_use` calls and
+ * pair them with their matching `tool_result` blocks. Emit one
+ * `agent_question` EventInput per question in each AskUserQuestion call.
+ *
+ * Algorithm (PASSIVE — runs at READ path only, INV-1):
+ *   1. Walk lines in order. For each assistant tool_use with name
+ *      "AskUserQuestion", store an entry keyed by tool_use_id.
+ *   2. For each user/assistant tool_result whose tool_use_id matches an
+ *      open entry, parse the answer block and emit N events.
+ *   3. After the walk, any open entries (orphan tool_use) become events
+ *      with `chosen: "<unanswered>"` and a stderr warning.
+ *   4. Orphan tool_results (no matching tool_use in this batch) are ignored;
+ *      they belong to a tool_use seen in an earlier scraping window.
+ *
+ * Exported for unit tests.
+ */
+export function extractAgentQuestionEvents(
+  lines: ClaudeTranscriptLine[],
+  sessionId: string,
+): EventInput[] {
+  const pending = new Map<string, PendingAskRecord>();
+  const events: EventInput[] = [];
+
+  for (const line of lines) {
+    // Sidechain / meta / non-message lines cannot carry AskUserQuestion blocks.
+    if (line.isMeta === true || line.isSidechain === true) continue;
+    const content = line.message?.content;
+    if (!content || typeof content === "string" || !Array.isArray(content)) continue;
+
+    for (const block of content) {
+      // --- Open: assistant tool_use AskUserQuestion ---
+      if (
+        line.type === "assistant" &&
+        block.type === "tool_use" &&
+        block.name === "AskUserQuestion"
+      ) {
+        const input = block.input;
+        if (input === null || typeof input !== "object" || Array.isArray(input)) continue;
+        const rawQuestions = (input as Record<string, unknown>)["questions"];
+        if (!Array.isArray(rawQuestions)) continue;
+        // Find a stable id for the tool_use call. Claude Code stores it as
+        // `id` on the tool_use block (mirrors the Anthropic API shape).
+        const blockAsRecord = block as unknown as Record<string, unknown>;
+        const toolUseId =
+          typeof blockAsRecord["id"] === "string"
+            ? (blockAsRecord["id"] as string)
+            : "";
+        if (!toolUseId) continue;
+        pending.set(toolUseId, {
+          toolUseId,
+          askedAt: typeof line.timestamp === "string" ? line.timestamp : "",
+          questions: rawQuestions as AskUserQuestionInput[],
+        });
+        continue;
+      }
+
+      // --- Close: tool_result for an open AskUserQuestion ---
+      if (block.type === "tool_result" && typeof block.tool_use_id === "string") {
+        const open = pending.get(block.tool_use_id);
+        if (open === undefined) continue; // orphan tool_result — ignore
+        const resultText = toolResultText(block.content);
+        const { answers, notes } = parseAskAnswerBlock(resultText);
+
+        emitForCall(events, open, answers, notes, sessionId);
+        pending.delete(block.tool_use_id);
+      }
+    }
+  }
+
+  // Orphan tool_use entries — emit unanswered events so the export still
+  // surfaces the fork moment (R-25 visual state (b) handles dimmed options).
+  for (const open of pending.values()) {
+    if (process.env["LOGBOOK_HOOK_DEBUG"] === "1") {
+      process.stderr.write(
+        `[logbook] transcript: orphan AskUserQuestion tool_use (id=${open.toolUseId}); emitting unanswered events\n`,
+      );
+    }
+    emitForCall(events, open, new Map(), new Map(), sessionId);
+  }
+
+  return events;
+}
+
+/**
+ * Emit one EventInput per question in an AskUserQuestion call.
+ *
+ * Match each `question.question` text against the parsed answers map by EXACT
+ * key first, then by substring (lenient fallback). When no match is found the
+ * event still fires with `chosen: "<unanswered>"` so downstream filters keep
+ * the count of "questions asked" correct.
+ */
+function emitForCall(
+  out: EventInput[],
+  call: PendingAskRecord,
+  answers: Map<string, string | string[]>,
+  notes: Map<string, string>,
+  sessionId: string,
+): void {
+  for (let i = 0; i < call.questions.length; i++) {
+    const q = call.questions[i] ?? {};
+    const questionText = typeof q.question === "string" ? q.question : "";
+
+    // Match strategy: exact key, then substring search across known keys.
+    let chosen: string | string[] | undefined = answers.get(questionText);
+    let matchedKey = questionText;
+    if (chosen === undefined && questionText) {
+      for (const [key, value] of answers.entries()) {
+        if (key.includes(questionText) || questionText.includes(key)) {
+          chosen = value;
+          matchedKey = key;
+          break;
+        }
+      }
+    }
+    if (chosen === undefined) {
+      if (process.env["LOGBOOK_HOOK_DEBUG"] === "1") {
+        process.stderr.write(
+          `[logbook] transcript: no answer match for question="${questionText.slice(0, 80)}"\n`,
+        );
+      }
+      chosen = "<unanswered>";
+    }
+
+    // Coerce chosen to string[] only when the question was declared multi-select.
+    const multiSelect = q.multiSelect === true;
+    if (multiSelect && !Array.isArray(chosen)) chosen = [chosen as string];
+    if (!multiSelect && Array.isArray(chosen)) chosen = chosen.join(", ");
+
+    const rawNotes = notes.get(matchedKey) ?? notes.get(questionText);
+    const sanitizedNotes = sanitizeNotes(rawNotes);
+
+    const options = Array.isArray(q.options)
+      ? q.options.map((o) => ({
+          label: typeof o.label === "string" ? o.label : "",
+          description: typeof o.description === "string" ? o.description : "",
+        }))
+      : [];
+
+    const payload: AgentQuestionPayload = {
+      question: questionText,
+      header: typeof q.header === "string" ? q.header : "",
+      options,
+      multiSelect,
+      chosen,
+      askedAt: call.askedAt,
+      toolUseId: call.toolUseId,
+      questionIndex: i,
+    };
+    if (sanitizedNotes !== undefined) payload.notes = sanitizedNotes;
+
+    out.push({
+      kind: "agent_question",
+      sessionId,
+      payload: payload as unknown as Record<string, unknown>,
+      ...(call.askedAt !== "" && { timestamp: call.askedAt }),
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -490,6 +805,32 @@ export async function runTranscriptScraper(
       }
     }
     if (events.length === 0) skipped++;
+  }
+
+  // 3b. Pair AskUserQuestion tool_use ↔ tool_result and emit agent_question
+  // events. Runs over the full delta in one pass so an open call in this
+  // window can be matched to its result later in the same window (export-replan
+  // P2, R-7, R-8). PASSIVE per INV-1 — synthesis at READ path only.
+  try {
+    const agentQuestionEvents = extractAgentQuestionEvents(lines, sessionId);
+    for (const eventInput of agentQuestionEvents) {
+      try {
+        await appendEvent(paths, {
+          ...eventInput,
+          provider: "claude-code-transcript",
+        });
+        written++;
+      } catch {
+        skipped++;
+      }
+    }
+  } catch (err) {
+    // Synthesis must never break the rest of the scrape. Degrade silently.
+    if (process.env["LOGBOOK_HOOK_DEBUG"] === "1") {
+      process.stderr.write(
+        `[logbook] transcript: agent_question synthesis failed: ${String(err)}\n`,
+      );
+    }
   }
 
   // Update main cursor.
