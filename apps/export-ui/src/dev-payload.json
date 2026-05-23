@@ -1,0 +1,145 @@
+{
+  "version": 2,
+  "exportedAt": "2026-05-23T19:30:00.000Z",
+  "project": {
+    "name": "LogBook — export replan",
+    "root": "/Users/example/projects/logbook",
+    "sha": "c3272fbe9a4d1f72"
+  },
+  "course": {
+    "sessions": [
+      { "id": "sess-001", "label": "W1 — Capture pipeline foundations", "ts": "2026-05-15T09:12:00.000Z", "goal": "Land the persistence schema for events.jsonl + redaction", "outcome": "All 12 unit tests green; redaction layer covers entropy + Gitleaks rules" },
+      { "id": "sess-002", "label": "W1 — Hook performance hardening", "ts": "2026-05-16T14:05:00.000Z", "goal": "Bring PostToolUse hook p95 under 200 ms", "outcome": "p95 from 312 ms → 87 ms after JSONL append batching" },
+      { "id": "sess-003", "label": "W2 — Export HTML scaffold", "ts": "2026-05-18T10:22:00.000Z", "goal": "Stand up vite-plugin-singlefile + token CSS layer", "outcome": "Hello-world dist/index.html under 80 KB; 8/8 smoke gates passing" },
+      { "id": "sess-004", "label": "W2 — agent_question normalization", "ts": "2026-05-20T16:40:00.000Z", "goal": "Synthesize agent_question events at the transcript READ path", "outcome": "23/23 tests green; multi-question AskUserQuestion splits into N events" },
+      { "id": "sess-005", "label": "W3 — Editorial shell", "ts": "2026-05-23T11:55:00.000Z", "goal": "TOC + sidebar + 3-state sort + theme toggle + hash router", "outcome": "" }
+    ],
+    "totals": {
+      "sessions": 5,
+      "decisions": 7,
+      "errors": 4,
+      "fixes": 4,
+      "lessons": 5,
+      "milestones": 3,
+      "resources": 2,
+      "visuals": 0,
+      "visualDirections": 0,
+      "skillInvocations": 6,
+      "ghAgentRuns": 0,
+      "qaFindings": 1,
+      "agentQuestions": 3,
+      "commits": 4
+    }
+  },
+  "chapters": [
+    {
+      "sessionId": "sess-001",
+      "label": "W1 — Capture pipeline foundations",
+      "ts": "2026-05-15T09:12:00.000Z",
+      "endTs": "2026-05-15T12:48:00.000Z",
+      "goal": "Land the persistence schema for events.jsonl + redaction",
+      "outcome": "All 12 unit tests green; redaction layer covers entropy + Gitleaks rules",
+      "phases": [
+        { "id": "w1", "label": "W1 — Foundations", "ts": "2026-05-15T09:12:00.000Z" }
+      ],
+      "events": [
+        { "id": "e1-001", "type": "manual.decision", "ts": "2026-05-15T09:30:00.000Z", "title": "Choose JSONL over SQLite for hot path" },
+        { "id": "e1-002", "type": "manual.decision", "ts": "2026-05-15T09:48:00.000Z", "title": "Adopt Gitleaks regex set for redaction" },
+        { "id": "e1-003", "type": "manual.error", "ts": "2026-05-15T10:12:00.000Z", "title": "Append race on hook reentry" },
+        { "id": "e1-004", "type": "manual.fix", "ts": "2026-05-15T10:31:00.000Z", "title": "Add proper-lockfile around append" },
+        { "id": "e1-005", "type": "manual.lesson", "ts": "2026-05-15T10:55:00.000Z", "title": "JSONL appends need OS-level locks even within one process" },
+        { "id": "e1-006", "type": "manual.milestone", "ts": "2026-05-15T12:30:00.000Z", "title": "Persistence schema frozen" }
+      ]
+    },
+    {
+      "sessionId": "sess-002",
+      "label": "W1 — Hook performance hardening",
+      "ts": "2026-05-16T14:05:00.000Z",
+      "endTs": "2026-05-16T17:20:00.000Z",
+      "goal": "Bring PostToolUse hook p95 under 200 ms",
+      "outcome": "p95 from 312 ms → 87 ms after JSONL append batching",
+      "phases": [
+        { "id": "w1", "label": "W1 — Foundations", "ts": "2026-05-16T14:05:00.000Z" }
+      ],
+      "events": [
+        { "id": "e2-001", "type": "manual.decision", "ts": "2026-05-16T14:15:00.000Z", "title": "Batch JSONL appends per tick" },
+        { "id": "e2-002", "type": "manual.error", "ts": "2026-05-16T14:42:00.000Z", "title": "Hook exit code 1 under load" },
+        { "id": "e2-003", "type": "manual.fix", "ts": "2026-05-16T15:05:00.000Z", "title": "Catch + degrade silently with state.json warning" },
+        { "id": "e2-004", "type": "manual.lesson", "ts": "2026-05-16T15:32:00.000Z", "title": "Hooks must NEVER exit non-zero — degrade silently" },
+        { "id": "e2-005", "type": "manual.lesson", "ts": "2026-05-16T16:01:00.000Z", "title": "p95 is a contract, not a metric" },
+        { "id": "e2-006", "type": "agent_question", "ts": "2026-05-16T16:30:00.000Z", "title": "Should we keep the legacy fallback append path?", "payload": { "question": "Should we keep the legacy fallback append path?", "options": [{ "label": "Yes — defensive", "value": "yes" }, { "label": "No — dead code", "value": "no" }], "multiSelect": false, "chosen": "no", "askedAt": "2026-05-16T16:30:00.000Z" } },
+        { "id": "e2-007", "type": "manual.milestone", "ts": "2026-05-16T17:10:00.000Z", "title": "Hook p95 below 100 ms" }
+      ]
+    },
+    {
+      "sessionId": "sess-003",
+      "label": "W2 — Export HTML scaffold",
+      "ts": "2026-05-18T10:22:00.000Z",
+      "endTs": "2026-05-18T13:50:00.000Z",
+      "goal": "Stand up vite-plugin-singlefile + token CSS layer",
+      "outcome": "Hello-world dist/index.html under 80 KB; 8/8 smoke gates passing",
+      "phases": [
+        { "id": "w2", "label": "W2 — Scaffold", "ts": "2026-05-18T10:22:00.000Z" }
+      ],
+      "events": [
+        { "id": "e3-001", "type": "manual.decision", "ts": "2026-05-18T10:30:00.000Z", "title": "Svelte 5 runes over Solid signals (ADR-1)" },
+        { "id": "e3-002", "type": "manual.decision", "ts": "2026-05-18T10:48:00.000Z", "title": "System fonts only — no web fonts (ADR-7)" },
+        { "id": "e3-003", "type": "manual.error", "ts": "2026-05-18T11:12:00.000Z", "title": "@tailwind base imports tokens AFTER preflight" },
+        { "id": "e3-004", "type": "manual.fix", "ts": "2026-05-18T11:30:00.000Z", "title": "Reorder app.css imports — tokens BEFORE @tailwind base" },
+        { "id": "e3-005", "type": "manual.lesson", "ts": "2026-05-18T12:02:00.000Z", "title": "Tailwind @layer order is load-bearing for CSS-var theming" },
+        { "id": "e3-006", "type": "manual.resource", "ts": "2026-05-18T12:30:00.000Z", "title": "Stripe Press editorial palette reference" },
+        { "id": "e3-007", "type": "subagent_complete", "ts": "2026-05-18T13:15:00.000Z", "title": "design-motion-principles AUDIT pass" }
+      ]
+    },
+    {
+      "sessionId": "sess-004",
+      "label": "W2 — agent_question normalization",
+      "ts": "2026-05-20T16:40:00.000Z",
+      "endTs": "2026-05-20T20:15:00.000Z",
+      "goal": "Synthesize agent_question events at the transcript READ path",
+      "outcome": "23/23 tests green; multi-question AskUserQuestion splits into N events",
+      "phases": [
+        { "id": "w2", "label": "W2 — Scaffold", "ts": "2026-05-20T16:40:00.000Z" }
+      ],
+      "events": [
+        { "id": "e4-001", "type": "manual.decision", "ts": "2026-05-20T16:48:00.000Z", "title": "Synthesize at READ path, not in a hook (ADR-5)" },
+        { "id": "e4-002", "type": "agent_question", "ts": "2026-05-20T17:05:00.000Z", "title": "How should we cap notes length?", "payload": { "question": "How should we cap notes length?", "options": [{ "label": "4 KB UTF-8" }, { "label": "8 KB UTF-8" }, { "label": "No cap" }], "multiSelect": false, "chosen": "4 KB UTF-8", "notes": "Matches existing redaction layer's body cap; revisit if real transcripts hit it.", "askedAt": "2026-05-20T17:05:00.000Z" } },
+        { "id": "e4-003", "type": "manual.error", "ts": "2026-05-20T17:42:00.000Z", "title": "tool_use.id missing from ClaudeTranscriptContentBlock type" },
+        { "id": "e4-004", "type": "manual.fix", "ts": "2026-05-20T18:08:00.000Z", "title": "Cast to Record<string,unknown> at the boundary" },
+        { "id": "e4-005", "type": "manual.lesson", "ts": "2026-05-20T18:35:00.000Z", "title": "Document type-cast escape hatches with the upstream issue ref" },
+        { "id": "e4-006", "type": "agent_question", "ts": "2026-05-20T19:02:00.000Z", "title": "Defer mermaid dual-SVG dark mode?", "payload": { "question": "Defer mermaid dual-SVG dark mode?", "options": [{ "label": "Yes — start with currentColor only" }, { "label": "No — ship dual-SVG now" }], "multiSelect": false, "chosen": "Yes — start with currentColor only", "askedAt": "2026-05-20T19:02:00.000Z" } },
+        { "id": "e4-007", "type": "manual.milestone", "ts": "2026-05-20T20:00:00.000Z", "title": "Payload v2 builder shipped" }
+      ]
+    },
+    {
+      "sessionId": "sess-005",
+      "label": "W3 — Editorial shell",
+      "ts": "2026-05-23T11:55:00.000Z",
+      "goal": "TOC + sidebar + 3-state sort + theme toggle + hash router",
+      "phases": [
+        { "id": "w3", "label": "W3 — Shell", "ts": "2026-05-23T11:55:00.000Z" }
+      ],
+      "events": [
+        { "id": "e5-001", "type": "manual.decision", "ts": "2026-05-23T12:05:00.000Z", "title": "[data-theme] attribute over Tailwind dark: variant (ADR-6)" },
+        { "id": "e5-002", "type": "manual.decision", "ts": "2026-05-23T12:30:00.000Z", "title": "Hash router + chapterId only (R-17)" },
+        { "id": "e5-003", "type": "manual.lesson", "ts": "2026-05-23T13:48:00.000Z", "title": "Svelte 5 runes can't live at module top-level — use $state in components" },
+        { "id": "e5-004", "type": "manual.resource", "ts": "2026-05-23T14:12:00.000Z", "title": "Linear's slide-in inspector pattern" }
+      ]
+    }
+  ],
+  "decisions": [],
+  "errors": [],
+  "fixes": [],
+  "lessons": [],
+  "milestones": [],
+  "resources": [],
+  "visuals": [],
+  "visualDirections": [],
+  "skillInvocations": [],
+  "ghAgentRuns": [],
+  "qaFindings": [],
+  "agentQuestions": [],
+  "commits": [],
+  "bodies": {},
+  "mermaid": {}
+}
