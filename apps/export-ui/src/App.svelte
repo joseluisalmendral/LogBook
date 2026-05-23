@@ -14,6 +14,7 @@
   import { onMount } from "svelte";
   import MotionRoot from "./lib/components/MotionRoot.svelte";
   import CourseShell from "./lib/components/CourseShell.svelte";
+  import Toast from "./lib/components/Toast.svelte";
   import { applyFeatureDetectAttributes } from "./lib/util/feature-detect";
 
   // Slice 12 P1 (R-76, ADR-SC-G1): mirror feature-detect results to <html>
@@ -26,5 +27,6 @@
 <MotionRoot>
   {#snippet children()}
     <CourseShell />
+    <Toast />
   {/snippet}
 </MotionRoot>
