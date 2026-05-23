@@ -162,17 +162,23 @@ const PAYLOAD_CAP_BYTES = 5 * 1024 * 1024;
  *
  * Convention (verified against the live `~/.claude/projects` directory on a
  * machine that has run Claude Code against this repo):
- *   - Forward slashes (`/`) become dashes (`-`).
- *   - Spaces become dashes too (so `LogBook repo` → `LogBook-repo`).
- *   - The leading slash on absolute paths becomes a single leading dash.
+ *   - Forward slashes (`/`) → `-`
+ *   - Spaces             → `-`
+ *   - Dots (`.`)         → `-`  (so `joseluis.fernandez` becomes
+ *                                 `joseluis-fernandez` in the encoded path)
  *
- * NOTE: the original P4 prompt suggested spaces are preserved as-is. The on-
- * disk directory listing on the developer's machine shows
+ * Anything else (alphanumerics, underscores, hyphens) is preserved verbatim.
+ * The leading absolute slash becomes a single leading dash.
+ *
+ * NOTE: the original P4 spec text suggested spaces would be preserved as-is.
+ * On the developer's machine the actual directory is
  *   `-Users-joseluis-fernandez-Documents-CONSTRUCCION-FORMACION-IA-B2B-LogBook-repo`
- * — i.e. spaces ARE replaced with dashes. We follow the observed encoding.
+ * — confirming dots, slashes, and spaces ALL collapse to `-`. We follow the
+ * observed convention; if a future Claude Code version changes the encoding,
+ * this is the single point to update.
  */
 function encodeProjectPath(root: string): string {
-  return root.replace(/[/\s]/g, "-");
+  return root.replace(/[/\s.]/g, "-");
 }
 
 /**
