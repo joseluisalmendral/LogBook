@@ -30,8 +30,22 @@
 import { spawn } from "node:child_process";
 import { writeFile, readFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "pathe";
+import { join, resolve, dirname } from "pathe";
+import { fileURLToPath } from "node:url";
 import { sanitizeSvg } from "./safe.js";
+
+// ---------------------------------------------------------------------------
+// Mermaid theme config path (ADR-D6)
+// ---------------------------------------------------------------------------
+
+/**
+ * Absolute path to the custom mermaid theme config file (assets/export/mermaid-theme.json).
+ * Resolved relative to this source file so it works regardless of cwd.
+ */
+const MERMAID_THEME_CONFIG = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../assets/export/mermaid-theme.json"
+);
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -233,7 +247,13 @@ export async function renderSingleMermaid(source: string): Promise<string> {
 
   try {
     await writeFile(inPath, source, "utf8");
-    await runMmdc(["-i", inPath, "-o", outPath, "-b", "transparent"]);
+    // ADR-D6: pass the custom mermaid theme config for brand-consistent diagrams.
+    await runMmdc([
+      "-i", inPath,
+      "-o", outPath,
+      "-b", "transparent",
+      "-c", MERMAID_THEME_CONFIG,
+    ]);
     return await readFile(outPath, "utf8");
   } finally {
     await rm(dir, { recursive: true, force: true });

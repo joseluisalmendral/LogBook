@@ -67,6 +67,8 @@ export interface RenderContext {
   visualDirections?: RenderEvent[];
   /** B5: QA findings logged via MCP tool. */
   qaFindings?: RenderEvent[];
+  /** export-replan P2 (R-6, S-9, S-10): AskUserQuestion fork moments synthesized at READ path. */
+  agentQuestions?: RenderEvent[];
 }
 
 // ---------------------------------------------------------------------------
@@ -173,6 +175,9 @@ function normalizeEvent(raw: Record<string, unknown>): RenderEvent {
       } else if (kind === "qa_finding") {
         // B5: QA finding logged via MCP tool.
         merged["type"] = "qa_finding";
+      } else if (kind === "agent_question") {
+        // export-replan P2: AskUserQuestion fork moment synthesized at READ path.
+        merged["type"] = "agent_question";
       } else if (kind !== "") {
         // Unknown kind — synthesize "unknown" rather than dropping the event.
         merged["type"] = "unknown";
@@ -315,6 +320,7 @@ export async function readContext(paths: ProjectPaths): Promise<RenderContext> {
     skillInvocations: sortByTs(sorted.filter((e) => e.type === "skill_invoked")),
     visualDirections: sortByTs(sorted.filter((e) => e.type === "visual_direction")),
     qaFindings:       sortByTs(sorted.filter((e) => e.type === "qa_finding")),
+    agentQuestions:   sortByTs(sorted.filter((e) => e.type === "agent_question")),
     all:              sorted,
   };
 }
@@ -337,6 +343,7 @@ function emptyContext(): RenderContext {
     skillInvocations: [],
     visualDirections: [],
     qaFindings: [],
+    agentQuestions: [],
     all: [],
   };
 }

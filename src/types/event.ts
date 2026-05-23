@@ -14,7 +14,8 @@ export type EventKind =
   | "gh_agent_run"        // GitHub claude-code-action PR run imported via CLI (B2)
   | "skill_invoked"       // Skill SKILL.md read detected in transcript scraper (B3)
   | "visual_direction"    // Visual direction decision logged via CLI (B4)
-  | "qa_finding";         // QA finding logged via MCP tool (B5)
+  | "qa_finding"          // QA finding logged via MCP tool (B5)
+  | "agent_question";     // AskUserQuestion fork moment synthesized at READ path (export-replan P2, R-6)
 
 export interface EventTokens {
   in?: number;             // prompt tokens (best-effort, heuristic in iter1)
@@ -69,6 +70,32 @@ export interface EventInput {
   traceId?: string;
   spanId?: string;
   timestamp?: string;
+}
+
+/**
+ * Payload shape for `agent_question` events (export-replan P2, spec R-6 / S-9 / S-10).
+ *
+ * Synthesized at READ path inside `src/connectors/claude-code/transcript.ts` by
+ * pairing every AskUserQuestion `tool_use` with its matching `tool_result` and
+ * emitting ONE event per question. PASSIVE rule (INV-1): no hook semantics
+ * change, no live AI tool semantics change.
+ *
+ * `chosen` is `string[]` when `multiSelect` is true, `string` otherwise.
+ * `notes` is set only when the user answered "Other" with free text; it has
+ * already been Gitleaks-redacted and truncated to 4 KB before persistence
+ * (R-9, R-10, INV-10, S-16).
+ */
+export interface AgentQuestionPayload {
+  question: string;
+  header: string;
+  options: Array<{ label: string; description: string }>;
+  multiSelect: boolean;
+  chosen: string | string[];
+  notes?: string;
+  askedAt: string;
+  toolUseId: string;
+  /** 0-based index inside the originating AskUserQuestion call (N questions → events 0..N-1). */
+  questionIndex: number;
 }
 
 export interface Event {

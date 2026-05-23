@@ -1,0 +1,182 @@
+{
+  "version": 2,
+  "exportedAt": "2026-05-23T19:30:00.000Z",
+  "project": {
+    "name": "LogBook — export replan",
+    "root": "/Users/example/projects/logbook",
+    "sha": "c3272fbe9a4d1f72"
+  },
+  "course": {
+    "sessions": [
+      { "id": "sess-001", "label": "W1 — Capture pipeline foundations", "ts": "2026-05-15T09:12:00.000Z", "goal": "Land the persistence schema for events.jsonl + redaction", "outcome": "All 12 unit tests green; redaction layer covers entropy + Gitleaks rules" },
+      { "id": "sess-002", "label": "W1 — Hook performance hardening", "ts": "2026-05-16T14:05:00.000Z", "goal": "Bring PostToolUse hook p95 under 200 ms", "outcome": "p95 from 312 ms → 87 ms after JSONL append batching" },
+      { "id": "sess-003", "label": "W2 — Export HTML scaffold", "ts": "2026-05-18T10:22:00.000Z", "goal": "Stand up vite-plugin-singlefile + token CSS layer", "outcome": "Hello-world dist/index.html under 80 KB; 8/8 smoke gates passing" },
+      { "id": "sess-004", "label": "W2 — agent_question normalization", "ts": "2026-05-20T16:40:00.000Z", "goal": "Synthesize agent_question events at the transcript READ path", "outcome": "23/23 tests green; multi-question AskUserQuestion splits into N events" },
+      { "id": "sess-005", "label": "W3 — Editorial shell", "ts": "2026-05-23T11:55:00.000Z", "goal": "TOC + sidebar + 3-state sort + theme toggle + hash router", "outcome": "" },
+      { "id": "sess-006", "label": "W3 — Export replan SDD (this session)", "ts": "2026-05-23T17:30:00.000Z", "goal": "Replantear el HTML export desde cero — capturar orden, decisiones, fases, sub-agentes, instrucciones — para que el alumno entienda el desarrollo agéntico", "outcome": "5 commits feature/export-replan (P1-P5), 18/20 AGs PASS, ready-for-archive" }
+    ],
+    "totals": {
+      "sessions": 6,
+      "decisions": 11,
+      "errors": 5,
+      "fixes": 5,
+      "lessons": 6,
+      "milestones": 7,
+      "resources": 3,
+      "visuals": 0,
+      "visualDirections": 0,
+      "skillInvocations": 18,
+      "ghAgentRuns": 0,
+      "qaFindings": 1,
+      "agentQuestions": 8,
+      "commits": 5
+    }
+  },
+  "chapters": [
+    {
+      "sessionId": "sess-001",
+      "label": "W1 — Capture pipeline foundations",
+      "ts": "2026-05-15T09:12:00.000Z",
+      "endTs": "2026-05-15T12:48:00.000Z",
+      "goal": "Land the persistence schema for events.jsonl + redaction",
+      "outcome": "All 12 unit tests green; redaction layer covers entropy + Gitleaks rules",
+      "phases": [
+        { "id": "w1", "label": "W1 — Foundations", "ts": "2026-05-15T09:12:00.000Z" }
+      ],
+      "events": [
+        { "id": "e1-001", "type": "manual.decision", "ts": "2026-05-15T09:30:00.000Z", "title": "Choose JSONL over SQLite for hot path", "description": "Append-only, line-buffered, zero schema migration." },
+        { "id": "e1-002", "type": "manual.decision", "ts": "2026-05-15T09:48:00.000Z", "title": "Adopt Gitleaks regex set for redaction", "description": "Covers AWS, GCP, GitHub PATs and OpenAI-style sk- keys." },
+        { "id": "e1-003", "type": "manual.error", "ts": "2026-05-15T10:12:00.000Z", "title": "Append race on hook reentry", "description": "Two PostToolUse fires within the same ms interleaved writes." },
+        { "id": "e1-004", "type": "manual.fix", "ts": "2026-05-15T10:31:00.000Z", "title": "Add proper-lockfile around append", "description": "OS-level lock — survives reentry even within one process." },
+        { "id": "e1-005", "type": "manual.lesson", "ts": "2026-05-15T10:55:00.000Z", "title": "JSONL appends need OS-level locks even within one process" },
+        { "id": "e1-006", "type": "manual.milestone", "ts": "2026-05-15T12:30:00.000Z", "title": "Persistence schema frozen" },
+        { "id": "e1-007", "type": "subagent_complete", "ts": "2026-05-15T11:15:00.000Z", "title": "redaction-rules-curator", "payload": { "agent": "redaction-rules-curator", "model": "claude-opus-4-7", "durationMs": 18430, "promptSummary": "Curate Gitleaks-derived regex set tuned to LogBook payload shape.", "fullPrompt": "You are a redaction-rules curator. Given the Gitleaks core regex set, output a JSON list of patterns tuned for LogBook event bodies. Constraints: never strip natural English with the word 'token' in it; always preserve markdown code fence delimiters; cap each pattern at 200 chars to avoid catastrophic backtracking. Output JSON only.", "skillsLoaded": ["redaction-skill", "regex-safety", "gitleaks-rules"], "tools": [ { "name": "Read", "input": "gitleaks/config/gitleaks.toml" }, { "name": "Write", "input": "src/store/redact-rules.ts" } ], "response": "Selected 47 patterns; added 3 LogBook-specific rules (Notion API tokens, Sentry DSN, Linear API keys). All patterns capped at 180 chars. Verified zero false positives on the seeded transcript corpus." } }
+      ]
+    },
+    {
+      "sessionId": "sess-002",
+      "label": "W1 — Hook performance hardening",
+      "ts": "2026-05-16T14:05:00.000Z",
+      "endTs": "2026-05-16T17:20:00.000Z",
+      "goal": "Bring PostToolUse hook p95 under 200 ms",
+      "outcome": "p95 from 312 ms → 87 ms after JSONL append batching",
+      "phases": [
+        { "id": "w1", "label": "W1 — Foundations", "ts": "2026-05-16T14:05:00.000Z" }
+      ],
+      "events": [
+        { "id": "e2-001", "type": "manual.decision", "ts": "2026-05-16T14:15:00.000Z", "title": "Batch JSONL appends per tick" },
+        { "id": "e2-002", "type": "manual.error", "ts": "2026-05-16T14:42:00.000Z", "title": "Hook exit code 1 under load" },
+        { "id": "e2-003", "type": "manual.fix", "ts": "2026-05-16T15:05:00.000Z", "title": "Catch + degrade silently with state.json warning" },
+        { "id": "e2-004", "type": "manual.lesson", "ts": "2026-05-16T15:32:00.000Z", "title": "Hooks must NEVER exit non-zero — degrade silently" },
+        { "id": "e2-005", "type": "manual.lesson", "ts": "2026-05-16T16:01:00.000Z", "title": "p95 is a contract, not a metric" },
+        { "id": "e2-006", "type": "agent_question", "ts": "2026-05-16T16:30:00.000Z", "title": "Should we keep the legacy fallback append path?", "payload": { "question": "Should we keep the legacy fallback append path?", "header": "Branching decision", "options": [{ "label": "Yes — defensive", "value": "yes", "description": "Keep the synchronous fs.appendFileSync fallback in case proper-lockfile fails to bind on exotic filesystems (NFS, FAT32)." }, { "label": "No — dead code", "value": "no", "description": "Delete it. Two append paths double the surface area for race bugs." }], "multiSelect": false, "chosen": "no", "askedAt": "2026-05-16T16:30:00.000Z" } },
+        { "id": "e2-007", "type": "manual.milestone", "ts": "2026-05-16T17:10:00.000Z", "title": "Hook p95 below 100 ms" }
+      ]
+    },
+    {
+      "sessionId": "sess-003",
+      "label": "W2 — Export HTML scaffold",
+      "ts": "2026-05-18T10:22:00.000Z",
+      "endTs": "2026-05-18T13:50:00.000Z",
+      "goal": "Stand up vite-plugin-singlefile + token CSS layer",
+      "outcome": "Hello-world dist/index.html under 80 KB; 8/8 smoke gates passing",
+      "phases": [
+        { "id": "w2", "label": "W2 — Scaffold", "ts": "2026-05-18T10:22:00.000Z" }
+      ],
+      "events": [
+        { "id": "e3-001", "type": "manual.decision", "ts": "2026-05-18T10:30:00.000Z", "title": "Svelte 5 runes over Solid signals (ADR-1)" },
+        { "id": "e3-002", "type": "manual.decision", "ts": "2026-05-18T10:48:00.000Z", "title": "System fonts only — no web fonts (ADR-7)" },
+        { "id": "e3-003", "type": "manual.error", "ts": "2026-05-18T11:12:00.000Z", "title": "@tailwind base imports tokens AFTER preflight" },
+        { "id": "e3-004", "type": "manual.fix", "ts": "2026-05-18T11:30:00.000Z", "title": "Reorder app.css imports — tokens BEFORE @tailwind base" },
+        { "id": "e3-005", "type": "manual.lesson", "ts": "2026-05-18T12:02:00.000Z", "title": "Tailwind @layer order is load-bearing for CSS-var theming" },
+        { "id": "e3-006", "type": "manual.resource", "ts": "2026-05-18T12:30:00.000Z", "title": "Stripe Press editorial palette reference" },
+        { "id": "e3-007", "type": "subagent_complete", "ts": "2026-05-18T13:15:00.000Z", "title": "design-motion-principles", "payload": { "agent": "design-motion-principles", "model": "claude-opus-4-7", "durationMs": 22150, "promptSummary": "AUDIT 11 motion moments against prefers-reduced-motion + mobile graceful-degrade.", "fullPrompt": "Run the design-motion-principles AUDIT in CREATE mode. Verify every motion moment has a reduced-motion fallback AND a mobile fallback. Output the 11-moment table with VERDICT column (pass | fail | needs-work). For any fail, propose a one-paragraph remediation.", "skillsLoaded": ["design-motion-principles", "animate-skill", "taste-skill"], "tools": [ { "name": "Read", "input": "apps/export-ui/src/lib/components/MotionRoot.svelte" }, { "name": "Read", "input": "apps/export-ui/src/app.css" } ], "response": "All 11 moments documented. 9 pass cleanly. 2 marked needs-work: (1) the chapter-header parallax needs an explicit transform: none in reduced-motion (currently relies on global @media kill). (2) DecisionMilestone pulse keeps the IntersectionObserver registered in reduced-motion — should bail out at observer creation. Both noted as P4 follow-ups." } }
+      ]
+    },
+    {
+      "sessionId": "sess-004",
+      "label": "W2 — agent_question normalization",
+      "ts": "2026-05-20T16:40:00.000Z",
+      "endTs": "2026-05-20T20:15:00.000Z",
+      "goal": "Synthesize agent_question events at the transcript READ path",
+      "outcome": "23/23 tests green; multi-question AskUserQuestion splits into N events",
+      "phases": [
+        { "id": "w2", "label": "W2 — Scaffold", "ts": "2026-05-20T16:40:00.000Z" }
+      ],
+      "events": [
+        { "id": "e4-001", "type": "manual.decision", "ts": "2026-05-20T16:48:00.000Z", "title": "Synthesize at READ path, not in a hook (ADR-5)" },
+        { "id": "e4-002", "type": "agent_question", "ts": "2026-05-20T17:05:00.000Z", "title": "How should we cap notes length?", "payload": { "question": "How should we cap notes length?", "header": "Pedagogical fork", "options": [{ "label": "4 KB UTF-8", "description": "Matches existing redaction layer's body cap." }, { "label": "8 KB UTF-8", "description": "Doubles space, doubles risk of leaked context bleed." }, { "label": "No cap", "description": "Free-text answers stored verbatim; redaction still runs." }], "multiSelect": false, "chosen": "4 KB UTF-8", "notes": "Matches existing redaction layer's body cap; revisit if real transcripts hit it.", "askedAt": "2026-05-20T17:05:00.000Z" } },
+        { "id": "e4-003", "type": "manual.error", "ts": "2026-05-20T17:42:00.000Z", "title": "tool_use.id missing from ClaudeTranscriptContentBlock type" },
+        { "id": "e4-004", "type": "manual.fix", "ts": "2026-05-20T18:08:00.000Z", "title": "Cast to Record<string,unknown> at the boundary" },
+        { "id": "e4-005", "type": "manual.lesson", "ts": "2026-05-20T18:35:00.000Z", "title": "Document type-cast escape hatches with the upstream issue ref" },
+        { "id": "e4-006", "type": "agent_question", "ts": "2026-05-20T19:02:00.000Z", "title": "Defer mermaid dual-SVG dark mode?", "payload": { "question": "Defer mermaid dual-SVG dark mode?", "header": "Branching decision", "options": [{ "label": "Yes — start with currentColor only", "description": "Light SVG only at first; dark added if smoke test flags contrast." }, { "label": "No — ship dual-SVG now", "description": "Pay the +50 % storage cost upfront; never revisit." }], "multiSelect": false, "chosen": "Yes — start with currentColor only", "askedAt": "2026-05-20T19:02:00.000Z" } },
+        { "id": "e4-007", "type": "manual.milestone", "ts": "2026-05-20T20:00:00.000Z", "title": "Payload v2 builder shipped" },
+        { "id": "e4-008", "type": "subagent_complete", "ts": "2026-05-20T19:45:00.000Z", "title": "transcript-scraper-architect", "payload": { "agent": "transcript-scraper-architect", "model": "claude-opus-4-7", "durationMs": 31420, "promptSummary": "Design the AskUserQuestion → agent_question pairing algorithm.", "fullPrompt": "Design the algorithm that pairs `tool_use.name === \"AskUserQuestion\"` with its matching `tool_result` by tool_use_id, then splits an N-question call into N agent_question events. Constraint: must run in O(n) over the transcript JSONL; must redact secrets in the notes block; must truncate to 4KB. Output the algorithm as pseudocode plus the test cases needed.", "skillsLoaded": ["clean-architecture", "passive-capture-rule", "redaction-skill"], "tools": [ { "name": "Read", "input": "src/connectors/claude-code/transcript.ts" }, { "name": "Read", "input": "src/store/redact.ts" } ], "response": "Single-pass scan over transcript JSONL with an askMap<tool_use_id, AskUseRecord>. On tool_use(AskUserQuestion) → askMap.set. On matching tool_result → parse answers block via regex `Your questions have been answered: \"(.+?)\" = \"(.+?)\"`, parse annotations block, emit N events. Redaction runs before persistence. Test cases: 1-question, 3-question, Other+notes, sk-* in notes, multi-byte UTF-8 truncation at 4KB boundary." } }
+      ]
+    },
+    {
+      "sessionId": "sess-005",
+      "label": "W3 — Editorial shell",
+      "ts": "2026-05-23T11:55:00.000Z",
+      "goal": "TOC + sidebar + 3-state sort + theme toggle + hash router",
+      "phases": [
+        { "id": "w3", "label": "W3 — Shell", "ts": "2026-05-23T11:55:00.000Z" }
+      ],
+      "events": [
+        { "id": "e5-001", "type": "manual.decision", "ts": "2026-05-23T12:05:00.000Z", "title": "[data-theme] attribute over Tailwind dark: variant (ADR-6)" },
+        { "id": "e5-002", "type": "manual.decision", "ts": "2026-05-23T12:30:00.000Z", "title": "Hash router + chapterId only (R-17)" },
+        { "id": "e5-003", "type": "manual.lesson", "ts": "2026-05-23T13:48:00.000Z", "title": "Svelte 5 runes can't live at module top-level — use $state in components" },
+        { "id": "e5-004", "type": "manual.resource", "ts": "2026-05-23T14:12:00.000Z", "title": "Linear's slide-in inspector pattern" }
+      ]
+    },
+    {
+      "sessionId": "sess-006",
+      "label": "W3 — Export replan SDD (this session)",
+      "ts": "2026-05-23T17:30:00.000Z",
+      "endTs": "2026-05-23T22:00:00.000Z",
+      "goal": "Replantear el HTML export desde cero — capturar orden, decisiones, fases, sub-agentes, instrucciones — para que el alumno entienda el desarrollo agéntico",
+      "outcome": "5 commits feature/export-replan (P1-P5), 18/20 AGs PASS, ready-for-archive",
+      "phases": [
+        { "id": "w3", "label": "W3 — Shell+Apply", "ts": "2026-05-23T17:30:00.000Z" }
+      ],
+      "events": [
+        { "id": "e6-001", "type": "manual.decision", "ts": "2026-05-23T17:45:00.000Z", "title": "Stack lockeado: Vite + Svelte 5 + vite-plugin-singlefile + Tailwind", "description": "El authoring layer es el cuello de botella, no el output. Build pipeline desbloquea component model + design system + animaciones reales sin romper el constraint de single-self-contained-file." },
+        { "id": "e6-002", "type": "manual.decision", "ts": "2026-05-23T17:48:00.000Z", "title": "Metáfora: replay narrativo con capítulos por sesión", "description": "Session = chapter. Sub-agent invocations = expandable cards con prompt completo + model + skills. Decisions = visual milestones. Story-driven, NOT dashboard-driven." },
+        { "id": "e6-003", "type": "agent_question", "ts": "2026-05-23T17:55:00.000Z", "title": "Dirección de paleta y aesthetic", "payload": { "question": "Dirección de paleta y aesthetic para el nuevo export. ¿Continuamos desde lo que ya cocinamos, arrancamos de cero, o vamos a un registro específicamente narrativo?", "header": "Branching decision", "options": [{ "label": "Linear-violet + dark-mode (continuidad slice 7)", "description": "Mantenemos la base violeta/oscura de Linear ya validada. Menos riesgo." }, { "label": "Fresh palette calibrada para replay narrativo", "description": "Editorial Stripe Press / Apple Newsroom, light mode default + dark opcional. Más riesgo pero matchea la metáfora libro/capitulos." }, { "label": "Dual-mode: claro editorial + oscuro cine", "description": "Dos modos con personalidad propia. Mayor wow, más trabajo de tokens." }], "multiSelect": false, "chosen": "Fresh palette calibrada para replay narrativo", "askedAt": "2026-05-23T17:55:00.000Z" } },
+        { "id": "e6-004", "type": "agent_question", "ts": "2026-05-23T18:02:00.000Z", "title": "¿Cómo ordenamos el TOC a nivel curso?", "payload": { "question": "¿Cómo ordenamos el TOC a nivel curso?", "header": "Pedagogical fork", "options": [{ "label": "Cronológico (más reciente primero)", "description": "Orden inverso por fecha. Lo natural para un dev log." }, { "label": "Pedagógico (agrupado por fase W1→W2→W3)", "description": "Las sesiones se agrupan bajo fase. Match perfecto para curso." }, { "label": "Pedagógico con toggle a cronológico", "description": "Default pedagógico, toggle a flat. Cubre ambos use cases." }], "multiSelect": false, "chosen": "Other", "notes": "Pedagógico con toggle a cronológico, con opción de ordenar de más antiguo a más reciente o al revés. Tres estados de orden total.", "askedAt": "2026-05-23T18:02:00.000Z" } },
+        { "id": "e6-005", "type": "agent_question", "ts": "2026-05-23T18:10:00.000Z", "title": "Estado por defecto del PromptInspector", "payload": { "question": "Estado por defecto del PromptInspector. ¿Cómo lo abrimos?", "header": "Branching decision", "options": [{ "label": "Cerrado por defecto, pop on click", "description": "Patrón Linear/Notion. Menos ruido visual inicial, slide-in al click." }, { "label": "Abierto siempre (IDE-style)", "description": "Aside permanente a la derecha estilo VSCode. Cero clicks, ocupa pantalla." }, { "label": "Cerrado + deep-dive mode toggle", "description": "Dos modos: watch vs study. Más código, más pedagógico." }], "multiSelect": false, "chosen": "Cerrado por defecto, pop on click", "askedAt": "2026-05-23T18:10:00.000Z" } },
+        { "id": "e6-006", "type": "agent_question", "ts": "2026-05-23T18:18:00.000Z", "title": "Comportamiento en mobile (≤768px)", "payload": { "question": "Comportamiento en mobile. ¿Qué hacemos cuando el alumno abre desde el móvil?", "header": "Branching decision", "options": [{ "label": "Hard-cut: \"Abrir en desktop\"", "description": "Splash con QR/link. Cero esfuerzo móvil, claridad máxima. Honestidad." }, { "label": "Graceful degrade: stacked + motion reducida", "description": "Layout colapsa a una columna, hamburger, scrubber swipe. Más código, más bugs." }, { "label": "Híbrido: degrade ≥480px, hard-cut por debajo", "description": "Tablet iPad funciona, móvil real no. Compromiso razonable." }], "multiSelect": false, "chosen": "Graceful degrade: stacked + motion reducida", "askedAt": "2026-05-23T18:18:00.000Z" } },
+        { "id": "e6-007", "type": "agent_question", "ts": "2026-05-23T18:25:00.000Z", "title": "¿Incluimos Lottie en slice 10?", "payload": { "question": "¿Incluimos Lottie en slice 10 para el motion moment #10 (TOC page-peel), o lo diferimos?", "header": "Pedagogical fork", "options": [{ "label": "Ship en slice 10 (~20KB extra)", "description": "Hero animation Lottie en TOC→capitulo transition. Wow real al primer encuentro." }, { "label": "Defer a slice posterior", "description": "Slice 10 ya es enorme. Lanzar sin Lottie usando View Transitions + CSS scale/rotate. 0 KB." }, { "label": "Hard no a Lottie, all-in en CSS", "description": "Cero dependencias de animation libs. Más purista, más tiempo." }], "multiSelect": false, "chosen": "Defer a slice posterior", "askedAt": "2026-05-23T18:25:00.000Z" } },
+        { "id": "e6-008", "type": "manual.milestone", "ts": "2026-05-23T18:40:00.000Z", "title": "5 forks pedagógicos respondidos — proposal cerrada" },
+        { "id": "e6-009", "type": "subagent_complete", "ts": "2026-05-23T18:55:00.000Z", "title": "sdd-explore", "payload": { "agent": "sdd-explore", "model": "claude-opus-4-7", "durationMs": 327716, "promptSummary": "Exploration: capture pipeline assets vs export shell, component decomposition, payload v2 contract, build integration, motion inventory, Option C migration", "fullPrompt": "You are running the SDD explore phase for change export-replan. Direction is locked (Vite+Svelte+singlefile+Tailwind, replay narrativo con capítulos). Your output is NOT about whether/what — it's HOW the implementation will land. Produce: (1) Current state inventory of what KEEP vs REPLACE, (2) Component decomposition draft, (3) Data contract for payload v2, (4) Build integration plan, (5) 3D/motion concrete inventory, (6) Risks and unknowns, (7) Working-tree decision recommendation, (8) Approaches comparison.", "skillsLoaded": ["sdd-explore", "taste-skill", "ui-ux-pro-max", "impeccable", "design-motion-principles"], "tools": [{ "name": "Read", "input": "src/types/event.ts" }, { "name": "Read", "input": "src/export/build-html-document.ts" }, { "name": "Read", "input": "src/generate/render-context.ts" }], "response": "22 Svelte components organized around <ChapterPlayer> + <SubAgentCard>. Option C recommended (commit capture slices 5-9 first, then start fresh slice 10). Top risks: payload size at 10k events, Tailwind @layer × singlefile minify order, assertNoExternalRefs vs Vite data: URIs. Component build order: MotionRoot → CourseShell+TOC → ChapterPlayer+Header → Scrubber → TurnRow+SubAgent+Question+Inspector → milestones → CommandPalette → aux cards." } },
+        { "id": "e6-010", "type": "subagent_complete", "ts": "2026-05-23T19:20:00.000Z", "title": "sdd-design", "payload": { "agent": "sdd-design", "model": "claude-opus-4-7", "durationMs": 272872, "promptSummary": "Architecture decisions: 3-layer CSS tokens, palette resolution light + cinema-dark, typography pairing (system fonts only — NO web fonts), 24 components with props/state/motion, 8 ADRs", "fullPrompt": "You are running the SDD design phase. Lock calibration knobs DV8/MI6/VD5. Produce: design tokens layer (3 layers: primitive → semantic → component) with actual hex values for light + dark, typography pairing per ui-ux-pro-max (NO web fonts — system stacks for single-file), component architecture for 24 components, routing + state management, motion architecture for 11 moments, data architecture for payload v2 with full TS types, build + vendoring architecture, file layout, decision records (8 ADRs), risks specific to design, slice 0 smoke-test plan.", "skillsLoaded": ["sdd-design", "taste-skill", "ui-ux-pro-max", "design-motion-principles", "animate-skill", "impeccable"], "tools": [{ "name": "Read", "input": "research/session-replay-ux-patterns" }, { "name": "Read", "input": "research/design-system-from-sustituir-notion" }], "response": "Three-layer tokens via CSS variables (primitives.css → semantic.css + semantic-dark.css → components.css). Light = warm-cream (#FAF8F4-ish) + deep-graphite. Dark = cinema slate. System fonts (Iowan Old Style → Palatino → Georgia for headlines). Component architecture documented for 24 components. 8 ADRs signed including: Svelte 5 over Solid, single-document over ZIP, payload in render-context, MotionRoot single-gate, agent_question READ path, data-theme attr, system fonts, graceful-degrade mobile." } },
+        { "id": "e6-011", "type": "manual.decision", "ts": "2026-05-23T19:35:00.000Z", "title": "feature-branch-chain locked como chain_strategy", "description": "Forecast 4550 LoC (realmente ~9000+) imposible en single-PR. feature-branch-chain elegida sobre stacked-to-main porque medio-mergeado en main = export shell roto visible a alumnos. Tracker mergea solo al final." },
+        { "id": "e6-012", "type": "manual.milestone", "ts": "2026-05-23T19:50:00.000Z", "title": "P0 cerrado — capture pipeline commits en main" },
+        { "id": "e6-013", "type": "subagent_complete", "ts": "2026-05-23T20:15:00.000Z", "title": "sdd-apply P4: narrative + wow", "payload": { "agent": "sdd-apply", "model": "claude-opus-4-7", "durationMs": 1443671, "promptSummary": "Phase P4: 17 narrative components + the wow + AgentQuestionCard (pedagogical centerpiece)", "fullPrompt": "You are running SDD apply phase P4 ONLY. THIS IS THE WOW PHASE. Two components MUST be polished: SubAgentCard (3D card flip via rotateY + transition-behavior:allow-discrete + @starting-style) and AgentQuestionCard (THE pedagogical piece — branching SVG glyph, options dimmed/highlighted, notes panel, distinct shape language). Cut corners on auxiliary cards if you must, NOT on these two.", "skillsLoaded": ["sdd-apply", "design-motion-principles", "animate-skill", "taste-skill", "ui-ux-pro-max", "impeccable"], "tools": [{ "name": "Write", "input": "apps/export-ui/src/lib/components/SubAgentCard.svelte" }, { "name": "Write", "input": "apps/export-ui/src/lib/components/AgentQuestionCard.svelte" }, { "name": "Write", "input": "apps/export-ui/src/lib/components/PromptInspector.svelte" }, { "name": "Bash", "input": "scripts/visual-verify-p4.ts" }], "response": "P4 landed at ebac96c. 32 files, 4228 insertions / 197 deletions. 30/30 tests green. Bundle 141KB raw / 39KB gzip. 8 screenshots tomados confirman: SubAgentCard back face muestra full prompt + skills + tool calls + response synthesis. AgentQuestionCard renders the 4 visual states (header, dimmed unchosen, highlighted chosen with checkmark, notes panel). View Transitions shared-element morph TOC→Chapter. Honest weakness: flip se ve mejor mid-animation que end state — polish item para P5." } },
+        { "id": "e6-014", "type": "manual.error", "ts": "2026-05-23T20:50:00.000Z", "title": "R-49 deviation: instructor-pack todavía depende del shell viejo", "description": "El sub-agente de P5 NO borró src/export/build-html-document.ts, inline-css.ts, inline-js.ts, markdown-to-html.ts porque src/export/instructor-pack.ts los importa. Honra el espíritu (borró mirror tests) pero no la letra." },
+        { "id": "e6-015", "type": "manual.fix", "ts": "2026-05-23T21:00:00.000Z", "title": "Slice 11 planned: refactor instructor-pack off legacy shell", "description": "Acordamos: cerrar slice 10 con la desviación documentada, planificar slice 11 para refactor + delete final. Pragmatismo > purismo: instructor-pack es feature funcional, no se rompe ahora." },
+        { "id": "e6-016", "type": "manual.lesson", "ts": "2026-05-23T21:10:00.000Z", "title": "Apply phase self-reports pueden ser PESIMISTAS, no solo optimistas", "description": "El P5 apply reportó '12 test failures' pero el verify independiente encontró SOLO 1 (pre-existente). La revisión fresca es valiosa AÚN cuando el agent es opus." },
+        { "id": "e6-017", "type": "manual.milestone", "ts": "2026-05-23T21:30:00.000Z", "title": "Slice 10 ready-for-archive — 18/20 AGs PASS" }
+      ]
+    }
+  ],
+  "decisions": [],
+  "errors": [],
+  "fixes": [],
+  "lessons": [],
+  "milestones": [],
+  "resources": [],
+  "visuals": [],
+  "visualDirections": [],
+  "skillInvocations": [],
+  "ghAgentRuns": [],
+  "qaFindings": [],
+  "agentQuestions": [],
+  "commits": [],
+  "bodies": {
+    "e1-001": "<p>JSONL beats SQLite for this hot path because <strong>appends are line-buffered</strong> and there's no schema migration when we add a new event kind. The cost is that range queries become a linear scan, but our access pattern is sequential (chronological replay), not random.</p><p>Decision recorded for posterity:</p><ul><li>Append-only — replayable from disk in O(n)</li><li>Zero schema migration — a new event kind is a JSON field</li><li>Redaction runs in the hot path, not in a downstream worker</li></ul>",
+    "e2-001": "<p>Each PostToolUse hook accumulates events in an in-memory buffer that flushes on the next tick. The trade-off: events may be lost if the process is SIGKILL'd between flushes. Acceptable because the transcript JSONL is the durable source of truth and events are derived from it on the next <code>logbook build</code>.</p>",
+    "e3-003": "<p>The bug: <code>@tailwind base</code> was imported BEFORE the token files, so Tailwind's reset rules used <code>var(--color-text-primary)</code> before the variable was declared. Older Safari reported the CSS-variable as <code>unset</code> and rendered body text in black on black.</p><p>The fix is two lines reordered. The lesson is that <strong>cascade order is load-bearing</strong> when you mix CSS variables with a utility framework.</p>"
+  },
+  "mermaid": {}
+}
