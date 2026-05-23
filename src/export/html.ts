@@ -25,6 +25,7 @@ import { assertNoExternalRefs } from "./sanitize-links.js";
 import { buildExportPayload } from "../generate/build-export-payload.js";
 import { readContext } from "../generate/render-context.js";
 import { preprocessMermaidPlaceholders } from "./mermaid.js";
+import { getRemoteUrl } from "../connectors/git.js";
 import type { ProjectPaths } from "../core/paths.js";
 import type { ExportReport } from "../types/reports.js";
 
@@ -87,7 +88,21 @@ export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
 
   // 1-2. Load context + build payload (also detects 5 MB cap).
   const ctx = await readContext(paths);
-  const { payload, oversize } = await buildExportPayload(ctx, paths);
+
+  // Slice-12 P3 (R-60 / ADR-SC-C1): resolve remoteUrl ONCE per export so the
+  // payload builder can populate `commit.payload.commitUrl` for github /
+  // gitlab / bitbucket. If git is unavailable or no origin is configured the
+  // call returns undefined; commit links degrade to plain SHA in the UI.
+  let remoteUrl: string | undefined;
+  try {
+    remoteUrl = await getRemoteUrl(paths.root);
+  } catch {
+    // Non-fatal: missing remote is normal for fresh repos.
+  }
+
+  const { payload, oversize } = await buildExportPayload(ctx, paths, {
+    remoteUrl,
+  });
 
   // 3. Pre-render mermaid diagrams (best-effort).
   await attachMermaidSvgs(payload);

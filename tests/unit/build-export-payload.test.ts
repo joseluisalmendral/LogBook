@@ -196,6 +196,41 @@ describe("buildExportPayload", () => {
     expect(body).not.toContain("<html");
   });
 
+  it("populates commitUrl per commit when remoteUrl is a known host (R-60 / ADR-SC-C1)", async () => {
+    const commitGh: RenderEvent = {
+      id: "evt-c1",
+      type: "commit",
+      ts: "2026-05-23T11:00:00.000Z",
+      sessionId: "sess-1",
+      title: "fix(x): y",
+      payload: { sha: "abcdef1234567890abcdef1234567890abcdef12" },
+    };
+    const ctx = mkCtx({ all: [commitGh] });
+    const { payload } = await buildExportPayload(ctx, mkPaths(), {
+      remoteUrl: "git@github.com:joseluisalmendral/LogBook.git",
+    });
+    expect(payload.commits).toHaveLength(1);
+    const p0 = payload.commits[0]!.payload as Record<string, unknown>;
+    expect(p0["commitUrl"]).toBe(
+      "https://github.com/joseluisalmendral/LogBook/commit/abcdef1234567890abcdef1234567890abcdef12",
+    );
+  });
+
+  it("leaves commitUrl undefined when no remoteUrl is provided (R-60 graceful)", async () => {
+    const commit: RenderEvent = {
+      id: "evt-c2",
+      type: "commit",
+      ts: "2026-05-23T11:00:00.000Z",
+      sessionId: "sess-1",
+      title: "feat: y",
+      payload: { sha: "abcdef1" },
+    };
+    const ctx = mkCtx({ all: [commit] });
+    const { payload } = await buildExportPayload(ctx, mkPaths());
+    const p0 = payload.commits[0]!.payload as Record<string, unknown>;
+    expect(p0["commitUrl"]).toBeUndefined();
+  });
+
   it("flags oversize when serialized payload exceeds the 5 MB cap (INV-12)", async () => {
     // Build a single event with a body large enough to push the payload past 5 MB.
     const huge = "x".repeat(PAYLOAD_CAP_BYTES_FOR_TESTS + 1024);

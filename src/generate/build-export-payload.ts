@@ -15,6 +15,7 @@
 import type { ProjectPaths } from "../core/paths.js";
 import type { RenderContext, RenderEvent } from "./render-context.js";
 import { renderEventBody } from "./markdown-body.js";
+import { buildCommitLink } from "../connectors/git.js";
 
 // ---------------------------------------------------------------------------
 // Payload v2 types (design §5.1 — co-located with the builder)
@@ -195,7 +196,7 @@ function projectNameFrom(root: string): string {
 export async function buildExportPayload(
   ctx: RenderContext,
   paths: ProjectPaths,
-  opts: { exportedAt?: string; gitSha?: string } = {},
+  opts: { exportedAt?: string; gitSha?: string; remoteUrl?: string } = {},
 ): Promise<BuildExportPayloadResult> {
   // --- Sessions / chapters -------------------------------------------------
   const sessions = ctx.sessions;
@@ -304,9 +305,29 @@ export async function buildExportPayload(
   // Commits live in their own bucket per R-13. Until the upstream
   // commit-ingestion pipeline lands an explicit ctx.commits field, we lift
   // them from `ctx.all` by type prefix.
-  const commits = (ctx.all ?? []).filter(
+  //
+  // R-60 / ADR-SC-C1 — populate `payload.commitUrl` per commit using the
+  // shared `buildCommitLink(remoteUrl, sha)` helper. The remoteUrl is threaded
+  // in from `src/generate/index.ts` (single `git remote get-url origin` per
+  // build). Unknown hosts / missing remote → leave `commitUrl` undefined; the
+  // UI's `<CommitRow>` renders plain `<code>` in that case.
+  const rawCommits = (ctx.all ?? []).filter(
     (e) => e.type === "commit" || e.type === "manual.commit",
   );
+  const commits: RenderEvent[] = rawCommits.map((e) => {
+    const payloadRecord = (e.payload ?? {}) as Record<string, unknown>;
+    const sha =
+      typeof payloadRecord["sha"] === "string"
+        ? (payloadRecord["sha"] as string)
+        : "";
+    if (!sha) return e;
+    const url = buildCommitLink(opts.remoteUrl, sha);
+    if (!url) return e;
+    return {
+      ...e,
+      payload: { ...payloadRecord, commitUrl: url },
+    };
+  });
 
   const totals: CourseTotals = {
     sessions: sessions.length,
