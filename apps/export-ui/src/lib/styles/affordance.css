@@ -97,3 +97,40 @@ html[data-motion="reduced"] [data-interactive]:hover {
 html[data-motion="reduced"] .lb-chevron {
   transition: none !important;
 }
+
+/* -----------------------------------------------------------------------
+ * Slice 12 P6 — Bucket F (R-71, R-75, INV-15 Moment 3).
+ *
+ * --play-progress mirrors the playhead store's `t` (0..1). The playhead store
+ * pushes its value onto <html> via inline style in the loop; descendants
+ * can branch on it the same way --scroll-progress works for the scrub store.
+ * Independent so the two drivers don't fight (ADR-SC-F2 + INV-16).
+ *
+ * Heartbeat pulse (Moment 3): when `.is-active` is set on the active event
+ * anchor during playhead playback, the rim pulses outward. 1.5s loop is
+ * exempt from the R-80 600ms motion cap because it's a CONTINUOUS indicator,
+ * not a one-shot play.
+ *
+ * Reduced-motion fallback: static 3px ring, no animation. Spec R-75.
+ * --------------------------------------------------------------------- */
+:root {
+  --play-progress: 0;
+}
+
+.is-active {
+  position: relative;
+  border-radius: var(--radius-sm, 4px);
+  animation: lb-heartbeat 1500ms ease-out infinite;
+  box-shadow: 0 0 0 0 rgba(var(--brand-rgb), 0.4);
+}
+
+@keyframes lb-heartbeat {
+  0%   { box-shadow: 0 0 0 0 rgba(var(--brand-rgb), 0.4); }
+  70%  { box-shadow: 0 0 0 8px rgba(var(--brand-rgb), 0); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--brand-rgb), 0); }
+}
+
+html[data-motion="reduced"] .is-active {
+  animation: none !important;
+  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.4) !important;
+}
