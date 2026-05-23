@@ -13,7 +13,8 @@
   so the TOC→chapter morph has a shared element to interpolate against.
 -->
 <script lang="ts">
-  import type { Chapter } from "../types";
+  import type { Chapter, FileTouch } from "../types";
+  import FileChangeStrip from "./FileChangeStrip.svelte";
   import { router } from "../stores/router";
 
   interface Props {
@@ -21,6 +22,23 @@
   }
 
   const { chapter }: Props = $props();
+
+  /**
+   * Slice-14 Bucket E: chapter-level aggregate of files touched. Read with a
+   * strict runtime guard — old payloads without the field stay supported.
+   */
+  const filesTouched = $derived(
+    Array.isArray(chapter.filesTouched)
+      ? (chapter.filesTouched as FileTouch[]).filter(
+          (f) => f && typeof f.path === "string" && typeof f.action === "string",
+        )
+      : [],
+  );
+
+  let filesExpanded = $state(false);
+  function toggleFiles(): void {
+    filesExpanded = !filesExpanded;
+  }
 
   function openTranscript(): void {
     router.navigate({ name: "transcript", sessionId: chapter.sessionId, eventId: null });
@@ -87,7 +105,28 @@
       <span class="meta-label">Raw</span>
       <span class="meta-value">View transcript →</span>
     </button>
+    {#if filesTouched.length > 0}
+      <!-- Slice-14 Bucket E: chapter-level "files touched" summary. Collapsed
+           pill expands into a full FileChangeStrip below. -->
+      <button
+        type="button"
+        class="meta-pill meta-files-pill"
+        onclick={toggleFiles}
+        data-interactive
+        aria-expanded={filesExpanded}
+        aria-controls={`ch-files-${chapter.sessionId}`}
+        aria-label={`${filesExpanded ? "Hide" : "Show"} ${filesTouched.length} file${filesTouched.length === 1 ? "" : "s"} touched`}
+      >
+        <span class="meta-label">Files</span>
+        <span class="meta-value lb-tnum">{filesTouched.length}&nbsp;touched</span>
+      </button>
+    {/if}
   </div>
+  {#if filesTouched.length > 0 && filesExpanded}
+    <div class="ch-files" id={`ch-files-${chapter.sessionId}`}>
+      <FileChangeStrip files={filesTouched} ariaLabel="Files touched in this chapter" />
+    </div>
+  {/if}
 </header>
 
 <style>
@@ -206,6 +245,31 @@
   }
   .meta-transcript-link .meta-label {
     color: var(--color-accent-primary);
+  }
+
+  /* Slice 14 Bucket E: files-touched pill mirrors transcript-link styling.
+     Active-state border swaps when expanded so users have a clear toggle cue. */
+  .meta-files-pill {
+    appearance: none;
+    cursor: pointer;
+    color: var(--color-text-primary);
+    font-family: inherit;
+    transition: border-color 150ms ease-out, color 150ms ease-out;
+  }
+  .meta-files-pill:hover,
+  .meta-files-pill:focus-visible,
+  .meta-files-pill[aria-expanded="true"] {
+    border-color: var(--color-accent-primary);
+    color: var(--color-accent-primary);
+  }
+  .meta-files-pill .meta-label {
+    color: var(--color-accent-primary);
+  }
+
+  .ch-files {
+    margin-top: var(--p-space-4);
+    padding-top: var(--p-space-3);
+    border-top: 1px solid var(--color-border-hairline);
   }
 
   @media (max-width: 767px) {

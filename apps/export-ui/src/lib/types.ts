@@ -70,6 +70,22 @@ export interface Chapter {
   outcome?: string;
   phases: PhaseRef[];
   events: RenderEvent[];
+  /**
+   * Slice-14 Bucket E: list of files touched during this chapter. Build-derived
+   * from tool_result.edit/write/multiedit/read events. See backend mirror in
+   * `src/generate/build-export-payload.ts → Chapter.filesTouched`.
+   */
+  filesTouched?: FileTouch[];
+}
+
+/**
+ * Slice-14 Bucket E: single file-touch record. Action strength order for
+ * dedupe: write > edit > multi_edit > read. The UI uses `action` to pick an
+ * icon/color in the FileChangeStrip atom.
+ */
+export interface FileTouch {
+  path: string;
+  action: "write" | "edit" | "multi_edit" | "read";
 }
 
 /**
