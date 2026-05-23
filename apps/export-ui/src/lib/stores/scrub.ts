@@ -8,6 +8,16 @@
  *
  * In reduced-motion mode the scrubber stays static at progress=1 so every
  * row is fully visible without animation.
+ *
+ * Slice 12 P6 / ADR-SC-F2 — playhead yield:
+ *   When the playhead store is in mode='play', the scrub store MUST NOT update
+ *   --scroll-progress. Reason: the playhead is itself triggering programmatic
+ *   scrolls (scrollIntoView), and letting scrub.ts re-emit progress from those
+ *   would cause a double-driver flicker — the scrubber's progress bar would
+ *   step forward, then snap back to wherever the user was looking before play
+ *   started. The TimelineScrubber's recompute() already short-circuits when
+ *   playMode === 'play'; this comment exists so future contributors don't
+ *   "fix" that short-circuit thinking it's a bug.
  */
 
 type Listener = (progress: number) => void;
