@@ -153,7 +153,24 @@
    */
   onMount(() => {
     let lastPulsedId: string | null = null;
+    let lastPulsedEl: HTMLElement | null = null;
     let pulseTimer: ReturnType<typeof setTimeout> | null = null;
+
+    // Cancel any in-flight pulse — removes the class from the previous element
+    // AND clears the pending teardown timeout. Without this, a fast double-click
+    // would strand the previous element with `.lb-pulse-once` because the
+    // setTimeout closure only cleans up the element it captured.
+    const clearPreviousPulse = (): void => {
+      if (pulseTimer !== null) {
+        clearTimeout(pulseTimer);
+        pulseTimer = null;
+      }
+      if (lastPulsedEl !== null) {
+        lastPulsedEl.classList.remove("lb-pulse-once");
+        lastPulsedEl = null;
+      }
+    };
+
     const unsub = selection.subscribe((snap) => {
       const id = snap.chapterEventId;
       if (!id || id === lastPulsedId) return;
@@ -162,6 +179,10 @@
       if (route.name !== "chapter") return;
       const el = document.querySelector<HTMLElement>(`[data-event-id="${id}"]`);
       if (!el) return;
+
+      // Strip any in-flight pulse before starting a new one (R-68 cancellable).
+      clearPreviousPulse();
+
       lastPulsedId = id;
       // Scroll the target card into view (R-68). Programmatic scroll suppression
       // ensures the TimelineScrubber listener doesn't read this as user input.
@@ -176,15 +197,19 @@
       if (playhead.get().playing) return;
       // Apply the one-shot pulse for 1200ms.
       el.classList.add("lb-pulse-once");
-      if (pulseTimer) clearTimeout(pulseTimer);
+      lastPulsedEl = el;
       pulseTimer = setTimeout(() => {
-        el.classList.remove("lb-pulse-once");
+        // Defensive: only strip if this is still the active pulsed element.
+        if (lastPulsedEl === el) {
+          el.classList.remove("lb-pulse-once");
+          lastPulsedEl = null;
+        }
         pulseTimer = null;
       }, 1200);
     });
     return () => {
       unsub();
-      if (pulseTimer) clearTimeout(pulseTimer);
+      clearPreviousPulse();
     };
   });
 </script>
