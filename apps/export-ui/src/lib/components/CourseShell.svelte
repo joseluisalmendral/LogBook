@@ -8,8 +8,8 @@
                       command palette trigger) lands in P5.
 
   Routing: subscribes to the router store. When route.name === "toc" the
-  <CourseTOC> mounts; when "chapter" the <ChapterPlaceholder> mounts (the
-  real <ChapterPlayer> lands in P4).
+  <CourseTOC> mounts; when "chapter" the <ChapterPlayer> mounts (P4 swap
+  from the P3 ChapterPlaceholder stub).
 
   This component mounts INSIDE <MotionRoot> (App.svelte slot), so it can
   assume the data-motion attribute on <html> is already set.
@@ -18,9 +18,13 @@
   import { onMount } from "svelte";
   import { router, type Route } from "../stores/router";
   import { subscribeMotion } from "../stores/motion";
+  import { palette } from "../stores/palette";
+  import { inspector } from "../stores/inspector";
   import Sidebar from "./Sidebar.svelte";
   import CourseTOC from "./CourseTOC.svelte";
-  import ChapterPlaceholder from "./ChapterPlaceholder.svelte";
+  import ChapterPlayer from "./ChapterPlayer.svelte";
+  import PromptInspector from "./PromptInspector.svelte";
+  import CommandPalette from "./CommandPalette.svelte";
 
   let route: Route = $state(router.get());
   let isMobile = $state(false);
@@ -33,6 +37,9 @@
       // standard pattern in mobile webapps so the chapter view is visible
       // after a tap.
       if (isMobile) sidebarOpen = false;
+      // Closing the inspector on route change is the safe default — a stale
+      // event from chapter A would be confusing after navigating to chapter B.
+      inspector.close();
     });
     const unsubMotion = subscribeMotion((s) => {
       isMobile = s.isMobile;
@@ -40,9 +47,19 @@
       // matters on mobile.
       if (!isMobile) sidebarOpen = false;
     });
+    // Cmd+K / Ctrl+K opens the command palette. Bound here (root) so it
+    // works regardless of which view is mounted.
+    const onKey = (e: KeyboardEvent): void => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === "k" || e.key === "K")) {
+        e.preventDefault();
+        palette.toggle();
+      }
+    };
+    window.addEventListener("keydown", onKey);
     return () => {
       unsubRoute();
       unsubMotion();
+      window.removeEventListener("keydown", onKey);
     };
   });
 
@@ -89,10 +106,18 @@
     {#if route.name === "toc"}
       <CourseTOC />
     {:else if route.name === "chapter"}
-      <ChapterPlaceholder chapterId={route.chapterId} />
+      <ChapterPlayer chapterId={route.chapterId} />
     {/if}
   </main>
 </div>
+
+<!--
+  Global overlays — both subscribe to their own stores; rendering them
+  unconditionally here keeps the focus + a11y wiring stable across route
+  changes.
+-->
+<PromptInspector />
+<CommandPalette />
 
 <style>
   .shell {

@@ -43,12 +43,13 @@
         { "id": "w1", "label": "W1 — Foundations", "ts": "2026-05-15T09:12:00.000Z" }
       ],
       "events": [
-        { "id": "e1-001", "type": "manual.decision", "ts": "2026-05-15T09:30:00.000Z", "title": "Choose JSONL over SQLite for hot path" },
-        { "id": "e1-002", "type": "manual.decision", "ts": "2026-05-15T09:48:00.000Z", "title": "Adopt Gitleaks regex set for redaction" },
-        { "id": "e1-003", "type": "manual.error", "ts": "2026-05-15T10:12:00.000Z", "title": "Append race on hook reentry" },
-        { "id": "e1-004", "type": "manual.fix", "ts": "2026-05-15T10:31:00.000Z", "title": "Add proper-lockfile around append" },
+        { "id": "e1-001", "type": "manual.decision", "ts": "2026-05-15T09:30:00.000Z", "title": "Choose JSONL over SQLite for hot path", "description": "Append-only, line-buffered, zero schema migration." },
+        { "id": "e1-002", "type": "manual.decision", "ts": "2026-05-15T09:48:00.000Z", "title": "Adopt Gitleaks regex set for redaction", "description": "Covers AWS, GCP, GitHub PATs and OpenAI-style sk- keys." },
+        { "id": "e1-003", "type": "manual.error", "ts": "2026-05-15T10:12:00.000Z", "title": "Append race on hook reentry", "description": "Two PostToolUse fires within the same ms interleaved writes." },
+        { "id": "e1-004", "type": "manual.fix", "ts": "2026-05-15T10:31:00.000Z", "title": "Add proper-lockfile around append", "description": "OS-level lock — survives reentry even within one process." },
         { "id": "e1-005", "type": "manual.lesson", "ts": "2026-05-15T10:55:00.000Z", "title": "JSONL appends need OS-level locks even within one process" },
-        { "id": "e1-006", "type": "manual.milestone", "ts": "2026-05-15T12:30:00.000Z", "title": "Persistence schema frozen" }
+        { "id": "e1-006", "type": "manual.milestone", "ts": "2026-05-15T12:30:00.000Z", "title": "Persistence schema frozen" },
+        { "id": "e1-007", "type": "subagent_complete", "ts": "2026-05-15T11:15:00.000Z", "title": "redaction-rules-curator", "payload": { "agent": "redaction-rules-curator", "model": "claude-opus-4-7", "durationMs": 18430, "promptSummary": "Curate Gitleaks-derived regex set tuned to LogBook payload shape.", "fullPrompt": "You are a redaction-rules curator. Given the Gitleaks core regex set, output a JSON list of patterns tuned for LogBook event bodies. Constraints: never strip natural English with the word 'token' in it; always preserve markdown code fence delimiters; cap each pattern at 200 chars to avoid catastrophic backtracking. Output JSON only.", "skillsLoaded": ["redaction-skill", "regex-safety", "gitleaks-rules"], "tools": [ { "name": "Read", "input": "gitleaks/config/gitleaks.toml" }, { "name": "Write", "input": "src/store/redact-rules.ts" } ], "response": "Selected 47 patterns; added 3 LogBook-specific rules (Notion API tokens, Sentry DSN, Linear API keys). All patterns capped at 180 chars. Verified zero false positives on the seeded transcript corpus." } }
       ]
     },
     {
@@ -67,7 +68,7 @@
         { "id": "e2-003", "type": "manual.fix", "ts": "2026-05-16T15:05:00.000Z", "title": "Catch + degrade silently with state.json warning" },
         { "id": "e2-004", "type": "manual.lesson", "ts": "2026-05-16T15:32:00.000Z", "title": "Hooks must NEVER exit non-zero — degrade silently" },
         { "id": "e2-005", "type": "manual.lesson", "ts": "2026-05-16T16:01:00.000Z", "title": "p95 is a contract, not a metric" },
-        { "id": "e2-006", "type": "agent_question", "ts": "2026-05-16T16:30:00.000Z", "title": "Should we keep the legacy fallback append path?", "payload": { "question": "Should we keep the legacy fallback append path?", "options": [{ "label": "Yes — defensive", "value": "yes" }, { "label": "No — dead code", "value": "no" }], "multiSelect": false, "chosen": "no", "askedAt": "2026-05-16T16:30:00.000Z" } },
+        { "id": "e2-006", "type": "agent_question", "ts": "2026-05-16T16:30:00.000Z", "title": "Should we keep the legacy fallback append path?", "payload": { "question": "Should we keep the legacy fallback append path?", "header": "Branching decision", "options": [{ "label": "Yes — defensive", "value": "yes", "description": "Keep the synchronous fs.appendFileSync fallback in case proper-lockfile fails to bind on exotic filesystems (NFS, FAT32)." }, { "label": "No — dead code", "value": "no", "description": "Delete it. Two append paths double the surface area for race bugs." }], "multiSelect": false, "chosen": "no", "askedAt": "2026-05-16T16:30:00.000Z" } },
         { "id": "e2-007", "type": "manual.milestone", "ts": "2026-05-16T17:10:00.000Z", "title": "Hook p95 below 100 ms" }
       ]
     },
@@ -88,7 +89,7 @@
         { "id": "e3-004", "type": "manual.fix", "ts": "2026-05-18T11:30:00.000Z", "title": "Reorder app.css imports — tokens BEFORE @tailwind base" },
         { "id": "e3-005", "type": "manual.lesson", "ts": "2026-05-18T12:02:00.000Z", "title": "Tailwind @layer order is load-bearing for CSS-var theming" },
         { "id": "e3-006", "type": "manual.resource", "ts": "2026-05-18T12:30:00.000Z", "title": "Stripe Press editorial palette reference" },
-        { "id": "e3-007", "type": "subagent_complete", "ts": "2026-05-18T13:15:00.000Z", "title": "design-motion-principles AUDIT pass" }
+        { "id": "e3-007", "type": "subagent_complete", "ts": "2026-05-18T13:15:00.000Z", "title": "design-motion-principles", "payload": { "agent": "design-motion-principles", "model": "claude-opus-4-7", "durationMs": 22150, "promptSummary": "AUDIT 11 motion moments against prefers-reduced-motion + mobile graceful-degrade.", "fullPrompt": "Run the design-motion-principles AUDIT in CREATE mode. Verify every motion moment has a reduced-motion fallback AND a mobile fallback. Output the 11-moment table with VERDICT column (pass | fail | needs-work). For any fail, propose a one-paragraph remediation.", "skillsLoaded": ["design-motion-principles", "animate-skill", "taste-skill"], "tools": [ { "name": "Read", "input": "apps/export-ui/src/lib/components/MotionRoot.svelte" }, { "name": "Read", "input": "apps/export-ui/src/app.css" } ], "response": "All 11 moments documented. 9 pass cleanly. 2 marked needs-work: (1) the chapter-header parallax needs an explicit transform: none in reduced-motion (currently relies on global @media kill). (2) DecisionMilestone pulse keeps the IntersectionObserver registered in reduced-motion — should bail out at observer creation. Both noted as P4 follow-ups." } }
       ]
     },
     {
@@ -103,12 +104,13 @@
       ],
       "events": [
         { "id": "e4-001", "type": "manual.decision", "ts": "2026-05-20T16:48:00.000Z", "title": "Synthesize at READ path, not in a hook (ADR-5)" },
-        { "id": "e4-002", "type": "agent_question", "ts": "2026-05-20T17:05:00.000Z", "title": "How should we cap notes length?", "payload": { "question": "How should we cap notes length?", "options": [{ "label": "4 KB UTF-8" }, { "label": "8 KB UTF-8" }, { "label": "No cap" }], "multiSelect": false, "chosen": "4 KB UTF-8", "notes": "Matches existing redaction layer's body cap; revisit if real transcripts hit it.", "askedAt": "2026-05-20T17:05:00.000Z" } },
+        { "id": "e4-002", "type": "agent_question", "ts": "2026-05-20T17:05:00.000Z", "title": "How should we cap notes length?", "payload": { "question": "How should we cap notes length?", "header": "Pedagogical fork", "options": [{ "label": "4 KB UTF-8", "description": "Matches existing redaction layer's body cap." }, { "label": "8 KB UTF-8", "description": "Doubles space, doubles risk of leaked context bleed." }, { "label": "No cap", "description": "Free-text answers stored verbatim; redaction still runs." }], "multiSelect": false, "chosen": "4 KB UTF-8", "notes": "Matches existing redaction layer's body cap; revisit if real transcripts hit it.", "askedAt": "2026-05-20T17:05:00.000Z" } },
         { "id": "e4-003", "type": "manual.error", "ts": "2026-05-20T17:42:00.000Z", "title": "tool_use.id missing from ClaudeTranscriptContentBlock type" },
         { "id": "e4-004", "type": "manual.fix", "ts": "2026-05-20T18:08:00.000Z", "title": "Cast to Record<string,unknown> at the boundary" },
         { "id": "e4-005", "type": "manual.lesson", "ts": "2026-05-20T18:35:00.000Z", "title": "Document type-cast escape hatches with the upstream issue ref" },
-        { "id": "e4-006", "type": "agent_question", "ts": "2026-05-20T19:02:00.000Z", "title": "Defer mermaid dual-SVG dark mode?", "payload": { "question": "Defer mermaid dual-SVG dark mode?", "options": [{ "label": "Yes — start with currentColor only" }, { "label": "No — ship dual-SVG now" }], "multiSelect": false, "chosen": "Yes — start with currentColor only", "askedAt": "2026-05-20T19:02:00.000Z" } },
-        { "id": "e4-007", "type": "manual.milestone", "ts": "2026-05-20T20:00:00.000Z", "title": "Payload v2 builder shipped" }
+        { "id": "e4-006", "type": "agent_question", "ts": "2026-05-20T19:02:00.000Z", "title": "Defer mermaid dual-SVG dark mode?", "payload": { "question": "Defer mermaid dual-SVG dark mode?", "header": "Branching decision", "options": [{ "label": "Yes — start with currentColor only", "description": "Light SVG only at first; dark added if smoke test flags contrast." }, { "label": "No — ship dual-SVG now", "description": "Pay the +50 % storage cost upfront; never revisit." }], "multiSelect": false, "chosen": "Yes — start with currentColor only", "askedAt": "2026-05-20T19:02:00.000Z" } },
+        { "id": "e4-007", "type": "manual.milestone", "ts": "2026-05-20T20:00:00.000Z", "title": "Payload v2 builder shipped" },
+        { "id": "e4-008", "type": "subagent_complete", "ts": "2026-05-20T19:45:00.000Z", "title": "transcript-scraper-architect", "payload": { "agent": "transcript-scraper-architect", "model": "claude-opus-4-7", "durationMs": 31420, "promptSummary": "Design the AskUserQuestion → agent_question pairing algorithm.", "fullPrompt": "Design the algorithm that pairs `tool_use.name === \"AskUserQuestion\"` with its matching `tool_result` by tool_use_id, then splits an N-question call into N agent_question events. Constraint: must run in O(n) over the transcript JSONL; must redact secrets in the notes block; must truncate to 4KB. Output the algorithm as pseudocode plus the test cases needed.", "skillsLoaded": ["clean-architecture", "passive-capture-rule", "redaction-skill"], "tools": [ { "name": "Read", "input": "src/connectors/claude-code/transcript.ts" }, { "name": "Read", "input": "src/store/redact.ts" } ], "response": "Single-pass scan over transcript JSONL with an askMap<tool_use_id, AskUseRecord>. On tool_use(AskUserQuestion) → askMap.set. On matching tool_result → parse answers block via regex `Your questions have been answered: \"(.+?)\" = \"(.+?)\"`, parse annotations block, emit N events. Redaction runs before persistence. Test cases: 1-question, 3-question, Other+notes, sk-* in notes, multi-byte UTF-8 truncation at 4KB boundary." } }
       ]
     },
     {
@@ -140,6 +142,10 @@
   "qaFindings": [],
   "agentQuestions": [],
   "commits": [],
-  "bodies": {},
+  "bodies": {
+    "e1-001": "<p>JSONL beats SQLite for this hot path because <strong>appends are line-buffered</strong> and there's no schema migration when we add a new event kind. The cost is that range queries become a linear scan, but our access pattern is sequential (chronological replay), not random.</p><p>Decision recorded for posterity:</p><ul><li>Append-only — replayable from disk in O(n)</li><li>Zero schema migration — a new event kind is a JSON field</li><li>Redaction runs in the hot path, not in a downstream worker</li></ul>",
+    "e2-001": "<p>Each PostToolUse hook accumulates events in an in-memory buffer that flushes on the next tick. The trade-off: events may be lost if the process is SIGKILL'd between flushes. Acceptable because the transcript JSONL is the durable source of truth and events are derived from it on the next <code>logbook build</code>.</p>",
+    "e3-003": "<p>The bug: <code>@tailwind base</code> was imported BEFORE the token files, so Tailwind's reset rules used <code>var(--color-text-primary)</code> before the variable was declared. Older Safari reported the CSS-variable as <code>unset</code> and rendered body text in black on black.</p><p>The fix is two lines reordered. The lesson is that <strong>cascade order is load-bearing</strong> when you mix CSS variables with a utility framework.</p>"
+  },
   "mermaid": {}
 }

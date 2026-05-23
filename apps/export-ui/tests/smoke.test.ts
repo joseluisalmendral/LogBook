@@ -74,6 +74,10 @@ describe("slice-0 smoke", () => {
       "http://www.w3.org/1999/xlink",
       "http://www.w3.org/1999/xhtml",
       "http://www.w3.org/XML/1998/namespace",
+      // Svelte 5 runtime stores the MathML namespace as a string constant
+      // for hydration of <math> elements. Same status as the other XML
+      // namespaces above — text literal, no network fetch.
+      "http://www.w3.org/1998/Math/MathML",
     ]);
     const stripPunct = (s: string): string => s.replace(/[).,;:!?`,]+$/, "");
     const isSvelteErrorTemplate = (s: string): boolean =>

@@ -47,8 +47,22 @@
     });
   });
 
+  // The view-transition-name MUST match the ChapterHeader's name for the
+  // shared-element morph (motion #1). Same sanitization rules.
+  const vtName = $derived(`chapter-${chapter.sessionId.replace(/[^a-zA-Z0-9_-]/g, "_")}`);
+
   function navigate(): void {
-    router.navigate({ name: "chapter", chapterId: chapter.sessionId });
+    // View Transitions API: animate from this tile to the chapter header.
+    // Gated by @supports + motion store (the global app.css rule kills
+    // animations when data-motion="reduced").
+    if (typeof document !== "undefined" && "startViewTransition" in document) {
+      (document as Document & { startViewTransition: (cb: () => void) => unknown })
+        .startViewTransition(() => {
+          router.navigate({ name: "chapter", chapterId: chapter.sessionId });
+        });
+    } else {
+      router.navigate({ name: "chapter", chapterId: chapter.sessionId });
+    }
   }
 
   function onKey(e: KeyboardEvent): void {
@@ -59,13 +73,14 @@
   }
 </script>
 
-<article
+<div
   class="session-tile"
   tabindex="0"
-  role="link"
+  role="button"
   aria-label={`Open session ${chapter.label}`}
   data-testid="session-tile"
   data-session-id={chapter.sessionId}
+  style="view-transition-name: {vtName};"
   onclick={navigate}
   onkeydown={onKey}
 >
@@ -105,7 +120,7 @@
       </span>
     {/if}
   </footer>
-</article>
+</div>
 
 <style>
   .session-tile {

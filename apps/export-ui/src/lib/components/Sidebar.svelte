@@ -20,6 +20,7 @@
 <script lang="ts">
   import { payload } from "../stores/data";
   import ThemeToggle from "./ThemeToggle.svelte";
+  import { palette } from "../stores/palette";
 
   interface Props {
     open: boolean;
@@ -72,6 +73,22 @@
 
   <div class="toolbar">
     <ThemeToggle />
+    <button
+      type="button"
+      class="palette-trigger"
+      onclick={() => palette.openPalette()}
+      aria-label="Open command palette"
+      data-testid="palette-trigger"
+    >
+      <span class="pt-icon" aria-hidden="true">
+        <svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6">
+          <circle cx="7" cy="7" r="4.5" />
+          <line x1="10.5" y1="10.5" x2="13.5" y2="13.5" stroke-linecap="round" />
+        </svg>
+      </span>
+      Search
+      <kbd class="pt-kbd">⌘K</kbd>
+    </button>
   </div>
 
   <section class="kpi-strip" aria-label="Course totals">
@@ -182,6 +199,40 @@
     display: flex;
     align-items: center;
     gap: var(--p-space-2);
+    flex-wrap: wrap;
+  }
+
+  .palette-trigger {
+    appearance: none;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-hairline);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-secondary);
+    font-family: var(--font-body);
+    font-size: var(--font-size-caption);
+    padding: 4px 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    flex: 1;
+    transition: border-color 150ms ease;
+  }
+  .palette-trigger:hover {
+    border-color: var(--color-accent-primary);
+    color: var(--color-text-primary);
+  }
+  .pt-icon {
+    display: inline-flex;
+    color: var(--color-text-tertiary);
+  }
+  .pt-kbd {
+    margin-left: auto;
+    font-family: var(--font-mono);
+    background: var(--color-surface-sunken);
+    color: var(--color-text-tertiary);
+    padding: 1px 4px;
+    border-radius: var(--radius-xs);
   }
 
   .kpi-strip {
