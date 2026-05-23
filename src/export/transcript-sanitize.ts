@@ -142,7 +142,7 @@ function truncateUtf8(s: string, maxBytes: number): string {
   const buf = Buffer.from(s, "utf8");
   let cut = Math.min(maxBytes, buf.length);
   // Skip continuation bytes (0x80..0xBF) so we land on a code-point boundary.
-  while (cut > 0 && (buf[cut] & 0xc0) === 0x80) cut--;
+  while (cut > 0 && cut < buf.length && (buf[cut]! & 0xc0) === 0x80) cut--;
   return buf.slice(0, cut).toString("utf8");
 }
 
@@ -162,7 +162,7 @@ function headTailTrim(s: string): string {
   const tailBuf = buf.slice(tailStart);
   // Re-anchor: if the tail starts mid-codepoint, advance until valid.
   let off = 0;
-  while (off < tailBuf.length && (tailBuf[off] & 0xc0) === 0x80) off++;
+  while (off < tailBuf.length && (tailBuf[off]! & 0xc0) === 0x80) off++;
   const tail = tailBuf.slice(off).toString("utf8");
   const dropped = total - byteLength(head) - byteLength(tail);
   return `${head}\n... [truncated ${dropped} bytes] ...\n${tail}`;
