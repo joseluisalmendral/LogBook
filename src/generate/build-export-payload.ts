@@ -100,10 +100,15 @@ export interface Chapter {
 /**
  * Single file-touch record. `action` indicates the operation strength so the
  * UI can pick an icon and the dedupe step can prefer the strongest signal.
+ *
+ * Slice-15: `create` is upgraded from `write` when a tool_result.write event
+ * is the FIRST mention of a path in chronological order (the file was created
+ * during this chapter, not overwritten). Strength order:
+ *   create > write > edit > multi_edit > read
  */
 export interface FileTouch {
   path: string;
-  action: "write" | "edit" | "multi_edit" | "read";
+  action: "create" | "write" | "edit" | "multi_edit" | "read";
 }
 
 /**
@@ -289,11 +294,17 @@ function extractFileTouch(event: RenderEvent): FileTouch | null {
 }
 
 /**
- * Slice-14 Bucket E: aggregate a list of FileTouch from a list of events,
- * deduping by path and keeping the strongest action seen for each path.
- * Strength order: write > edit > multi_edit > read.
+ * Slice-14 Bucket E + slice-15 create detection: aggregate a list of FileTouch
+ * from a chronologically-sorted list of events, deduping by path and keeping
+ * the strongest action seen for each path. Strength order:
+ *   create > write > edit > multi_edit > read
+ *
+ * The first tool_result.write event for a previously-unseen path is upgraded
+ * from `write` to `create`. This relies on the caller passing events in
+ * timestamp ascending order (which render-context guarantees via sortByTs).
  */
 const ACTION_STRENGTH: Record<FileTouch["action"], number> = {
+  create: 5,
   write: 4,
   edit: 3,
   multi_edit: 2,
@@ -301,10 +312,16 @@ const ACTION_STRENGTH: Record<FileTouch["action"], number> = {
 };
 
 function aggregateFileTouches(events: RenderEvent[]): FileTouch[] {
+  const seenPaths = new Set<string>();
   const byPath = new Map<string, FileTouch>();
   for (const ev of events) {
     const touch = extractFileTouch(ev);
     if (!touch) continue;
+    // First Write on a previously-unseen path = creation, not overwrite.
+    if (touch.action === "write" && !seenPaths.has(touch.path)) {
+      touch.action = "create";
+    }
+    seenPaths.add(touch.path);
     const existing = byPath.get(touch.path);
     if (!existing || ACTION_STRENGTH[touch.action] > ACTION_STRENGTH[existing.action]) {
       byPath.set(touch.path, touch);
@@ -312,6 +329,60 @@ function aggregateFileTouches(events: RenderEvent[]): FileTouch[] {
   }
   // Stable sort: alphabetical by path. Keeps UI rendering deterministic.
   return [...byPath.values()].sort((a, b) => a.path.localeCompare(b.path));
+}
+
+/**
+ * Slice-15 SubAgentCard rendering fix: build the per-tool entry that
+ * SubAgentCard.svelte reads off `payload.tools`. Picks the most useful "input"
+ * summary string per tool kind so the UI can render something meaningful.
+ *
+ * Returns null for events that aren't tool_result.* (the conversation bucket
+ * also carries claude_message + user_prompt + skill_invoked etc.).
+ */
+function summarizeToolForSubagent(
+  event: RenderEvent,
+): { name: string; input: string } | null {
+  if (typeof event.type !== "string" || !event.type.startsWith("tool_result.")) {
+    return null;
+  }
+  const rec = event as Record<string, unknown>;
+  const toolName =
+    typeof rec["tool_name"] === "string"
+      ? (rec["tool_name"] as string)
+      : "tool";
+  const raw = rec["raw"] as Record<string, unknown> | undefined;
+  const ti = raw?.["tool_input"] as Record<string, unknown> | undefined;
+  // Pick the most identifying field per tool kind. Falls back to a JSON
+  // summary capped at 80 chars so the UI never renders a wall of text.
+  const candidate =
+    ti?.["file_path"] ??
+    ti?.["command"] ??
+    ti?.["pattern"] ??
+    ti?.["url"] ??
+    ti?.["query"] ??
+    ti?.["prompt"];
+  let input: string;
+  if (typeof candidate === "string") {
+    input = candidate.length > 80 ? `${candidate.slice(0, 77)}...` : candidate;
+  } else if (ti !== undefined) {
+    const json = JSON.stringify(ti);
+    input = json.length > 80 ? `${json.slice(0, 77)}...` : json;
+  } else {
+    input = "";
+  }
+  return { name: toolName, input };
+}
+
+/**
+ * Slice-15 SubAgentCard rendering fix: extract the skill name from a
+ * `skill_invoked` event (synthesized by transcript.ts when a Read on
+ * `.claude/skills/{glob}/SKILL.md` happens).
+ */
+function extractSkillName(event: RenderEvent): string | null {
+  if (event.type !== "skill_invoked") return null;
+  const rec = event as Record<string, unknown>;
+  const name = rec["skillName"];
+  return typeof name === "string" && name.length > 0 ? name : null;
 }
 
 /** Group conversation events by sessionId for chapter assembly. */
@@ -424,38 +495,70 @@ export async function buildExportPayload(
       return { id: pid, label: plabel, ts: p.ts };
     });
 
-    // Slice-14 Bucket E: enrich subagent_complete events with the list of
-    // files touched by their child tool_result.edit/write/multiedit/read
-    // events (correlated via meta.subagentId === payload.agentId, set by the
-    // transcript scraper). Re-nest under `payload` to match the SubAgentCard
-    // read pattern (slice-12 P3 commits do the same). PASSIVE per INV-1.
+    // Slice-14 Bucket E + slice-15 SubAgentCard rendering fix:
+    //
+    // The render-context normalize step flattens `event.payload` into the
+    // top-level of each event, which means downstream UI components that read
+    // `event.payload.X` see undefined on real data (the slice-12 dev-payload
+    // works only because it hand-crafts events with nested payload). We
+    // re-nest the payload here, restoring the fields SubAgentCard needs.
+    //
+    // What we bring back / synthesize:
+    //   - agentId / toolCallCount / durationMs / attributionAgent: from top-level (post-flatten)
+    //   - agent: human-readable display name (attributionAgent ?? agentId)
+    //   - filesTouched: aggregated from child tool_result.{edit,write,multiedit,read}
+    //   - tools: synthesized list of { name, input } from child tool_result events
+    //   - skillsLoaded: skill names from child skill_invoked events
+    //
+    // Correlation is via `meta.subagentId === payload.agentId`, set by the
+    // transcript scraper. PASSIVE per INV-1 — no capture-pipeline changes.
     const enrichedEvents = chapterEvents.map((ev) => {
       if (ev.type !== "subagent_complete") return ev;
+      const topLevel = ev as Record<string, unknown>;
       const agentId =
-        typeof (ev as Record<string, unknown>)["agentId"] === "string"
-          ? ((ev as Record<string, unknown>)["agentId"] as string)
+        typeof topLevel["agentId"] === "string"
+          ? (topLevel["agentId"] as string)
           : "";
       if (!agentId) return ev;
+      // Correlation: sub-agent children carry the sub-agent id in TWO places
+      // depending on which writer produced them.
+      //   (a) Events synthesized by the transcript scraper (claude_message,
+      //       synthesized tool_use, skill_invoked) → `meta.subagentId`.
+      //   (b) Events written by the PostToolUse hook (tool_result.*) →
+      //       `raw.agent_id` (Claude Code's own payload field).
+      // Most of the slice-14/15 file-touch + tool aggregation comes from (b),
+      // so missing this path produced empty arrays on real data. Match both.
       const children = chapterEvents.filter((c) => {
-        const meta = (c as Record<string, unknown>)["meta"] as
-          | Record<string, unknown>
-          | undefined;
-        return meta?.["subagentId"] === agentId;
+        const rec = c as Record<string, unknown>;
+        const meta = rec["meta"] as Record<string, unknown> | undefined;
+        if (meta?.["subagentId"] === agentId) return true;
+        const raw = rec["raw"] as Record<string, unknown> | undefined;
+        if (raw?.["agent_id"] === agentId) return true;
+        return false;
       });
       const filesTouched = aggregateFileTouches(children);
+      // Aggregate tools — every tool_result with the matching subagentId
+      // contributes one entry. Order preserved (chronological — render-context
+      // sorts ascending), so the UI reads the same order the sub-agent ran.
+      const tools = children
+        .map(summarizeToolForSubagent)
+        .filter((t): t is { name: string; input: string } => t !== null);
+      // Aggregate skillsLoaded — skill_invoked events synthesized by the
+      // transcript scraper when a sub-agent Reads a SKILL.md. Deduped.
+      const skillsLoaded = [
+        ...new Set(
+          children
+            .map(extractSkillName)
+            .filter((s): s is string => s !== null),
+        ),
+      ];
+
       const existingPayload = (
-        (ev as Record<string, unknown>)["payload"] as
-          | Record<string, unknown>
-          | undefined
+        topLevel["payload"] as Record<string, unknown> | undefined
       ) ?? {};
-      // Preserve the top-level fields that downstream UI components read off
-      // payload (slice-12 SubAgentCard convention: agent/durationMs/etc. live
-      // under payload). Bring back what the normalize-flattening removed so a
-      // single read pattern works.
       const reNestedPayload: Record<string, unknown> = {
         ...existingPayload,
       };
-      const topLevel = ev as Record<string, unknown>;
       for (const key of [
         "agentId",
         "toolCallCount",
@@ -466,7 +569,20 @@ export async function buildExportPayload(
           reNestedPayload[key] = topLevel[key];
         }
       }
+      // Display name: prefer attributionAgent (semantic — e.g. "sdd-apply"),
+      // fall back to the agentId. The UI's SubAgentCard reads `payload.agent`.
+      if (reNestedPayload["agent"] === undefined) {
+        const display =
+          typeof topLevel["attributionAgent"] === "string"
+            ? (topLevel["attributionAgent"] as string)
+            : agentId;
+        reNestedPayload["agent"] = display;
+      }
       reNestedPayload["filesTouched"] = filesTouched;
+      // Only attach tools/skillsLoaded when synthesis produced something.
+      // Empty arrays still write so the SubAgentCard renders a stable shape.
+      reNestedPayload["tools"] = tools;
+      reNestedPayload["skillsLoaded"] = skillsLoaded;
       return {
         ...ev,
         payload: reNestedPayload,

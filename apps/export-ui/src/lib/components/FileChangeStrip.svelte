@@ -50,9 +50,10 @@
   /**
    * Action → glyph + label. Glyph mirrors the SubAgentCard monogram style so
    * the dictionary stays in one place visually. Read is hollow because it's
-   * the weakest action — write/edit are filled.
+   * the weakest action; create has a `+` to signal a new file vs an overwrite.
    */
   const ACTION_META: Record<FileTouch["action"], { glyph: string; label: string }> = {
+    create: { glyph: "✚", label: "created" },
     write: { glyph: "●", label: "wrote" },
     edit: { glyph: "◆", label: "edited" },
     multi_edit: { glyph: "◇", label: "multi-edit" },
@@ -130,9 +131,19 @@
     line-height: 1;
   }
 
-  /* Per-action accent colors. Write = strongest visual weight, read = muted. */
-  .chip[data-action="write"] .glyph {
+  /* Per-action accent colors. Create = strongest signal (new file, green +);
+     write = overwrite (yellow accent); edit/multi-edit = modification of
+     existing (subagent purple); read = muted (touched but not changed). */
+  .chip[data-action="create"] .glyph {
     color: var(--color-fix, #16a34a);
+    font-weight: 700;
+  }
+  .chip[data-action="create"] .chip-link {
+    border-color: rgba(22, 163, 74, 0.3);
+    background: rgba(22, 163, 74, 0.05);
+  }
+  .chip[data-action="write"] .glyph {
+    color: var(--color-milestone, #f59e0b);
   }
   .chip[data-action="edit"] .glyph {
     color: var(--color-subagent, #8b5cf6);

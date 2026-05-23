@@ -79,13 +79,17 @@ export interface Chapter {
 }
 
 /**
- * Slice-14 Bucket E: single file-touch record. Action strength order for
- * dedupe: write > edit > multi_edit > read. The UI uses `action` to pick an
+ * Slice-14 Bucket E + slice-15 create detection: single file-touch record.
+ * Action strength order for dedupe: create > write > edit > multi_edit > read.
+ *
+ * `create` is upgraded from `write` at build time when the tool_result.write
+ * event is the FIRST chronological mention of a path within a chapter (the
+ * file was created, not overwritten). The UI uses `action` to pick an
  * icon/color in the FileChangeStrip atom.
  */
 export interface FileTouch {
   path: string;
-  action: "write" | "edit" | "multi_edit" | "read";
+  action: "create" | "write" | "edit" | "multi_edit" | "read";
 }
 
 /**
