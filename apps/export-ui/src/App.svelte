@@ -11,8 +11,16 @@
     attribute being present — wrapping the root keeps the gate strict.
 -->
 <script lang="ts">
+  import { onMount } from "svelte";
   import MotionRoot from "./lib/components/MotionRoot.svelte";
   import CourseShell from "./lib/components/CourseShell.svelte";
+  import { applyFeatureDetectAttributes } from "./lib/util/feature-detect";
+
+  // Slice 12 P1 (R-76, ADR-SC-G1): mirror feature-detect results to <html>
+  // as data-* attributes so CSS can branch (data-scroll-timeline=native|fallback).
+  onMount(() => {
+    applyFeatureDetectAttributes();
+  });
 </script>
 
 <MotionRoot>

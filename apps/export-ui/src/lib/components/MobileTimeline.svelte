@@ -20,6 +20,7 @@
   import type { RenderEvent } from "../types";
   import { subscribeMotion } from "../stores/motion";
   import { onMount } from "svelte";
+  import LegendKey from "./LegendKey.svelte";
 
   interface Props {
     events: RenderEvent[];
@@ -92,6 +93,9 @@
 </script>
 
 <nav class="mobile-timeline" aria-label="Chapter timeline" data-testid="mobile-timeline">
+  <!-- Slice 12 P1 R-51: legend parity at the top of the mobile timeline. -->
+  <LegendKey variant="mobile" />
+
   <p class="title">Timeline</p>
   <ol class="anchor-list">
     {#each events as ev (ev.id)}

@@ -24,6 +24,7 @@
   import { onMount } from "svelte";
   import type { RenderEvent } from "../types";
   import { scrub } from "../stores/scrub";
+  import LegendKey from "./LegendKey.svelte";
 
   interface Props {
     events: RenderEvent[];
@@ -126,6 +127,9 @@
 <svelte:window onkeydown={onKey} />
 
 <div class="scrubber" data-testid="timeline-scrubber" aria-label="Chapter timeline">
+  <!-- Slice 12 P1 R-51: collapsible legend mounted above the dock. -->
+  <LegendKey variant="inline" />
+
   <div class="track" role="progressbar" aria-valuenow={Math.round(progress * 100)} aria-valuemin={0} aria-valuemax={100}>
     <div class="track-fill" style="width: {progress * 100}%"></div>
   </div>
@@ -178,6 +182,24 @@
 
   :global(html[data-motion="reduced"]) .track-fill {
     transition: none !important;
+  }
+
+  /* Slice 12 P1 R-76 / ADR-SC-G1: scroll-timeline driven progress on Chromium 115+.
+     When <html data-scroll-timeline="native"> the inline width still applies
+     (so SSR / first paint reads correctly) but the @keyframes animation tied
+     to scroll() takes over during scroll, eliminating the rAF tick. Browsers
+     without scroll-timeline (Safari/Firefox) keep the rAF + inline-width path.
+     Reduced-motion suppresses the animation entirely. */
+  @supports (animation-timeline: scroll()) {
+    :global(html[data-scroll-timeline="native"][data-motion="allowed"]) .track-fill {
+      animation: lb-scroll-progress linear;
+      animation-timeline: scroll(root);
+    }
+  }
+
+  @keyframes lb-scroll-progress {
+    from { width: 0%; }
+    to   { width: 100%; }
   }
 
   .chips {
