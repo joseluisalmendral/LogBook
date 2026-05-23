@@ -37,6 +37,7 @@ import { milestoneTool } from "./milestone.js";
 import { phaseTool } from "./phase.js";
 import { suggestTool } from "./suggest.js";
 import { stateTool } from "./state.js";
+import { qaFindingTool } from "./qa-finding.js";
 
 /**
  * JSON Schema object shape accepted by the MCP protocol for input advertisement.
@@ -93,14 +94,16 @@ export interface ToolDef<TInput = unknown, TOutput = unknown> {
 }
 
 /**
- * All registered MCP tools. 9 tools total (T8a: 4 + T8b: 5).
+ * All registered MCP tools. 10 tools total (T8a: 4 + T8b: 5 + ux-granularity: 1).
  *
- * Order matches the design §4 table (tool #1–#9):
+ * Order matches the design §4 table (tool #1–#9) + new qa_finding (#10):
  *   1. decision   2. error   3. fix   4. lesson
  *   5. resource   6. milestone   7. phase   8. suggest   9. state
+ *   10. qa_finding (B5 — ux-granularity-and-capture-gaps)
  *
- * Combined description token budget: each ≤14 words; 9 × avg ~6 tokens ≈ 54 tokens.
+ * Combined description token budget: each ≤14 words; 10 × avg ~5.5 tokens ≈ 55 tokens.
  * Well within the 120-token allocation (proposal locked choice #11).
+ * Verify with: pnpm doctor --measure (MS-R2, INV-2, B5-R4).
  */
 export const ALL_TOOLS: ToolDef<unknown, unknown>[] = [
   decisionTool as ToolDef<unknown, unknown>,
@@ -112,4 +115,5 @@ export const ALL_TOOLS: ToolDef<unknown, unknown>[] = [
   phaseTool as ToolDef<unknown, unknown>,
   suggestTool as ToolDef<unknown, unknown>,
   stateTool as ToolDef<unknown, unknown>,
+  qaFindingTool as ToolDef<unknown, unknown>,
 ];

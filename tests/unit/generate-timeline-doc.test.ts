@@ -24,6 +24,7 @@ function makeContext(all: RenderEvent[]): RenderContext {
     visuals: all.filter((e) => e.type === "manual.visual"),
     milestones: all.filter((e) => e.type === "manual.milestone"),
     all,
+    latestSessionId: "",
   };
 }
 

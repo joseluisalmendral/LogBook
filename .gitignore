@@ -7,3 +7,6 @@ coverage/
 *.log
 *.tsbuildinfo
 .atl/
+.logbook/
+logbook/
+# lb-gitignore-001

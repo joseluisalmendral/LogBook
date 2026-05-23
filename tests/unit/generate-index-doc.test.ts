@@ -25,6 +25,7 @@ function makeContext(overrides: Partial<RenderContext> = {}): RenderContext {
     visuals: [],
     milestones: [],
     all: [],
+    latestSessionId: "",
     ...overrides,
   };
 }

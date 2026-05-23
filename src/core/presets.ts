@@ -218,6 +218,20 @@ export function buildStandardArtifacts(projectRoot?: string): Artifact[] {
       command: `node ${shellQuote(hookPath)}`,
       _logbookId: "lb-hook-posttooluse-001",
     },
+    // 1b. hook (UserPromptSubmit — captures typed prompts via hook bus)
+    {
+      kind: "hook",
+      hookEvent: "UserPromptSubmit",
+      command: `node ${shellQuote(hookPath)}`,
+      _logbookId: "lb-hook-userpromptsubmit-001",
+    },
+    // 1c. hook (Stop — triggers transcript scraper to capture assistant turns)
+    {
+      kind: "hook",
+      hookEvent: "Stop",
+      command: `node ${shellQuote(hookPath)}`,
+      _logbookId: "lb-hook-stop-001",
+    },
     // 2. mcp_server (logbook-mcp → dist/mcp/server.cjs)
     {
       kind: "mcp_server",

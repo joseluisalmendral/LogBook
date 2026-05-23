@@ -132,8 +132,9 @@ describe("I-DOC — doctor --measure --json after preset standard install", () =
     }
   });
 
-  it("verify has 14 entries (all preset standard iter3: hook+mcp+augment+8slash+2skill+gitignore)", () => {
-    // 1 hook + 1 mcp_server + 1 augment_claudemd + 8 slash_command + 2 skill + 1 gitignore_entry = 14
-    expect(output.verify).toHaveLength(14);
+  it("verify has 16 entries (preset standard: 3hooks+mcp+augment+8slash+2skill+gitignore)", () => {
+    // 3 hook (PostToolUse+UserPromptSubmit+Stop) + 1 mcp_server + 1 augment_claudemd
+    // + 8 slash_command + 2 skill + 1 gitignore_entry = 16
+    expect(output.verify).toHaveLength(16);
   });
 });

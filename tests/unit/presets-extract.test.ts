@@ -84,6 +84,8 @@ const STANDARD_EXPECTED: ArtifactSummary[] = [
   { kind: "augment_claudemd", file_path: "CLAUDE.md", _logbookId: "lb-claudemd-001" },
   { kind: "gitignore_entry", file_path: ".gitignore", marker: "# lb-gitignore-001" },
   { kind: "hook", hookEvent: "PostToolUse", _logbookId: "lb-hook-posttooluse-001" },
+  { kind: "hook", hookEvent: "UserPromptSubmit", _logbookId: "lb-hook-userpromptsubmit-001" },
+  { kind: "hook", hookEvent: "Stop", _logbookId: "lb-hook-stop-001" },
   { kind: "mcp_server", name: "logbook-mcp", _logbookId: "lb-mcp-001" },
   { kind: "slash_command", name: "lb-decision", file_path: ".claude/commands/lb-decision.md", _logbookId: "lb-cmd-lb-decision" },
   { kind: "slash_command", name: "lb-error", file_path: ".claude/commands/lb-error.md", _logbookId: "lb-cmd-lb-error" },
@@ -101,6 +103,8 @@ const TEACHING_EXPECTED: ArtifactSummary[] = [
   { kind: "augment_claudemd", file_path: "CLAUDE.md", _logbookId: "lb-claudemd-001" },
   { kind: "gitignore_entry", file_path: ".gitignore", marker: "# lb-gitignore-001" },
   { kind: "hook", hookEvent: "PostToolUse", _logbookId: "lb-hook-posttooluse-001" },
+  { kind: "hook", hookEvent: "UserPromptSubmit", _logbookId: "lb-hook-userpromptsubmit-001" },
+  { kind: "hook", hookEvent: "Stop", _logbookId: "lb-hook-stop-001" },
   { kind: "hook", hookEvent: "SessionStart", _logbookId: "lb-hook-sessionstart-001" },
   { kind: "mcp_server", name: "logbook-mcp", _logbookId: "lb-mcp-001" },
   { kind: "slash_command", name: "lb-decision", file_path: ".claude/commands/lb-decision.md", _logbookId: "lb-cmd-lb-decision" },
@@ -133,9 +137,9 @@ describe("buildArtifactsForPreset — extraction regression guard", () => {
     expect(summarize(artifacts)).toEqual(MINIMAL_EXPECTED);
   });
 
-  test("standard: returns exactly 14 artifacts", () => {
+  test("standard: returns exactly 16 artifacts", () => {
     const artifacts = buildArtifactsForPreset("standard");
-    expect(artifacts).toHaveLength(14);
+    expect(artifacts).toHaveLength(16);
   });
 
   test("standard: artifact shape matches frozen baseline", () => {
@@ -143,9 +147,9 @@ describe("buildArtifactsForPreset — extraction regression guard", () => {
     expect(summarize(artifacts)).toEqual(STANDARD_EXPECTED);
   });
 
-  test("teaching: returns exactly 18 artifacts", () => {
+  test("teaching: returns exactly 20 artifacts", () => {
     const artifacts = buildArtifactsForPreset("teaching");
-    expect(artifacts).toHaveLength(18);
+    expect(artifacts).toHaveLength(20);
   });
 
   test("teaching: artifact shape matches frozen baseline", () => {

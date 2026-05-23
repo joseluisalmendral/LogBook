@@ -397,6 +397,364 @@ events.push({
   phase: "Security",
 });
 
+// ---- Session C: conversation capture showcase (new event kinds) --------------
+// This session exercises all new event kinds introduced in the conversation-capture
+// slice: user_prompt, claude_message (text + thinking), tool_use.*, tool_result.*,
+// subagent_complete, manual.decision, manual.annotation, manual.session_goal,
+// manual.session_outcome.
+const SC = uid("SC");
+const weekC = new Date("2026-05-20T10:00:00Z");
+
+// Session start with label so sessions-doc renders a meaningful header.
+events.push({
+  id: uid(),
+  type: "manual.session_start",
+  ts: ts(weekC, -0.5 / 60), // just before the goal event
+  sessionId: SC,
+  label: "Conversation capture — teaching slice",
+});
+
+events.push({
+  id: uid(),
+  kind: "user_entry",
+  timestamp: ts(weekC, 0),
+  sessionId: SC,
+  payload: {
+    entryType: "session_goal",
+    text: "Ship full conversation timeline with goal/outcome + annotations.",
+  },
+});
+
+events.push({
+  id: uid(),
+  kind: "user_prompt",
+  timestamp: ts(weekC, 1 / 60),
+  sessionId: SC,
+  payload: {
+    text: "Implement the conversation capture slice per the teaching audit.",
+  },
+});
+
+events.push({
+  id: uid(),
+  kind: "claude_message",
+  timestamp: ts(weekC, 2 / 60),
+  sessionId: SC,
+  payload: {
+    text: "I'll start by checking the existing render-context bug.",
+  },
+});
+
+events.push({
+  id: uid(),
+  kind: "claude_message",
+  timestamp: ts(weekC, 3 / 60),
+  sessionId: SC,
+  payload: {
+    text: "The audit identified render-context.ts:176-185 as the drop point for events without synthesized type. I need to extend the else branch.",
+    isThinking: true,
+  },
+});
+
+events.push({
+  id: uid(),
+  kind: "tool_use",
+  timestamp: ts(weekC, 4 / 60),
+  sessionId: SC,
+  payload: {
+    tool_name: "Read",
+    tool_args: { file_path: "src/generate/render-context.ts" },
+  },
+});
+
+events.push({
+  id: uid(),
+  kind: "tool_result",
+  timestamp: ts(weekC, 5 / 60),
+  sessionId: SC,
+  payload: {
+    tool_name: "Read",
+    tool_response: "File read successfully. Lines 92-109 contain the synthesis block.",
+  },
+});
+
+events.push({
+  id: uid(),
+  kind: "claude_message",
+  timestamp: ts(weekC, 6 / 60),
+  sessionId: SC,
+  payload: {
+    text: "Found the synthesis gap. Now adding the new kinds: user_prompt, claude_message, subagent_complete, tool_use.*, tool_result.*, hook.*.",
+  },
+});
+
+events.push({
+  id: uid(),
+  kind: "tool_use",
+  timestamp: ts(weekC, 7 / 60),
+  sessionId: SC,
+  payload: {
+    tool_name: "Edit",
+    tool_args: { file_path: "src/generate/render-context.ts" },
+  },
+});
+
+events.push({
+  id: uid(),
+  kind: "tool_result",
+  timestamp: ts(weekC, 8 / 60),
+  sessionId: SC,
+  payload: {
+    tool_name: "Edit",
+    tool_response: "File updated successfully.",
+  },
+});
+
+const DC1 = uid();
+events.push({
+  id: DC1,
+  kind: "user_entry",
+  timestamp: ts(weekC, 9 / 60),
+  sessionId: SC,
+  payload: {
+    entryType: "decision",
+    title: "Synthesize tool_use/tool_result types in read-path, not write-path",
+    rationale: "JSONL is append-only audit log; migrations require full rewrites. Read-path keeps writers untouched.",
+    status: "accepted",
+  },
+});
+
+events.push({
+  id: uid(),
+  kind: "user_entry",
+  timestamp: ts(weekC, 10 / 60),
+  sessionId: SC,
+  payload: {
+    entryType: "annotation",
+    relatedEventId: DC1,
+    note: "Pinned because reviewers will ask why we didn't migrate JSONL. ADR-1 explains the tradeoff.",
+  },
+});
+
+events.push({
+  id: uid(),
+  kind: "tool_use",
+  timestamp: ts(weekC, 11 / 60),
+  sessionId: SC,
+  payload: {
+    tool_name: "Task",
+    tool_args: { description: "Implement transcript scraper sub-agent" },
+  },
+});
+
+const SA1_AGENT_ID = uid("AGENT");
+events.push({
+  id: uid(),
+  kind: "claude_message",
+  timestamp: ts(weekC, 15 / 60),
+  sessionId: SC,
+  payload: {
+    text: "Transcript scraper implementation complete. pathToEncoded verified against real path.",
+  },
+  meta: {
+    subagentId: SA1_AGENT_ID,
+    isSidechain: true,
+    attributionAgent: "sdd-apply",
+  },
+});
+
+events.push({
+  id: uid(),
+  kind: "subagent_complete",
+  timestamp: ts(weekC, 20 / 60),
+  sessionId: SC,
+  payload: {
+    agentId: SA1_AGENT_ID,
+    attributionAgent: "sdd-apply",
+    toolCallCount: 4,
+    durationMs: 42_000,
+  },
+});
+
+events.push({
+  id: uid(),
+  kind: "tool_use",
+  timestamp: ts(weekC, 21 / 60),
+  sessionId: SC,
+  payload: {
+    tool_name: "Bash",
+    tool_args: { command: "pnpm typecheck" },
+  },
+});
+
+events.push({
+  id: uid(),
+  kind: "tool_result",
+  timestamp: ts(weekC, 25 / 60),
+  sessionId: SC,
+  payload: {
+    tool_name: "Bash",
+    tool_response: "1 error: render-context.ts:107 — hook_event_name property missing from synthesized type.",
+    error: true,
+  },
+});
+
+events.push({
+  id: uid(),
+  kind: "user_entry",
+  timestamp: ts(weekC, 26 / 60),
+  sessionId: SC,
+  payload: {
+    entryType: "error",
+    title: "Synthesis precedence wrong for hook_event_name",
+    message: "The hook_event branch reads merged.hook_event_name but the field is in merged.meta.hook after flatten.",
+    severity: "high",
+  },
+});
+
+events.push({
+  id: uid(),
+  kind: "user_entry",
+  timestamp: ts(weekC, 27 / 60),
+  sessionId: SC,
+  payload: {
+    entryType: "fix",
+    title: "Read both merged.hook_event_name and merged.hook for the hook branch",
+    description: "const hookEventName = merged['hook_event_name'] ?? merged['hook']; — covers both flattened and non-flattened payloads.",
+  },
+});
+
+events.push({
+  id: uid(),
+  kind: "tool_use",
+  timestamp: ts(weekC, 28 / 60),
+  sessionId: SC,
+  payload: {
+    tool_name: "Bash",
+    tool_args: { command: "pnpm typecheck" },
+  },
+});
+
+events.push({
+  id: uid(),
+  kind: "tool_result",
+  timestamp: ts(weekC, 32 / 60),
+  sessionId: SC,
+  payload: {
+    tool_name: "Bash",
+    tool_response: "Type check passed. No errors.",
+  },
+});
+
+events.push({
+  id: uid(),
+  kind: "user_entry",
+  timestamp: ts(weekC, 33 / 60),
+  sessionId: SC,
+  payload: {
+    entryType: "session_outcome",
+    text: "All hooks p95<200ms, 0 redactions fired, 1500 LoC, sessions doc renders rich timeline.",
+  },
+});
+
+// ---- Session UX: new capture surfaces showcase (W12 seed — 5 new event kinds) --
+// Shows all 5 new capture surfaces introduced by the ux-granularity-and-capture-gaps
+// slice: langfuse_trace (B1), gh_agent_run (B2), skill_invoked (B3),
+// visual_direction (B4), qa_finding (B5).
+const S_UX = uid("SUX");
+const weekUX = new Date("2026-05-19T14:00:00Z");
+
+events.push({
+  id: uid(),
+  type: "manual.session_start",
+  ts: ts(weekUX, 0),
+  sessionId: S_UX,
+  label: "UX Granularity — new capture surfaces demo",
+});
+
+// B1: langfuse_trace — captured from Stop hook after LLM session.
+events.push({
+  id: uid(),
+  type: "langfuse_trace",
+  ts: ts(weekUX, 0.5),
+  sessionId: S_UX,
+  traceId: "trace-demo-001",
+  model: "claude-3-5-sonnet-20241022",
+  inputTokens: 8240,
+  outputTokens: 1680,
+  totalTokens: 9920,
+  costUsd: 0.0312,
+  startedAt: ts(weekUX, 0.1),
+});
+
+// B3: skill_invoked — detected from SKILL.md read in transcript scraper.
+events.push({
+  id: uid(),
+  type: "skill_invoked",
+  ts: ts(weekUX, 0.6),
+  sessionId: S_UX,
+  skillName: "sdd-apply",
+  skillPath: "/project/.claude/skills/sdd-apply/SKILL.md",
+});
+
+// B2: gh_agent_run — imported via `logbook import github-pr`.
+events.push({
+  id: uid(),
+  type: "gh_agent_run",
+  ts: ts(weekUX, 1.0),
+  sessionId: S_UX,
+  prUrl: "https://github.com/thepower/logbook/pull/42",
+  prNumber: 42,
+  runId: "run-gh-001",
+  runSummary: "Fixed CORS headers on the API gateway. Updated nginx config and regenerated certs.",
+  filesChanged: 5,
+});
+
+// B4: visual_direction — logged via `logbook visual-direction`.
+events.push({
+  id: uid(),
+  type: "visual_direction",
+  ts: ts(weekUX, 1.5),
+  sessionId: S_UX,
+  candidates: ["dark-minimal", "light-colorful", "branded-gradient"],
+  chosen: "dark-minimal",
+  rationale: "Aligns with brand identity, passes WCAG AA contrast, and reduces cognitive load during debugging sessions.",
+});
+
+// B5: qa_finding — logged via logbook_qa_finding MCP tool.
+events.push({
+  id: uid(),
+  type: "qa_finding",
+  ts: ts(weekUX, 2.0),
+  sessionId: S_UX,
+  severity: "high",
+  layer: "seo",
+  description: "Product listing pages missing canonical URL. Duplicate content penalty risk for paginated routes.",
+  fix: "Add <link rel='canonical' href='...'> to /products?page=N routes pointing to /products.",
+});
+
+events.push({
+  id: uid(),
+  type: "qa_finding",
+  ts: ts(weekUX, 2.2),
+  sessionId: S_UX,
+  severity: "medium",
+  layer: "a11y",
+  description: "Mobile navigation hamburger button lacks aria-label and aria-expanded attributes.",
+  // fix intentionally absent to exercise the "—" render path (B5-R5)
+});
+
+events.push({
+  id: uid(),
+  type: "qa_finding",
+  ts: ts(weekUX, 2.4),
+  sessionId: S_UX,
+  severity: "critical",
+  layer: "perf",
+  description: "First Contentful Paint exceeds 4s on 3G. Main thread blocked by 280KB uncompressed JS bundle.",
+  fix: "Enable Brotli compression on CDN. Code-split vendor bundle. Target FCP < 1.8s.",
+});
+
 // ---- Session 4: UI + export polish ------------------------------------------
 events.push({
   id: uid(),
@@ -625,10 +983,15 @@ const size = (await import("node:fs/promises").then((m) => m.stat(OUT_HTML))).si
 console.log(`\n=== DONE ===`);
 console.log(`HTML path : ${OUT_HTML}`);
 console.log(`File size : ${size} bytes (${Math.round(size / 1024)} KB)`);
-console.log(`Events    : ${events.length} total`);
-console.log(`Sessions  : 4 (S1-S4)`);
-console.log(`Decisions : ${events.filter((e) => e["type"] === "manual.decision").length}`);
-console.log(`Errors    : ${events.filter((e) => e["type"] === "manual.error").length}`);
-console.log(`Lessons   : ${events.filter((e) => e["type"] === "manual.lesson").length}`);
-console.log(`Resources : ${events.filter((e) => e["type"] === "manual.resource").length}`);
-console.log(`Milestones: ${events.filter((e) => e["type"] === "manual.milestone").length}`);
+console.log(`Events        : ${events.length} total`);
+console.log(`Sessions      : 6 (S1-S4 + SC conversation-capture + S_UX new-capture-surfaces)`);
+console.log(`Decisions     : ${events.filter((e) => e["type"] === "manual.decision").length}`);
+console.log(`Errors        : ${events.filter((e) => e["type"] === "manual.error").length}`);
+console.log(`Lessons       : ${events.filter((e) => e["type"] === "manual.lesson").length}`);
+console.log(`Resources     : ${events.filter((e) => e["type"] === "manual.resource").length}`);
+console.log(`Milestones    : ${events.filter((e) => e["type"] === "manual.milestone").length}`);
+console.log(`langfuse_trace: ${events.filter((e) => e["type"] === "langfuse_trace").length}`);
+console.log(`gh_agent_run  : ${events.filter((e) => e["type"] === "gh_agent_run").length}`);
+console.log(`skill_invoked : ${events.filter((e) => e["type"] === "skill_invoked").length}`);
+console.log(`visual_dir    : ${events.filter((e) => e["type"] === "visual_direction").length}`);
+console.log(`qa_finding    : ${events.filter((e) => e["type"] === "qa_finding").length}`);

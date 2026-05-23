@@ -6,7 +6,15 @@ export type EventKind =
   | "system"              // session lifecycle, hook bootstrap, configuration
   | "error"               // captured error in agent/tool/hook/build/test
   | "hook_event"          // raw event delivered by Claude Code's hook bus
-  | "user_entry";         // CLI / MCP user-authored record; subtype in payload.entryType
+  | "user_entry"          // CLI / MCP user-authored record; subtype in payload.entryType
+  | "user_prompt"         // user prompt captured by UserPromptSubmit hook
+  | "claude_message"      // assistant text/thinking turn captured from transcript
+  | "subagent_complete"   // sub-agent invocation completed (from Stop hook scraper)
+  | "langfuse_trace"      // Langfuse trace captured from Stop hook (B1)
+  | "gh_agent_run"        // GitHub claude-code-action PR run imported via CLI (B2)
+  | "skill_invoked"       // Skill SKILL.md read detected in transcript scraper (B3)
+  | "visual_direction"    // Visual direction decision logged via CLI (B4)
+  | "qa_finding";         // QA finding logged via MCP tool (B5)
 
 export interface EventTokens {
   in?: number;             // prompt tokens (best-effort, heuristic in iter1)
@@ -38,7 +46,8 @@ export interface EventPayload {
  * `payload.entryType` is the subdiscriminator for `kind: "user_entry"` records:
  *   "lesson" | "decision" | "resource" | "milestone" | "error" | "fix" |
  *   "snapshot" | "visual" | "annotation" | "promote" |
- *   "session_start" | "phase_change" | "session_rename" | "mcp_audit" | "review"
+ *   "session_start" | "phase_change" | "session_rename" | "mcp_audit" | "review" |
+ *   "session_goal" | "session_outcome"
  */
 export interface EventInput {
   // --- Required from caller ---

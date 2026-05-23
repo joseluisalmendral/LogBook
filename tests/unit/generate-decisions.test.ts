@@ -35,6 +35,7 @@ function makeCtx(overrides: Partial<RenderContext> = {}): RenderContext {
     visuals: [],
     milestones: [],
     all: [],
+    latestSessionId: "",
     ...overrides,
   };
 }
@@ -45,9 +46,13 @@ function makeCtx(overrides: Partial<RenderContext> = {}): RenderContext {
 
 describe("buildDecisionsDoc — empty context", () => {
   it("returns empty-state message when no decisions", () => {
+    // visual-replay-redesign Phase 4 (V9) rewrote empty states to Spanish per
+    // cognitive-doc-design "lead with the answer" — assert on the lb-empty-state
+    // shell + the Spanish lead phrase, not the old English placeholder.
     const md = buildDecisionsDoc(makeCtx());
     expect(md).toContain("# Decisions");
-    expect(md).toContain("No decisions recorded yet");
+    expect(md).toContain("lb-empty-state");
+    expect(md).toContain("Aún no hay decisiones");
     // No table emitted for empty state.
     expect(md).not.toContain("<table>");
   });

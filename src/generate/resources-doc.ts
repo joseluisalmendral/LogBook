@@ -103,8 +103,39 @@ export function buildResourcesDoc(ctx: RenderContext): string {
   lines.push("# Resources");
   lines.push("");
 
+  // T7.2: pedagogical page hero (ADR-D6, cognitive-doc-design).
+  const resourceCount = ctx.resources.length;
+  lines.push('<header class="lb-page-hero">');
+  // Phase 4 T4.1 — cognitive-doc-design: tell the reader the shape (grouped by kind)
+  // before they parse the list. Kinds are docs, repos, posts, threads, decisions.
+  lines.push(`<p class="lb-page-intro">${resourceCount} link${resourceCount !== 1 ? 's' : ''} the project relied on. Grouped by kind so you can scan one source at a time: docs, repos, posts, threads.</p>`);
+  lines.push('</header>');
+  lines.push('');
+
+  // legends-and-pedagogical-decode — "How to read this" collapsible.
+  lines.push('<details class="lb-how-to-read">');
+  lines.push('<summary>¿Cómo leer esta página?</summary>');
+  lines.push('<div class="lb-how-to-read-body">');
+  lines.push('<p>Las referencias son los links que el proyecto usó: docs externas, snippets guardados, posts, threads. Las agrupamos por <em>kind</em> para que puedas escanear una fuente a la vez.</p>');
+  lines.push('<h4>Tipos (<code>kind</code>)</h4>');
+  lines.push('<ul>');
+  lines.push('<li><span class="lb-legend-icon">🔗</span> <strong>link / url</strong> — link externo</li>');
+  lines.push('<li><span class="lb-legend-icon">📄</span> <strong>doc</strong> — documentación oficial o guía</li>');
+  lines.push('<li><span class="lb-legend-icon">🔖</span> <strong>ref</strong> — referencia recurrente (cheatsheet, RFC)</li>');
+  lines.push('<li><span class="lb-legend-icon">▸</span> <strong>otros</strong> — snippets, threads o tipos sin clasificar</li>');
+  lines.push('</ul>');
+  lines.push('<h4>Tags coloreados</h4>');
+  lines.push('<p>Cada tag tiene un color determinístico calculado por hash: el mismo tag siempre se ve del mismo color en cualquier página. Sirve para reconocer visualmente sin leer.</p>');
+  lines.push('</div>');
+  lines.push('</details>');
+  lines.push('');
+
   if (ctx.resources.length === 0) {
-    lines.push("_No resources recorded yet._");
+    // visual-replay-redesign V9 — pedagogical empty state.
+    lines.push('<div class="lb-empty-state" role="status">');
+    lines.push('<p><strong>Aún no hay referencias guardadas.</strong></p>');
+    lines.push('<p>Usá <code>logbook resource --url "https://..." --kind doc</code> para guardar la primera referencia. Acá se acumulan los links útiles del proyecto.</p>');
+    lines.push('</div>');
     lines.push("");
     return lines.join("\n");
   }

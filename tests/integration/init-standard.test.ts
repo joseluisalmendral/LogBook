@@ -1,16 +1,18 @@
 /**
  * I-INIT1 — init --preset standard on an empty project.
  *
- * T13 (iter3): Verifies that buildArtifactsForPreset("standard") installs exactly
- * 14 manifest entries (13 logical artifacts) in the correct design §6 order:
- *   1  hook
- *   2  mcp_server
- *   3  augment_claudemd
- *   4-11  slash_command × 8 (lb-decision, lb-error, lb-fix, lb-lesson,
+ * T13 (iter3+CC): Verifies that buildArtifactsForPreset("standard") installs exactly
+ * 16 manifest entries in the correct design order (conversation-capture adds 2 hooks):
+ *   1  hook (PostToolUse)
+ *   2  hook (UserPromptSubmit) — conversation-capture addition
+ *   3  hook (Stop)             — conversation-capture addition
+ *   4  mcp_server
+ *   5  augment_claudemd
+ *   6-13  slash_command × 8 (lb-decision, lb-error, lb-fix, lb-lesson,
  *                             lb-milestone, lb-phase, lb-review, lb-status)
- *   12  skill (SKILL.md)       — logbook-auto-capture Skill body
- *   13  skill (reference.md)   — logbook-auto-capture reference
- *   14  gitignore_entry (index 13, 0-based)
+ *   14  skill (SKILL.md)       — logbook-auto-capture Skill body
+ *   15  skill (reference.md)   — logbook-auto-capture reference
+ *   16  gitignore_entry (index 15, 0-based)
  *
  * Spawns the built CJS binary. Requires pnpm build before running.
  */
@@ -88,9 +90,9 @@ describe("I-INIT1 — init --preset standard", () => {
     expect(manifest).toBeDefined();
   });
 
-  it("manifest has exactly 14 entries (1 hook + 1 mcp + 1 augment + 8 slash + 2 skill + 1 gitignore)", () => {
-    // Design §6 iter3 order: hook(1) + mcp_server(1) + augment_claudemd(1) + slash×8(8) + skill×2(2) + gitignore(1) = 14
-    expect(manifest.artifacts).toHaveLength(14);
+  it("manifest has exactly 16 entries (3 hooks + 1 mcp + 1 augment + 8 slash + 2 skill + 1 gitignore)", () => {
+    // Design order: hooks×3(3) + mcp_server(1) + augment_claudemd(1) + slash×8(8) + skill×2(2) + gitignore(1) = 16
+    expect(manifest.artifacts).toHaveLength(16);
   });
 
   it("manifest preset is 'standard'", () => {
@@ -101,17 +103,25 @@ describe("I-INIT1 — init --preset standard", () => {
     expect(manifest.artifacts[0]?.kind).toBe("hook");
   });
 
-  it("second artifact is mcp_server", () => {
-    expect(manifest.artifacts[1]?.kind).toBe("mcp_server");
+  it("second artifact is UserPromptSubmit hook", () => {
+    expect(manifest.artifacts[1]?.kind).toBe("hook");
   });
 
-  it("third artifact is augment_claudemd", () => {
-    expect(manifest.artifacts[2]?.kind).toBe("augment_claudemd");
+  it("third artifact is Stop hook", () => {
+    expect(manifest.artifacts[2]?.kind).toBe("hook");
   });
 
-  it("artifacts 4-11 (index 3-10) are slash_command × 8 in design §6 order", () => {
-    // Indices 3..10 (0-based) = positions 4..11 (1-based)
-    const slashArtifacts = manifest.artifacts.slice(3, 11);
+  it("fourth artifact (index 3) is mcp_server", () => {
+    expect(manifest.artifacts[3]?.kind).toBe("mcp_server");
+  });
+
+  it("fifth artifact (index 4) is augment_claudemd", () => {
+    expect(manifest.artifacts[4]?.kind).toBe("augment_claudemd");
+  });
+
+  it("artifacts 6-13 (index 5-12) are slash_command × 8 in design §6 order", () => {
+    // Indices 5..12 (0-based) = positions 6..13 (1-based)
+    const slashArtifacts = manifest.artifacts.slice(5, 13);
     expect(slashArtifacts).toHaveLength(8);
     for (const a of slashArtifacts) {
       expect(a.kind).toBe("slash_command");
@@ -131,19 +141,19 @@ describe("I-INIT1 — init --preset standard", () => {
     ]);
   });
 
-  it("artifacts 12-13 (index 11-12) are skill × 2 (SKILL.md + reference.md)", () => {
-    // Index 11 = skill SKILL.md, index 12 = skill reference.md
-    const skillMain = manifest.artifacts[11];
-    const skillRef = manifest.artifacts[12];
+  it("artifacts 14-15 (index 13-14) are skill × 2 (SKILL.md + reference.md)", () => {
+    // Index 13 = skill SKILL.md, index 14 = skill reference.md
+    const skillMain = manifest.artifacts[13];
+    const skillRef = manifest.artifacts[14];
     expect(skillMain?.kind).toBe("skill");
     expect(skillRef?.kind).toBe("skill");
     expect(skillMain?.file_path).toContain("SKILL.md");
     expect(skillRef?.file_path).toContain("reference.md");
   });
 
-  it("last artifact (index 13) is gitignore_entry", () => {
-    // 14 total entries: hook(0) mcp(1) augment(2) slash×8(3-10) skill×2(11-12) gitignore(13)
-    expect(manifest.artifacts[13]?.kind).toBe("gitignore_entry");
+  it("last artifact (index 15) is gitignore_entry", () => {
+    // 16 total: hooks×3(0-2) mcp(3) augment(4) slash×8(5-12) skill×2(13-14) gitignore(15)
+    expect(manifest.artifacts[15]?.kind).toBe("gitignore_entry");
   });
 
   it("hook entry written to settings.local.json", () => {

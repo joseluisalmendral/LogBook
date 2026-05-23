@@ -90,7 +90,7 @@ describe("mcp-boot", () => {
     expect(existsSync(SERVER_BUNDLE)).toBe(true);
   });
 
-  it("server responds to tools/list with 9 tools (T8a+T8b) and exits cleanly on SIGTERM", async () => {
+  it("server responds to tools/list with 10 tools (T8a+T8b+B5) and exits cleanly on SIGTERM", async () => {
     const proc = spawn("node", [SERVER_BUNDLE], {
       cwd: PROJECT_ROOT,
       stdio: ["pipe", "pipe", "pipe"],
@@ -134,7 +134,8 @@ describe("mcp-boot", () => {
       // Step 3: List tools.
       // T8a: decision/error/fix/lesson (4 tools).
       // T8b: resource/milestone/phase/suggest/state (5 more).
-      // Total: 9 tools.
+      // B5 (ux-granularity): qa_finding (1 more).
+      // Total: 10 tools.
       const listResponse = await sendAndReceive(proc, {
         jsonrpc: "2.0",
         id: 2,
@@ -157,8 +158,10 @@ describe("mcp-boot", () => {
       expect(toolNames).toContain("logbook_phase");
       expect(toolNames).toContain("logbook_suggest");
       expect(toolNames).toContain("logbook_state");
-      // 9 total
-      expect(toolNames.length).toBe(9);
+      // B5 tool
+      expect(toolNames).toContain("logbook_qa_finding");
+      // 10 total (T8a: 4 + T8b: 5 + B5: 1)
+      expect(toolNames.length).toBe(10);
 
       // Step 4: SIGTERM — assert clean exit within 2s.
       await new Promise<void>((resolve, reject) => {

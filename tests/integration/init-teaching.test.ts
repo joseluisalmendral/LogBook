@@ -1,26 +1,28 @@
 /**
  * I-INIT-TEACH — init --preset teaching on an empty project.
  *
- * T8 (iter4): Verifies that buildArtifactsForPreset("teaching") installs exactly
- * 18 manifest entries in the correct design §6/T8 order:
+ * T8 (iter4+CC): Verifies that buildArtifactsForPreset("teaching") installs exactly
+ * 20 manifest entries (conversation-capture adds UserPromptSubmit + Stop hooks):
  *
  *  Index  Kind
  *  -----  ----
  *   0     hook (PostToolUse)
- *   1     mcp_server
- *   2     augment_claudemd
- *   3-10  slash_command × 8 (lb-decision, lb-error, lb-fix, lb-lesson,
+ *   1     hook (UserPromptSubmit) — conversation-capture
+ *   2     hook (Stop)             — conversation-capture
+ *   3     mcp_server
+ *   4     augment_claudemd
+ *   5-12  slash_command × 8 (lb-decision, lb-error, lb-fix, lb-lesson,
  *                             lb-milestone, lb-phase, lb-review, lb-status)
- *   11    skill (SKILL.md)
- *   12    skill (reference.md)
- *   13    subagent (logbook-curator)
- *   14    subagent (logbook-teacher)
- *   15    statusline
- *   16    hook (SessionStart)
- *   17    gitignore_entry (LAST)
+ *   13    skill (SKILL.md)
+ *   14    skill (reference.md)
+ *   15    subagent (logbook-curator)
+ *   16    subagent (logbook-teacher)
+ *   17    statusline
+ *   18    hook (SessionStart)
+ *   19    gitignore_entry (LAST)
  *
- * Total: 18 manifest entries.
- * Logical count: hook + mcp + augment + 8×slash + 2×skill + 2×subagent + statusline + SessionStart-hook + gitignore = 17 distinct artifacts.
+ * Total: 20 manifest entries.
+ * Logical count: 3×hook + mcp + augment + 8×slash + 2×skill + 2×subagent + statusline + SessionStart-hook + gitignore = 19 distinct artifacts.
  *
  * Spawns the built CJS binary. Requires pnpm build before running.
  */
@@ -99,12 +101,13 @@ describe("I-INIT-TEACH — init --preset teaching", () => {
     expect(manifest.artifacts).toBeDefined();
   });
 
-  it("manifest has exactly 18 entries", () => {
+  it("manifest has exactly 20 entries", () => {
     // Design T8:
-    //   hook(PostToolUse) + mcp_server + augment_claudemd
+    //   hook(PostToolUse) + hook(UserPromptSubmit) + hook(Stop)
+    //   + mcp_server + augment_claudemd
     //   + slash×8 + skill×2 + subagent×2 + statusline + hook(SessionStart) + gitignore
-    //   = 1+1+1+8+2+2+1+1+1 = 18
-    expect(manifest.artifacts).toHaveLength(18);
+    //   = 3+1+1+8+2+2+1+1+1 = 20
+    expect(manifest.artifacts).toHaveLength(20);
   });
 
   it("manifest preset is 'teaching'", () => {
@@ -115,16 +118,26 @@ describe("I-INIT-TEACH — init --preset teaching", () => {
     expect(manifest.artifacts[0]?.kind).toBe("hook");
   });
 
-  it("index 1 is mcp_server", () => {
-    expect(manifest.artifacts[1]?.kind).toBe("mcp_server");
+  it("index 1 is hook (UserPromptSubmit)", () => {
+    expect(manifest.artifacts[1]?.kind).toBe("hook");
+    expect(manifest.artifacts[1]?.id).toContain("lb-hook-userpromptsubmit");
   });
 
-  it("index 2 is augment_claudemd", () => {
-    expect(manifest.artifacts[2]?.kind).toBe("augment_claudemd");
+  it("index 2 is hook (Stop)", () => {
+    expect(manifest.artifacts[2]?.kind).toBe("hook");
+    expect(manifest.artifacts[2]?.id).toContain("lb-hook-stop");
   });
 
-  it("indices 3-10 are slash_command × 8 in design §6 order", () => {
-    const slashArtifacts = manifest.artifacts.slice(3, 11);
+  it("index 3 is mcp_server", () => {
+    expect(manifest.artifacts[3]?.kind).toBe("mcp_server");
+  });
+
+  it("index 4 is augment_claudemd", () => {
+    expect(manifest.artifacts[4]?.kind).toBe("augment_claudemd");
+  });
+
+  it("indices 5-12 are slash_command × 8 in design §6 order", () => {
+    const slashArtifacts = manifest.artifacts.slice(5, 13);
     expect(slashArtifacts).toHaveLength(8);
     for (const a of slashArtifacts) {
       expect(a.kind).toBe("slash_command");
@@ -142,39 +155,39 @@ describe("I-INIT-TEACH — init --preset teaching", () => {
     ]);
   });
 
-  it("indices 11-12 are skill × 2 (SKILL.md + reference.md)", () => {
-    const skillMain = manifest.artifacts[11];
-    const skillRef = manifest.artifacts[12];
+  it("indices 13-14 are skill × 2 (SKILL.md + reference.md)", () => {
+    const skillMain = manifest.artifacts[13];
+    const skillRef = manifest.artifacts[14];
     expect(skillMain?.kind).toBe("skill");
     expect(skillRef?.kind).toBe("skill");
     expect(skillMain?.file_path).toContain("SKILL.md");
     expect(skillRef?.file_path).toContain("reference.md");
   });
 
-  it("indices 13-14 are subagent × 2 (curator then teacher)", () => {
-    const curator = manifest.artifacts[13];
-    const teacher = manifest.artifacts[14];
+  it("indices 15-16 are subagent × 2 (curator then teacher)", () => {
+    const curator = manifest.artifacts[15];
+    const teacher = manifest.artifacts[16];
     expect(curator?.kind).toBe("subagent");
     expect(teacher?.kind).toBe("subagent");
     expect(curator?.file_path).toContain("logbook-curator");
     expect(teacher?.file_path).toContain("logbook-teacher");
   });
 
-  it("index 15 is statusline", () => {
-    const statusline = manifest.artifacts[15];
+  it("index 17 is statusline", () => {
+    const statusline = manifest.artifacts[17];
     expect(statusline?.kind).toBe("statusline");
   });
 
-  it("index 16 is hook (SessionStart)", () => {
-    const sessionHook = manifest.artifacts[16];
+  it("index 18 is hook (SessionStart)", () => {
+    const sessionHook = manifest.artifacts[18];
     expect(sessionHook?.kind).toBe("hook");
     // The file_path for hooks is settings.local.json; verify by id pattern
     // The id should be lb-hook-sessionstart-001
     expect(sessionHook?.id).toContain("lb-hook-sessionstart");
   });
 
-  it("index 17 (last) is gitignore_entry", () => {
-    expect(manifest.artifacts[17]?.kind).toBe("gitignore_entry");
+  it("index 19 (last) is gitignore_entry", () => {
+    expect(manifest.artifacts[19]?.kind).toBe("gitignore_entry");
   });
 
   it("subagent files created under .claude/subagents/", () => {

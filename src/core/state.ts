@@ -41,6 +41,14 @@ export interface LogBookState {
    * Stored alongside gitSha so callers can detect session boundaries.
    */
   gitShaCapturedAt?: string;
+  /**
+   * Per-session byte cursor into the Claude Code transcript file.
+   * Key = sessionId; value = byte offset already consumed by the scraper.
+   * Also stores per-subagent cursors with key = "<sessionId>:sub:<agentId>".
+   * Forward-compat: missing field treated as {} (no cursors).
+   * Capped at 500 entries (LRU prune by ULID timestamp prefix).
+   */
+  transcriptCursors?: Record<string, number>;
 }
 
 export function defaultState(): LogBookState {

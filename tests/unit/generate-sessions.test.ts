@@ -29,6 +29,7 @@ function makeCtx(overrides: Partial<RenderContext> = {}): RenderContext {
     visuals: [],
     milestones: [],
     all: [],
+    latestSessionId: "",
     ...overrides,
   };
 }
@@ -48,9 +49,13 @@ function makeEvent(
 
 describe("buildSessionsDoc — empty context", () => {
   it("returns empty-state message when no events", () => {
+    // visual-replay-redesign Phase 4 (V9) rewrote empty states to Spanish per
+    // cognitive-doc-design "lead with the answer" — assert on the lb-empty-state
+    // shell + the Spanish lead phrase, not the old English placeholder.
     const md = buildSessionsDoc(makeCtx());
     expect(md).toContain("# Sessions");
-    expect(md).toContain("No sessions recorded yet");
+    expect(md).toContain("lb-empty-state");
+    expect(md).toContain("Aún no hay sesiones");
   });
 });
 

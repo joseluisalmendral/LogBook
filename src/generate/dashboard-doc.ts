@@ -195,6 +195,87 @@ function filterSince(events: RenderEvent[], since: string): RenderEvent[] {
 }
 
 // ---------------------------------------------------------------------------
+// visual-replay-redesign V2 — activity heatmap (7×24 CSS Grid).
+// Single-hue violet opacity gradient drives density per research #256
+// anti-pattern guard "Multicolor saturated backgrounds". Each cell is a
+// <button> so keyboard nav + click-to-filter is free from HTML semantics.
+// Build-time pure function — no runtime data fetch.
+// ---------------------------------------------------------------------------
+
+const DAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/**
+ * Build a 7×24 day-of-week × hour-of-day activity heatmap as inline HTML.
+ *
+ * Counts every event in `events` into one of 168 buckets (dayOfWeek, hour).
+ * Days/hours are computed in UTC (spec V2 timezone resolution).
+ * Densities are normalized to the max bucket count (`density = count / max`).
+ *
+ * Each cell is a `<button>` with `data-day`, `data-hour`, and
+ * `style="--lb-density: <0..1>"`. Inline JS reads the data attrs to set the
+ * hash filter to `#dashboard/day-W-hH`. The Reset link clears it.
+ *
+ * Empty events array → returns an empty string (caller suppresses the
+ * heatmap section entirely and shows the page-level empty state via V9).
+ */
+function buildActivityHeatmap(events: RenderEvent[]): string {
+  if (events.length === 0) return "";
+
+  // 7 days × 24 hours = 168 buckets.
+  const counts: number[][] = Array.from({ length: 7 }, () => new Array<number>(24).fill(0));
+  for (const e of events) {
+    const d = new Date(e.ts);
+    if (isNaN(d.getTime())) continue;
+    const dayOfWeek = d.getUTCDay();   // 0..6 (Sun..Sat)
+    const hour = d.getUTCHours();      // 0..23
+    counts[dayOfWeek]![hour]! += 1;
+  }
+
+  let max = 0;
+  for (let d = 0; d < 7; d++) {
+    for (let h = 0; h < 24; h++) {
+      if (counts[d]![h]! > max) max = counts[d]![h]!;
+    }
+  }
+  const safeMax = max === 0 ? 1 : max; // never divide by zero
+
+  const lines: string[] = [];
+  lines.push('<div class="lb-heatmap" role="region" aria-label="Activity heatmap by day and hour">');
+  lines.push('<div class="lb-heatmap-header">');
+  lines.push('<h2 class="lb-heatmap-title">Activity by day &amp; hour <span class="lb-heatmap-subtle">(UTC)</span></h2>');
+  lines.push('<button class="lb-heatmap-reset" type="button" data-lb-heatmap-reset hidden>Reset filter</button>');
+  lines.push('</div>');
+
+  // Hour-axis header row (skip cell at corner for day labels).
+  lines.push('<div class="lb-heatmap-grid">');
+  lines.push('<div class="lb-heatmap-corner" aria-hidden="true"></div>');
+  for (let h = 0; h < 24; h++) {
+    const showLabel = h % 4 === 0;
+    lines.push(
+      `<div class="lb-heatmap-hour-label" aria-hidden="true">${showLabel ? String(h).padStart(2, "0") : ""}</div>`,
+    );
+  }
+  for (let d = 0; d < 7; d++) {
+    lines.push(`<div class="lb-heatmap-day-label" aria-hidden="true">${DAY_LABELS[d]}</div>`);
+    for (let h = 0; h < 24; h++) {
+      const count = counts[d]![h]!;
+      const density = count / safeMax;
+      const dayLabel = DAY_LABELS[d];
+      const label = `${dayLabel} ${String(h).padStart(2, "0")}:00 — ${count} event${count !== 1 ? "s" : ""}`;
+      lines.push(
+        `<button type="button" class="lb-heat-cell" ` +
+        `data-day="${d}" data-hour="${h}" ` +
+        `style="--lb-density: ${density.toFixed(3)}" ` +
+        `aria-label="${label}" title="${label}"></button>`,
+      );
+    }
+  }
+  lines.push('</div>'); // grid
+  lines.push('</div>'); // heatmap
+  return lines.join("\n");
+}
+
+// ---------------------------------------------------------------------------
 // KPI grid HTML builder
 // ---------------------------------------------------------------------------
 
@@ -248,6 +329,69 @@ export function buildDashboardDoc(ctx: RenderContext): string {
 
   lines.push("# Dashboard");
   lines.push("");
+
+  // T7.2: pedagogical page hero (ADR-D6, cognitive-doc-design).
+  lines.push('<header class="lb-page-hero">');
+  // Phase 4 T4.1 — cognitive-doc-design: lead with the answer + describe shape, not jargon.
+  // The heatmap reads left-to-right (hours) and top-to-bottom (days). Darker cells = more activity.
+  lines.push('<p class="lb-page-intro">' +
+    'The shape of your work, at a glance. ' +
+    'The grid below maps activity by weekday and hour: darker violet means more events fell in that slot. ' +
+    'Click any cell to filter the rest of the page to that hour. ' +
+    'KPIs and charts below the grid summarize the whole project.</p>');
+  lines.push('</header>');
+  lines.push('');
+
+  // legends-and-pedagogical-decode — "How to read this" collapsible.
+  lines.push('<details class="lb-how-to-read">');
+  lines.push('<summary>¿Cómo leer esta página?</summary>');
+  lines.push('<div class="lb-how-to-read-body">');
+  lines.push('<p>Esta página resume todo el proyecto en una sola vista: cuándo trabajaste, cuánto, y de qué tipo fue cada cosa.</p>');
+  lines.push('<h4>Heatmap "Activity by day & hour"</h4>');
+  lines.push('<p>Cada celda es una hora del día (00–23) cruzada con un día de la semana. Cuanto más intenso el violeta, más eventos cayeron en esa franja. Útil para ver tus picos de trabajo.</p>');
+  lines.push('<h4>KPIs</h4>');
+  lines.push('<ul>');
+  lines.push('<li><strong>Total events</strong> — suma de todos los eventos capturados (prompts, decisiones, errors, tool_use, etc.)</li>');
+  lines.push('<li><strong>Sessions</strong> — cantidad de sesiones distintas registradas</li>');
+  lines.push('<li><strong>Decisions</strong> — decisiones arquitectónicas registradas con <code>logbook decision</code></li>');
+  lines.push('<li><strong>Errors (open)</strong> / <strong>Errors (resolved)</strong> — errors aún sin fix vs. ya cerrados con un fix linkeado</li>');
+  lines.push('<li><strong>Lessons</strong> — aprendizajes capturados con <code>logbook lesson</code></li>');
+  lines.push('<li><strong>Milestones</strong> — fases cerradas</li>');
+  lines.push('<li><strong>Top file</strong> — archivo más referenciado en los eventos</li>');
+  lines.push('</ul>');
+  lines.push('<h4>Top Tags</h4>');
+  lines.push('<p>Las etiquetas (<code>tags</code>) más usadas en los eventos. Sirven para agrupar trabajo por tema sin necesidad de carpetas.</p>');
+  lines.push('<h4>Activity Charts</h4>');
+  lines.push('<p>Tres gráficos para el rango elegido (all / 30d / 7d): eventos por día, errors por status, decisiones por fase.</p>');
+  lines.push('</div>');
+  lines.push('</details>');
+  lines.push('');
+
+  // visual-replay-redesign V9 — pedagogical empty state when the project has
+  // no captured events at all (covers all-pages-empty edge). Even with zero
+  // events we still emit the KPI grid (zeros) and the range selector shells
+  // below — they teach the user what surfaces will appear once data exists,
+  // and other generators (dashboard tests, range-selector tests) assert on
+  // their presence regardless of fixture size.
+  if (ctx.all.length === 0) {
+    // Phase 4 T4.2 — empty-state audit. cognitive-doc-design: lead with the answer
+    // (nothing captured yet), then give one concrete action + describe what
+    // will appear once data exists. Spanish preserved to match other empty states
+    // (INV-6: copy may be Spanish where existing pages already mix it).
+    lines.push('<div class="lb-empty-state" role="status">');
+    lines.push('<p><strong>Aún no hay eventos capturados.</strong></p>');
+    lines.push('<p>Arrancá con <code>logbook start --label "tu primera sesión"</code>. Cuando registres prompts, decisiones o milestones, este panel se arma solo: KPIs arriba, heatmap de actividad por día y hora, y gráficos por rango.</p>');
+    lines.push('</div>');
+    lines.push("");
+    // Fall through to emit KPI grid + range shells (zeros / empty charts).
+  }
+
+  // visual-replay-redesign V2 — activity heatmap (single-hue violet density).
+  const heatmap = buildActivityHeatmap(ctx.all);
+  if (heatmap) {
+    lines.push(heatmap);
+    lines.push("");
+  }
 
   // KPI grid (raw HTML block — unified passes HTML blocks through).
   lines.push(buildKpiGrid(ctx));

@@ -11,8 +11,8 @@
  *
  * Flow:
  *   1. Snapshot BEFORE install
- *   2. `init --preset teaching --yes` (all 18 manifest entries)
- *   3. Mid-install assertions (coexistence invariants for all 18 artifact kinds)
+ *   2. `init --preset teaching --yes` (all 20 manifest entries)
+ *   3. Mid-install assertions (coexistence invariants for all 20 artifact kinds)
  *   4. `uninstall --force`
  *   5. Snapshot AFTER → byte-identical to BEFORE (THE GATE)
  *
@@ -89,16 +89,17 @@ describe("T12 — ITER4 GATE: byte-identity teaching install/uninstall (THE TEAC
         `init failed:\nstdout: ${installResult.stdout}\nstderr: ${installResult.stderr}`,
       ).toBe(0);
 
-      // Mid-install assertions: all 18 artifact kinds
+      // Mid-install assertions: all 20 artifact kinds
       {
-        // 1. Manifest has exactly 18 entries
+        // 1. Manifest has exactly 20 entries
         const manifest = JSON.parse(
           readFileSync(join(tmp, ".logbook/install-manifest.json"), "utf8"),
         ) as { artifacts: Array<{ id: string; kind: string; file_path: string }> };
-        expect(manifest.artifacts).toHaveLength(18);
+        expect(manifest.artifacts).toHaveLength(20);
 
         // 2. settings.local.json: 2 fake hooks UNCHANGED (byte-for-byte) +
-        //    1 lb-hook(PostToolUse) + 1 lb-hook(SessionStart) + statusLine appended
+        //    1 lb-hook(PostToolUse) + 1 lb-hook(UserPromptSubmit) + 1 lb-hook(Stop)
+        //    + 1 lb-hook(SessionStart) + statusLine appended
         //
         // T-FIX-HOOK: HookInstaller now uses pure string-patch for ALL cases (no
         // JSON.parse+JSON.stringify re-serialize). When installing the SessionStart
@@ -125,6 +126,32 @@ describe("T12 — ITER4 GATE: byte-identity teaching install/uninstall (THE TEAC
         );
         expect(lbPtuHooks).toHaveLength(1);
         expect(ptuHooks).toHaveLength(3);
+
+        // UserPromptSubmit hook: 1 lb
+        const upsHooks: unknown[] = settings?.hooks?.UserPromptSubmit ?? [];
+        const lbUpsHooks = upsHooks.filter(
+          (h) =>
+            typeof h === "object" &&
+            h !== null &&
+            typeof (h as Record<string, unknown>)["_logbookId"] === "string",
+        );
+        expect(lbUpsHooks).toHaveLength(1);
+        expect((lbUpsHooks[0] as Record<string, unknown>)["_logbookId"]).toBe(
+          "lb-hook-userpromptsubmit-001",
+        );
+
+        // Stop hook: 1 lb
+        const stopHooks: unknown[] = settings?.hooks?.Stop ?? [];
+        const lbStopHooks = stopHooks.filter(
+          (h) =>
+            typeof h === "object" &&
+            h !== null &&
+            typeof (h as Record<string, unknown>)["_logbookId"] === "string",
+        );
+        expect(lbStopHooks).toHaveLength(1);
+        expect((lbStopHooks[0] as Record<string, unknown>)["_logbookId"]).toBe(
+          "lb-hook-stop-001",
+        );
 
         // SessionStart hook
         const ssHooks: unknown[] = settings?.hooks?.SessionStart ?? [];

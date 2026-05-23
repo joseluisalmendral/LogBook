@@ -85,8 +85,41 @@ export function buildMilestonesDoc(ctx: RenderContext): string {
   lines.push("# Milestones");
   lines.push("");
 
+  // T7.2: pedagogical page hero (ADR-D6, cognitive-doc-design).
+  const milestoneCount = ctx.milestones.length;
+  lines.push('<header class="lb-page-hero">');
+  // Phase 4 T4.1 — cognitive-doc-design: each row is a phase closure, the answer first.
+  lines.push(`<p class="lb-page-intro">${milestoneCount} phase closure${milestoneCount !== 1 ? 's' : ''}. Each row marks the moment a scope finished — read top-down to follow the project's arc.</p>`);
+  lines.push('</header>');
+  lines.push('');
+
+  // legends-and-pedagogical-decode — "How to read this" collapsible.
+  lines.push('<details class="lb-how-to-read">');
+  lines.push('<summary>¿Cómo leer esta página?</summary>');
+  lines.push('<div class="lb-how-to-read-body">');
+  lines.push('<p>Un milestone es un cierre de fase, no una tarea cualquiera. Se registra con <code>logbook milestone "qué cerraste"</code> cuando un scope se da por terminado.</p>');
+  lines.push('<h4>Qué cuenta como milestone</h4>');
+  lines.push('<ul>');
+  lines.push('<li>Cierre de una fase del proyecto (architecture, persistence, security…)</li>');
+  lines.push('<li>Versión liberada (v1.0, beta, release candidate)</li>');
+  lines.push('<li>Auditoría pasada, sign-off externo, certificación</li>');
+  lines.push('</ul>');
+  lines.push('<h4>Lo que vas a ver en cada milestone</h4>');
+  lines.push('<ul>');
+  lines.push('<li><strong>Reached</strong> — fecha y hora exacta del cierre</li>');
+  lines.push('<li><strong>Descripción</strong> — qué se cerró, en una línea</li>');
+  lines.push('<li><strong>Phase activity</strong> — eventos asociados a esa fase (decisiones, errors, lessons, etc.) para que se vea cuánto trabajo costó llegar al milestone</li>');
+  lines.push('</ul>');
+  lines.push('</div>');
+  lines.push('</details>');
+  lines.push('');
+
   if (ctx.milestones.length === 0) {
-    lines.push("_No milestones recorded yet._");
+    // visual-replay-redesign V9 — pedagogical empty state.
+    lines.push('<div class="lb-empty-state" role="status">');
+    lines.push('<p><strong>Aún no hay milestones alcanzados.</strong></p>');
+    lines.push('<p>Cuando termines una fase clave del proyecto, usá <code>logbook milestone "qué cerraste"</code>. Cada milestone marca un cierre de scope.</p>');
+    lines.push('</div>');
     lines.push("");
     return lines.join("\n");
   }

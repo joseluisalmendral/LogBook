@@ -75,6 +75,7 @@ export const MCP_TOOL_DESCRIPTIONS: readonly string[] = [
   "Switch active phase.",                  // logbook_phase
   "Queue a suggestion for human review.",  // logbook_suggest
   "Get phase, session, pending.",          // logbook_state   (SG0: shortened from "Get current phase, session, pending.")
+  "Log a QA finding.",                     // logbook_qa_finding (B5 — ux-granularity-and-capture-gaps)
 ];
 
 // ---------------------------------------------------------------------------

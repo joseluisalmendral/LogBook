@@ -2,7 +2,7 @@
 export type Artifact =
   | {
       kind: "hook";
-      hookEvent: "PreToolUse" | "PostToolUse" | "Stop" | "SubagentStop" | "SessionStart";
+      hookEvent: "PreToolUse" | "PostToolUse" | "Stop" | "SubagentStop" | "SessionStart" | "UserPromptSubmit";
       command: string;             // absolute path to compiled hook bundle
       matcher?: string;            // tool-name regex when Claude Code requires it
       _logbookId: string;          // tag written into the JSON object

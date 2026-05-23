@@ -20,6 +20,8 @@ import { readState, writeState } from "../../core/state.js";
 import { generateUlid } from "../../util/ulid.js";
 import { buildSessionStartSummary } from "../../hooks/session-start.js";
 import { getGitSha } from "../../connectors/git.js";
+import { runTranscriptScraper } from "./transcript.js";
+import { runLangfuseBridge } from "../langfuse/stop-bridge.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -201,6 +203,32 @@ export async function ingestClaudePayload(opts: IngestOptions): Promise<IngestRe
       // Degrade silently — hook must never exit non-zero.
       if (process.env["LOGBOOK_HOOK_DEBUG"] === "1") {
         process.stderr.write("[logbook] SessionStart summary build failed\n");
+      }
+    }
+  }
+
+  // 9. Stop hook dispatch — transcript scraper + Langfuse bridge.
+  //    Runs ONLY for Stop events. Both operations are PASSIVE (INV-1):
+  //    they observe the session after it ends; they never alter AI runtime behavior.
+  //    Never throws — hook MUST exit 0. Errors degrade silently.
+  if (parsed.hook_event_name === "Stop") {
+    // 9a. Transcript scraper: scrape new assistant turns as claude_message events.
+    try {
+      await runTranscriptScraper({ paths, sessionId });
+    } catch {
+      if (process.env["LOGBOOK_HOOK_DEBUG"] === "1") {
+        process.stderr.write("[logbook] Stop transcript scraper failed\n");
+      }
+    }
+
+    // 9b. Langfuse bridge (B1): query traces after session ends.
+    // Hard 150ms timeout inside runLangfuseBridge; total Stop hook stays < 200ms p95.
+    // Compliant with INV-1: runs post-session, not during tool calls.
+    try {
+      await runLangfuseBridge({ paths, sessionId });
+    } catch {
+      if (process.env["LOGBOOK_HOOK_DEBUG"] === "1") {
+        process.stderr.write("[logbook] Stop Langfuse bridge failed\n");
       }
     }
   }

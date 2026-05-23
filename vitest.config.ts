@@ -6,7 +6,7 @@ export default defineConfig({
       {
         test: {
           name: "unit",
-          include: ["tests/unit/**/*.test.ts"],
+          include: ["tests/unit/**/*.test.ts", "tests/export/**/*.test.ts", "tests/generate/**/*.test.ts"],
           environment: "node",
           pool: "threads",
           setupFiles: ["./tests/setup.ts"],

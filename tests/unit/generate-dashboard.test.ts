@@ -29,6 +29,7 @@ function makeCtx(overrides: Partial<RenderContext> = {}): RenderContext {
     visuals: [],
     milestones: [],
     all: [],
+    latestSessionId: "",
     ...overrides,
   };
 }

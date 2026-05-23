@@ -40,6 +40,7 @@ function mapKind(hookEventName: string | undefined): EventKind {
   if (hookEventName === undefined) return "hook_event";
   if (hookEventName === "PreToolUse") return "tool_use";
   if (hookEventName === "PostToolUse") return "tool_result";
+  if (hookEventName === "UserPromptSubmit") return "user_prompt";
   if (SYSTEM_EVENTS.has(hookEventName)) return "system";
   return "hook_event";
 }
@@ -82,6 +83,14 @@ export function normalizeClaudeEvent(raw: RawClaudeHookPayload, ctx: NormalizeCo
   if (raw.tool_response !== undefined) payload.tool_response = raw.tool_response;
   // Best-effort text extraction: only when tool_response is a plain string
   if (typeof raw.tool_response === "string") payload.text = raw.tool_response;
+  // UserPromptSubmit: extract prompt text from payload fields (Claude Code sends "prompt" field).
+  if (kind === "user_prompt") {
+    const promptText =
+      (typeof raw["prompt"] === "string" ? raw["prompt"] : undefined) ??
+      (typeof raw["user_prompt"] === "string" ? raw["user_prompt"] : undefined) ??
+      "";
+    payload.text = promptText;
+  }
 
   // Build meta — hook event name + any unknown top-level fields
   const meta: Record<string, unknown> = { hook: raw.hook_event_name };

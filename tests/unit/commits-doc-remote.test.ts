@@ -30,6 +30,7 @@ function makeCtx(sha?: string): RenderContext {
     resources: [],
     visuals: [],
     milestones: [],
+    latestSessionId: "",
   };
 
   if (!sha) {
@@ -94,8 +95,12 @@ describe("buildCommitsDoc — remote URL link generation (ADR-21)", () => {
   });
 
   it("no events with gitSha → empty-state message", () => {
+    // visual-replay-redesign Phase 4 (V9) rewrote empty states to Spanish per
+    // cognitive-doc-design "lead with the answer" — assert on the lb-empty-state
+    // shell + the Spanish lead phrase, not the old English placeholder.
     const ctx = makeCtx(); // no events at all
     const md = buildCommitsDoc(ctx, "https://github.com/org/repo.git");
-    expect(md).toContain("No git-tagged events");
+    expect(md).toContain("lb-empty-state");
+    expect(md).toContain("Aún no hay commits");
   });
 });

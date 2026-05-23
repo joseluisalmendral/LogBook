@@ -190,6 +190,7 @@ function buildTeachingManifest(root: string): Manifest {
 
 // Known MCP descriptions (static constant from token-measure.ts)
 // SG0: logbook_lesson and logbook_state descriptions shortened to create token margin.
+// v1.2: logbook_qa_finding added (ux-granularity-and-capture-gaps).
 const MCP_DESCRIPTIONS = [
   "Log an architectural decision.",
   "Log a didactic error.",
@@ -200,6 +201,7 @@ const MCP_DESCRIPTIONS = [
   "Switch active phase.",
   "Queue a suggestion for human review.",
   "Get phase, session, pending.",          // SG0: was "Get current phase, session, pending."
+  "Log a QA finding.",                     // v1.2: ux-granularity-and-capture-gaps B5
 ];
 
 const EXPECTED_MCP_TOKENS = MCP_DESCRIPTIONS.reduce(

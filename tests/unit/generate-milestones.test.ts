@@ -29,6 +29,7 @@ function makeCtx(overrides: Partial<RenderContext> = {}): RenderContext {
     visuals: [],
     milestones: [],
     all: [],
+    latestSessionId: "",
     ...overrides,
   };
 }
@@ -39,9 +40,13 @@ function makeCtx(overrides: Partial<RenderContext> = {}): RenderContext {
 
 describe("buildMilestonesDoc — empty context", () => {
   it("returns empty-state message when no milestones", () => {
+    // visual-replay-redesign Phase 4 (V9) rewrote empty states to Spanish per
+    // cognitive-doc-design "lead with the answer" — assert on the lb-empty-state
+    // shell + the Spanish lead phrase, not the old English placeholder.
     const md = buildMilestonesDoc(makeCtx());
     expect(md).toContain("# Milestones");
-    expect(md).toContain("No milestones recorded yet");
+    expect(md).toContain("lb-empty-state");
+    expect(md).toContain("Aún no hay milestones");
   });
 
   it("does not crash on empty context", () => {

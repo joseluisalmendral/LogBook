@@ -70,8 +70,38 @@ export function buildCommitsDoc(
     (e) => typeof e["gitSha"] === "string" && (e["gitSha"] as string).length > 0,
   );
 
+  // T7.2: pedagogical page hero (ADR-D6, cognitive-doc-design).
+  // Count unique SHAs for the intro.
+  const uniqueShas = new Set(
+    withSha.map((e) => String(e["gitSha"]))
+  );
+  const commitCount = uniqueShas.size;
+  lines.push('<header class="lb-page-hero">');
+  // Phase 4 T4.1 — cognitive-doc-design: lead with the count, then explain
+  // the coupling between commits and captured events, then the SHA affordance.
+  lines.push(`<p class="lb-page-intro">${commitCount} commit${commitCount !== 1 ? 's' : ''} cross-referenced with the events captured around them. Click a SHA to open the diff on the remote in a new tab.</p>`);
+  lines.push('</header>');
+  lines.push('');
+
+  // legends-and-pedagogical-decode — "How to read this" collapsible.
+  lines.push('<details class="lb-how-to-read">');
+  lines.push('<summary>¿Cómo leer esta página?</summary>');
+  lines.push('<div class="lb-how-to-read-body">');
+  lines.push('<p>Cada bloque arranca con el SHA corto del commit y abajo aparecen los eventos de logbook que cayeron alrededor del mismo. Sirve para reconstruir qué se decidió, qué falló y qué se aprendió en torno a cada commit.</p>');
+  lines.push('<h4>SHA del commit</h4>');
+  lines.push('<p>Si el remote del repo está en la <em>allowlist</em> (GitHub, GitLab, Bitbucket), el SHA es un link clickeable que abre el diff en una pestaña nueva. Si no, queda como texto.</p>');
+  lines.push('<h4>Correlación con eventos</h4>');
+  lines.push('<p>Cuando hacés <code>git commit</code> después de registrar un evento, LogBook asocia los eventos recientes con el SHA. No es un mapeo perfecto — es una ventana temporal — pero ayuda a leer la historia del proyecto en orden cronológico.</p>');
+  lines.push('</div>');
+  lines.push('</details>');
+  lines.push('');
+
   if (withSha.length === 0) {
-    lines.push("_No git-tagged events recorded yet._");
+    // visual-replay-redesign V9 — pedagogical empty state.
+    lines.push('<div class="lb-empty-state" role="status">');
+    lines.push('<p><strong>Aún no hay commits asociados a eventos.</strong></p>');
+    lines.push('<p>Cada vez que hagas <code>git commit</code> después de registrar un evento, LogBook lo correlaciona automáticamente. Empezá registrando una decisión y commiteando el cambio.</p>');
+    lines.push('</div>');
     lines.push("");
     return lines.join("\n");
   }

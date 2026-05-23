@@ -158,9 +158,10 @@ describe("I-DOC-TEACH — doctor --measure --json after teaching preset (HARD GA
     }
   });
 
-  it("verify has 18 entries (teaching preset: hook+mcp+augment+8slash+2skill+2subagent+statusline+sessionstart-hook+gitignore)", () => {
-    // 1+1+1+8+2+2+1+1+1 = 18
-    expect(output.verify).toHaveLength(18);
+  it("verify has 20 entries (teaching preset: 3hooks+mcp+augment+8slash+2skill+2subagent+statusline+sessionstart-hook+gitignore)", () => {
+    // 3 hook (PostToolUse+UserPromptSubmit+Stop) + mcp + augment + 8slash + 2skill + 2subagent + statusline + sessionstart-hook + gitignore
+    // = 3+1+1+8+2+2+1+1+1 = 20
+    expect(output.verify).toHaveLength(20);
   });
 
   it("breakdown sums to fixedContextTokens", () => {

@@ -40,6 +40,8 @@ import promote from "./commands/promote.js";
 import review from "./commands/review.js";
 import teachingScript from "./commands/teaching-script.js";
 import annotate from "./commands/annotate.js";
+import importCmd from "./commands/import.js";
+import visualDirection from "./commands/visual-direction.js";
 
 const main = defineCommand({
   meta: {
@@ -76,6 +78,10 @@ const main = defineCommand({
     review,
     "teaching-script": teachingScript,
     annotate,
+    // B2-R1: gh PR import command.
+    import: importCmd,
+    // B4-R1: visual direction decision command.
+    "visual-direction": visualDirection,
   },
 });
 

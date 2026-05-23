@@ -37,14 +37,16 @@ describe("mcp-descriptions-sync", () => {
     }
   });
 
-  it("total token cost of all MCP tool descriptions is ≤ 62 (v1.1 per-category ceiling after SG0 shortening)", () => {
+  it("total token cost of all MCP tool descriptions is ≤ 67 (v1.2 ceiling after ux-granularity +1 tool)", () => {
     // Token formula: Math.ceil(desc.length / 4) per description, summed.
     // Baseline (v1.0): 68 tokens. SG0 target: shorten ≥2 descriptions to save ≥5 tokens.
-    // Ceiling after SG0: 62 tokens (68 - 6 margin with logbook_lesson + logbook_state shortened).
+    // v1.1 ceiling after SG0: 62 tokens (logbook_lesson + logbook_state shortened).
+    // v1.2 ceiling: 67 tokens (added logbook_qa_finding: "Log a QA finding." = 5 tokens).
+    // Still well within the 120-token tool allocation per spec §4 / MS-R2.
     const totalTokens = MCP_TOOL_DESCRIPTIONS.reduce(
       (sum, desc) => sum + Math.ceil(desc.length / 4),
       0,
     );
-    expect(totalTokens).toBeLessThanOrEqual(62);
+    expect(totalTokens).toBeLessThanOrEqual(67);
   });
 });
