@@ -32,6 +32,11 @@
   import { onMount, tick } from "svelte";
   import { payload } from "../stores/data";
   import { inspector } from "../stores/inspector";
+  import { toast } from "../stores/toast";
+  import {
+    buildResumeCommand,
+    buildWarpTabUri,
+  } from "../util/deep-link";
   import type { RenderEvent } from "../types";
   import MarkdownBlock from "./MarkdownBlock.svelte";
 
@@ -119,6 +124,34 @@
       // Clipboard API may be denied in file://; non-fatal.
     }
   }
+
+  // Slice-12 P3 (R-64 / INV-19 / AG-29): "Resume in terminal" affordance.
+  // Per INV-19 we do NOT fabricate a claude:// scheme. Instead we copy the
+  // exact `claude --resume <id>` command to the clipboard, open a Warp tab
+  // cwd'd at the project root, and show a 2-second toast confirming the
+  // paste payload is ready.
+  async function resumeInTerminal(): Promise<void> {
+    if (!event?.sessionId) return;
+    const cmd = buildResumeCommand(event.sessionId);
+    if (typeof navigator !== "undefined" && navigator.clipboard) {
+      try {
+        await navigator.clipboard.writeText(cmd);
+      } catch {
+        // Clipboard API may be denied in file://; non-fatal — we still open
+        // Warp and surface the toast so the user knows to paste manually.
+      }
+    }
+    toast.show("Command copied — paste into Warp");
+    const projectRoot = payload.project?.root ?? "";
+    if (projectRoot && typeof window !== "undefined") {
+      try {
+        window.open(buildWarpTabUri(projectRoot), "_blank");
+      } catch {
+        // Some browsers block window.open from non-user-gesture contexts;
+        // the click handler is user-initiated so this is rare.
+      }
+    }
+  }
 </script>
 
 <svelte:window onkeydown={onKey} />
@@ -183,6 +216,17 @@
     </div>
 
     <footer class="ins-footer">
+      {#if event.sessionId}
+        <button
+          type="button"
+          class="copy-btn resume-btn"
+          onclick={resumeInTerminal}
+          aria-label={`Copy 'claude --resume ${event.sessionId}' and open Warp tab`}
+          data-testid="inspector-resume"
+        >
+          Resume in terminal
+        </button>
+      {/if}
       <button type="button" class="copy-btn" onclick={copyBody}>
         Copy body
       </button>
@@ -325,7 +369,19 @@
     border-top: var(--card-border);
     display: flex;
     justify-content: flex-end;
+    gap: var(--p-space-3);
     flex-shrink: 0;
+  }
+
+  /* Slice 12 P3: resume-in-terminal is the lead action — use accent border. */
+  .resume-btn {
+    color: var(--color-text-primary);
+    border-color: var(--color-accent-primary);
+  }
+  .resume-btn:hover,
+  .resume-btn:focus-visible {
+    background: var(--color-accent-primary);
+    color: var(--color-surface-sunken);
   }
 
   .copy-btn {
