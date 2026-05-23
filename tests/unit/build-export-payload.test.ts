@@ -231,6 +231,38 @@ describe("buildExportPayload", () => {
     expect(p0["commitUrl"]).toBeUndefined();
   });
 
+  it("omits payload.transcripts when noTranscripts is true (slice-12 P4 budget gate)", async () => {
+    const session: RenderEvent = {
+      id: "sess-1",
+      type: "manual.session_start",
+      ts: "2026-05-23T10:00:00.000Z",
+      title: "Demo",
+      sessionId: "sess-1",
+    };
+    const ctx = mkCtx({ sessions: [session as unknown as RenderContext["sessions"][number]] });
+    const { payload } = await buildExportPayload(ctx, mkPaths(), {
+      noTranscripts: true,
+    });
+    expect(payload.transcripts).toBeUndefined();
+  });
+
+  it("populates payload.transcripts with null for sessions whose JSONL is missing (ADR-SC-D2)", async () => {
+    // mkPaths() points at /tmp/fixture-project which has no encoded directory
+    // under ~/.claude/projects/, so every session should resolve to null
+    // without throwing.
+    const session: RenderEvent = {
+      id: "sess-missing",
+      type: "manual.session_start",
+      ts: "2026-05-23T10:00:00.000Z",
+      title: "Missing on this machine",
+      sessionId: "sess-missing",
+    };
+    const ctx = mkCtx({ sessions: [session as unknown as RenderContext["sessions"][number]] });
+    const { payload } = await buildExportPayload(ctx, mkPaths());
+    expect(payload.transcripts).toBeDefined();
+    expect(payload.transcripts!["sess-missing"]).toBeNull();
+  });
+
   it("flags oversize when serialized payload exceeds the 5 MB cap (INV-12)", async () => {
     // Build a single event with a body large enough to push the payload past 5 MB.
     const huge = "x".repeat(PAYLOAD_CAP_BYTES_FOR_TESTS + 1024);
