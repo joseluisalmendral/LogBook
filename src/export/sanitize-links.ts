@@ -42,6 +42,52 @@ export const ALLOWED_HOSTS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * URLs that may appear as STRING LITERALS inside the vendored Svelte 5 bundle.
+ * These are NOT fetched by the browser — Svelte 5's compiled output embeds
+ * documentation pointers (e.g. `https://svelte.dev/e/<error-code>`) so that
+ * runtime error messages can link out IF a developer copy-pastes them. They
+ * never reach the network in normal operation. Browsers don't auto-fetch
+ * arbitrary text content of inline scripts.
+ *
+ * Same fail-closed contract as ALLOWED_HOSTS: exact protocol + hostname +
+ * path-prefix match. Any other svelte.dev path is still rejected.
+ */
+const SVELTE_DOC_URL_PREFIXES: readonly string[] = [
+  "https://svelte.dev/e/",
+];
+
+/**
+ * Canonical XML namespace URIs that appear in inline SVG / MathML markup
+ * shipped by the Svelte runtime. These are namespace IDENTIFIERS — never
+ * fetched by the browser. Both http: and https: forms are accepted because
+ * the W3C namespace URIs are canonical http:// strings; upgrading them to
+ * https:// would change the namespace identity.
+ */
+const XML_NAMESPACE_URIS: ReadonlySet<string> = new Set([
+  "http://www.w3.org/2000/svg",
+  "http://www.w3.org/1999/xlink",
+  "http://www.w3.org/1999/xhtml",
+  "http://www.w3.org/XML/1998/namespace",
+  "http://www.w3.org/1998/Math/MathML",
+]);
+
+/** Strip URL-trailing punctuation that markdown/HTML output sometimes glues on. */
+function stripUrlTrailingPunct(raw: string): string {
+  return raw.replace(/[).,;:!?]+$/, "");
+}
+
+/** True for canonical XML namespace URIs (xmlns / xlink / etc.). */
+export function isXmlNamespaceUri(raw: string): boolean {
+  return XML_NAMESPACE_URIS.has(stripUrlTrailingPunct(raw));
+}
+
+/** True for the Svelte 5 runtime error-link prefix (string-literal only, never fetched). */
+export function isSvelteDocUri(raw: string): boolean {
+  const cleaned = stripUrlTrailingPunct(raw);
+  return SVELTE_DOC_URL_PREFIXES.some((p) => cleaned.startsWith(p));
+}
+
+/**
  * Return true if `raw` is an HTTPS URL whose hostname is exactly in ALLOWED_HOSTS.
  *
  * Strips trailing punctuation that glues to URLs in markdown/HTML output
@@ -122,9 +168,14 @@ export function assertNoExternalRefs(html: string): ExternalRefsResult {
   const blocked: string[] = [];
   let allowedRefs = 0;
 
-  // Partition URLs into allowed vs blocked.
+  // Partition URLs into allowed vs blocked. The allowlist covers:
+  //   - Git hosting (ADR-20, ALLOWED_HOSTS): URLs students may click in commit refs.
+  //   - XML namespace URIs (xmlns / xlink / MathML): namespace IDENTIFIERS,
+  //     never fetched by the browser.
+  //   - Svelte 5 runtime doc URLs (svelte.dev/e/*): string literals embedded
+  //     in error templates inside the vendored UI bundle (P5, AG-2).
   for (const url of report.externalUrls) {
-    if (isAllowlistedUrl(url)) {
+    if (isAllowlistedUrl(url) || isXmlNamespaceUri(url) || isSvelteDocUri(url)) {
       allowedRefs++;
     } else {
       blocked.push(url);

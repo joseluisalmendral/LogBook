@@ -15,14 +15,23 @@
   links can jump to it.
 -->
 <script lang="ts">
+  import { onMount } from "svelte";
   import { payload } from "../stores/data";
   import { router } from "../stores/router";
+  import { subscribeMotion } from "../stores/motion";
   import type { Chapter, RenderEvent } from "../types";
   import ChapterHeader from "./ChapterHeader.svelte";
   import TurnRow from "./TurnRow.svelte";
   import TimelineScrubber from "./TimelineScrubber.svelte";
+  import MobileTimeline from "./MobileTimeline.svelte";
   import PhaseAct from "./PhaseAct.svelte";
   import EmptyState from "./EmptyState.svelte";
+
+  // Subscribe to the motion store so we can swap the desktop scrubber for
+  // the mobile anchor list (design D3: horizontal-swipe scrubber conflicts
+  // with native page scroll on iOS Safari, so mobile uses MobileTimeline).
+  let isMobile = $state(false);
+  onMount(() => subscribeMotion((s) => { isMobile = s.isMobile; }));
 
   interface Props {
     chapterId: string;
@@ -92,9 +101,15 @@
           {/if}
         {/each}
       </div>
+
+      {#if isMobile}
+        <MobileTimeline events={chapter.events} />
+      {/if}
     </div>
 
-    <TimelineScrubber events={chapter.events} />
+    {#if !isMobile}
+      <TimelineScrubber events={chapter.events} />
+    {/if}
   {:else}
     <div class="not-found">
       <button type="button" class="back-btn" onclick={back}>

@@ -19,6 +19,8 @@
     "pretest:e2e": "pnpm build",
     "test:e2e": "vitest run --project e2e",
     "typecheck": "tsc --noEmit",
+    "verify:contrast": "tsx scripts/verify-contrast.ts",
+    "audit:motion": "tsx scripts/audit-motion.ts",
     "prepublishOnly": "pnpm build:ui && pnpm sync:export-ui && pnpm typecheck && pnpm test"
   },
   "dependencies": {
@@ -51,6 +53,7 @@
     "@types/node": "^22.15.17",
     "@types/proper-lockfile": "^4.1.4",
     "@types/react": "18.3.28",
+    "color-contrast-checker": "^2.1.0",
     "ink-testing-library": "4.0.0",
     "playwright": "^1.60.0",
     "tsup": "^8.4.0",

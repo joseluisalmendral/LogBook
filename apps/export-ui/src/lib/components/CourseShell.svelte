@@ -21,6 +21,7 @@
   import { palette } from "../stores/palette";
   import { inspector } from "../stores/inspector";
   import Sidebar from "./Sidebar.svelte";
+  import MobileNav from "./MobileNav.svelte";
   import CourseTOC from "./CourseTOC.svelte";
   import ChapterPlayer from "./ChapterPlayer.svelte";
   import PromptInspector from "./PromptInspector.svelte";
@@ -98,9 +99,16 @@
 {/if}
 
 <div class="shell" data-testid="course-shell">
-  <div id="lb-sidebar" class="sidebar-slot">
-    <Sidebar open={!isMobile || sidebarOpen} onClose={closeSidebar} />
-  </div>
+  <!--
+    Desktop uses the in-flow Sidebar. On mobile we swap to the full <MobileNav>
+    drawer (P5 R-26 / D3 mitigation) — rendered as a native <dialog> sibling
+    so its z-index + focus trap never compete with the chapter grid.
+  -->
+  {#if !isMobile}
+    <div id="lb-sidebar" class="sidebar-slot">
+      <Sidebar open={true} onClose={closeSidebar} />
+    </div>
+  {/if}
 
   <main class="main-pane" data-testid="main-pane">
     {#if route.name === "toc"}
@@ -110,6 +118,10 @@
     {/if}
   </main>
 </div>
+
+{#if isMobile}
+  <MobileNav open={sidebarOpen} onClose={closeSidebar} />
+{/if}
 
 <!--
   Global overlays — both subscribe to their own stores; rendering them
