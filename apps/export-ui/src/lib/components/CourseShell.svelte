@@ -24,6 +24,7 @@
   import MobileNav from "./MobileNav.svelte";
   import CourseTOC from "./CourseTOC.svelte";
   import ChapterPlayer from "./ChapterPlayer.svelte";
+  import RawTranscriptView from "./RawTranscriptView.svelte";
   import PromptInspector from "./PromptInspector.svelte";
   import CommandPalette from "./CommandPalette.svelte";
 
@@ -115,6 +116,8 @@
       <CourseTOC />
     {:else if route.name === "chapter"}
       <ChapterPlayer chapterId={route.chapterId} />
+    {:else if route.name === "transcript"}
+      <RawTranscriptView sessionId={route.sessionId} />
     {/if}
   </main>
 </div>
