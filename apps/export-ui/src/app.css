@@ -123,3 +123,27 @@ html[data-motion="reduced"] ::view-transition-old(root),
 html[data-motion="reduced"] ::view-transition-new(root) {
   animation: none !important;
 }
+
+/*
+ * Slice-18 motion polish — magnetic snap on chapter scroll.
+ *
+ * `scroll-snap-type: y proximity` is the safe variant: the browser only
+ * snaps when the scroll velocity drops near a snap target. `mandatory` would
+ * fight the user (scroll-jacking) and is rejected by the research-brief risk
+ * list. Only TurnRow / SubAgentCard / AgentQuestionCard / CommitRow expose
+ * snap-align so the snap surface is bounded to chapter content. The TOC and
+ * transcript views don't carry the `.lb-snap-target` class and feel normal.
+ *
+ * Reduced-motion: opt out via the global data-motion="reduced" guard.
+ */
+html {
+  scroll-snap-type: y proximity;
+}
+html[data-motion="reduced"] {
+  scroll-snap-type: none;
+}
+.lb-snap-target {
+  scroll-snap-align: start;
+  scroll-snap-stop: normal;
+  scroll-margin-top: 6rem; /* keep the row clear of the sticky header band */
+}

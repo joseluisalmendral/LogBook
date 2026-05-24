@@ -152,7 +152,7 @@
   the structured grid of sub-elements without breaking layout/AT semantics).
 -->
 <div
-  class="aq-card"
+  class="aq-card lb-snap-target"
   data-testid="agent-question-card"
   data-visible={isVisible}
   data-expanded={expanded}

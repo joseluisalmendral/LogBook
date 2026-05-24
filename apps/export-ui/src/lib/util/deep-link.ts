@@ -188,28 +188,52 @@ export function detectSessionId(text: string): string[] {
 // ---------------------------------------------------------------------------
 
 /**
- * Build a `vscode://file/<path>[:line[:col]]` URI.
+ * Build a file-open URI for the user's preferred local editor.
  *
- * The vscode:// scheme is the universal default for slice 12. Cursor and Zed
- * inherit it via OS protocol handler registration (R-62 + ADR-SC-C2). The
- * editor picker UI lands in slice 13.
+ * Slice 18 introduced a picker (stored in `editorPref` / localStorage). When
+ * the picker is set to "vscode" (default), Cursor and Zed inherit via the OS
+ * protocol handler. Other editors ship their own schemes:
  *
- * `absPath` is taken at face value — callers must resolve any project-relative
- * path themselves. We do NOT URL-encode the path because vscode://file/ relies
- * on the raw filesystem path (URL encoding would break Windows drive letters).
+ *   vscode    → `vscode://file/<path>[:line[:col]]`
+ *   cursor    → `cursor://file/<path>[:line[:col]]`
+ *   zed       → `zed://file/<path>[:line[:col]]`
+ *   intellij  → `idea://open?file=<path>&line=<line>&column=<col>`
+ *
+ * `absPath` is taken at face value — callers must resolve any project-
+ * relative path themselves. For the path-style schemes we do NOT URL-encode
+ * the path because they rely on the raw filesystem path (URL encoding would
+ * break Windows drive letters). For the IntelliJ `idea://open?` query-string
+ * variant we DO encode (it's a real query, not a path).
+ *
+ * Slice-12-compatibility: the `scheme` parameter is optional. When omitted
+ * we read the user pref via `editorPref.get()` at call time so the pref can
+ * be changed at runtime and every NEW link reflects the new choice. (Links
+ * already rendered into the DOM keep their pre-change scheme until a
+ * re-render — same trade-off as any reactive store.)
  */
+import { editorPref, type EditorScheme } from "../stores/editor-pref";
+
 export function buildFileUri(
   absPath: string,
   line?: number,
   col?: number,
+  scheme?: EditorScheme,
 ): string {
-  const tail =
-    typeof line === "number" && Number.isFinite(line)
-      ? `:${line}${
-          typeof col === "number" && Number.isFinite(col) ? `:${col}` : ""
-        }`
-      : "";
-  return `vscode://file/${absPath}${tail}`;
+  const resolved = scheme ?? editorPref.get();
+  const hasLine = typeof line === "number" && Number.isFinite(line);
+  const hasCol = typeof col === "number" && Number.isFinite(col);
+
+  if (resolved === "intellij") {
+    // IntelliJ uses a query-string format. URL-encode the path so spaces /
+    // unicode survive the parse on the receiving side.
+    let q = `idea://open?file=${encodeURIComponent(absPath)}`;
+    if (hasLine) q += `&line=${line}`;
+    if (hasLine && hasCol) q += `&column=${col}`;
+    return q;
+  }
+
+  const tail = hasLine ? `:${line}${hasCol ? `:${col}` : ""}` : "";
+  return `${resolved}://file/${absPath}${tail}`;
 }
 
 /**
