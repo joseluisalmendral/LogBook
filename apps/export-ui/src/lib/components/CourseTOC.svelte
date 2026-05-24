@@ -49,38 +49,10 @@
 
   onMount(() => {
     const motion = getMotionState();
-    if (!motion.motionAllowed) return;
-
-    // 1. Hero burst wipe.
     const hero = document.querySelector<HTMLElement>(".toc-hero");
-    if (hero) {
-      hero.style.clipPath = "inset(0 100% 0 0)";
-      animate(hero, { clipPath: "inset(0 0% 0 0)" }, {
-        duration: 0.9,
-        ease: [0.85, 0, 0.15, 1],
-        delay: 0.05,
-      });
-    }
 
-    // 2. Stagger-reveal session entries on scroll-in.
-    const lines = document.querySelectorAll<HTMLElement>(".session-entry");
-    for (const l of lines) {
-      l.style.opacity = "0";
-      l.style.transform = "translateY(24px)";
-    }
-    const stopWatching = inView(
-      lines as unknown as Element[],
-      (entry) => {
-        animate(
-          entry.target as HTMLElement,
-          { opacity: 1, transform: "translateY(0px)" },
-          { duration: 0.55, ease: [0.22, 1, 0.36, 1] },
-        );
-      },
-      { margin: "-10% 0px -5% 0px" },
-    );
-
-    // 3. Cursor spotlight on hero only.
+    // Cursor spotlight on hero is always-on (low-cost passive effect,
+    // independent of motion preference).
     const onMove = (e: MouseEvent): void => {
       if (!hero) return;
       const rect = hero.getBoundingClientRect();
@@ -93,10 +65,58 @@
     };
     window.addEventListener("mousemove", onMove);
 
-    return () => {
-      stopWatching();
-      window.removeEventListener("mousemove", onMove);
-    };
+    if (!motion.motionAllowed) {
+      return () => window.removeEventListener("mousemove", onMove);
+    }
+
+    // Hero clip-path wipe in from the left edge.
+    if (hero) {
+      hero.style.clipPath = "inset(0 100% 0 0)";
+      animate(hero, { clipPath: "inset(0 0% 0 0)" }, {
+        duration: 0.9,
+        ease: [0.85, 0, 0.15, 1],
+        delay: 0.05,
+      });
+    }
+
+    /*
+     * Slice 30 fix — session entries stagger-animate IMMEDIATELY,
+     * not gated by IntersectionObserver / inView.
+     *
+     * The slice-29 inView approach used `margin: -10% 0 -5% 0` to
+     * detect scroll-into-view. Edge case: elements ALREADY in
+     * viewport on first paint were not consistently fired by
+     * Motion's observer (depending on browser timing), leaving the
+     * visible list stuck at opacity:0. The user reported
+     * "no salen listadas las sesiones, solo si pulso en phase" —
+     * which was actually the SAME bug under whichever sort happened
+     * to be the active default.
+     *
+     * The reliable pattern: set pre-state, then animate
+     * unconditionally with stagger. Every row reaches its final
+     * state regardless of scroll position. Long lists past the
+     * viewport still animate together (acceptable; users scroll to
+     * find them).
+     */
+    const lines = document.querySelectorAll<HTMLElement>(".session-entry");
+    if (lines.length === 0) {
+      return () => window.removeEventListener("mousemove", onMove);
+    }
+    for (const l of lines) {
+      l.style.opacity = "0";
+      l.style.transform = "translateY(24px)";
+    }
+    animate(
+      lines as unknown as Element[],
+      { opacity: 1, transform: "translateY(0px)" },
+      {
+        delay: stagger(0.05, { startDelay: 0.25 }),
+        duration: 0.55,
+        ease: [0.22, 1, 0.36, 1],
+      },
+    );
+
+    return () => window.removeEventListener("mousemove", onMove);
   });
 
   function openLatest(): void {

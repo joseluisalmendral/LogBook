@@ -106,7 +106,7 @@
     align-items: center;
     gap: 0.35rem;
     padding: 0.18rem 0.5rem;
-    border-radius: 999px;
+    border-radius: 4px;
     border: 1px solid var(--lb-border, rgba(0, 0, 0, 0.12));
     background: var(--lb-surface-sunken, rgba(0, 0, 0, 0.025));
     color: var(--lb-fg, currentColor);
@@ -164,7 +164,7 @@
 
   .chip-overflow {
     padding: 0.18rem 0.5rem;
-    border-radius: 999px;
+    border-radius: 4px;
     color: var(--lb-fg-muted, rgba(0, 0, 0, 0.55));
     font-variant-numeric: tabular-nums;
     background: transparent;

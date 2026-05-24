@@ -272,21 +272,39 @@
     initial-value: 0;
   }
 
+  /*
+   * Slice 30 — Paper Brutalism for the agent_question card.
+   *   - 0px corners.
+   *   - 1px violet hairline + 4px Claude Ember border-left (the question
+   *     fork is the warm-attention moment — same accent as the TOC
+   *     entry-arrow on hover).
+   *   - Hard 4px ember drop shadow on hover for the editorial click feel.
+   */
   .aq-card {
     background: var(--color-surface-raised);
-    border: 1px solid var(--color-question);
-    border-radius: var(--card-radius);
+    border: 1px solid color-mix(in srgb, var(--color-text-primary) 16%, transparent);
+    border-left: 4px solid var(--color-question);
+    border-radius: 0;
     padding: var(--card-padding);
-    margin: var(--p-space-3) 0;
+    margin: var(--p-space-4) 0;
     display: grid;
     gap: var(--p-space-4);
     color: var(--color-text-primary);
-    box-shadow: 0 1px 0 var(--color-border-hairline);
     text-align: left;
     width: 100%;
     appearance: none;
     font: inherit;
     cursor: pointer;
+    transition: box-shadow 200ms ease-out, transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .aq-card:hover,
+  .aq-card:focus-visible {
+    box-shadow: 4px 4px 0 0 color-mix(in srgb, var(--color-question) 30%, transparent);
+  }
+
+  :global(html[data-motion="reduced"]) .aq-card {
+    transition: none;
   }
 
   .aq-header {

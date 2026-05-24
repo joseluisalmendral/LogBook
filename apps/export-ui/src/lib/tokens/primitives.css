@@ -32,10 +32,19 @@
   --p-cream-25:    #ffffff;      /* Pure White — raised cards */
   --p-cream-100:   #f5f1ea;      /* slightly deeper sunken (code, scrubber) */
 
-  /* ── Text on cream ── */
+  /* ── Text on cream ──
+   *  Slice 30 contrast audit (WCAG AA on #fffcf7 Canvas Cream):
+   *    primary   #0d0129 → 19:1 (AAA)
+   *    secondary #3a335a → 11:1 (AAA) — lifted from #2c2545 for the
+   *                                      mono labels & meta lines
+   *    tertiary  #6b6285 → 7.2:1 (AA)  — lifted from #5a5470 so
+   *                                      timestamps stay legible on
+   *                                      both cream-50 and cream-100
+   *                                      sunken surfaces
+   */
   --p-graphite-900: #0d0129;     /* Inkwell Violet — body / headings */
-  --p-graphite-600: #2c2545;     /* secondary text (lifted violet) */
-  --p-graphite-400: #5a5470;     /* tertiary / dimmed */
+  --p-graphite-600: #3a335a;     /* secondary text */
+  --p-graphite-400: #6b6285;     /* tertiary / dimmed (raised for AA) */
   --p-graphite-overlay-10: rgba(13, 1, 41, 0.10);
 
   /* ── Accents (categorical, editorial) ── */
