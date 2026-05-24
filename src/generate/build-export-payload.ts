@@ -558,6 +558,47 @@ function extractSkillName(event: RenderEvent): string | null {
   return typeof name === "string" && name.length > 0 ? name : null;
 }
 
+/**
+ * Slice-20: strip the heavy "raw" / "_raw" / "tool_response" fields off an
+ * event before it lands in `chapter.events`. The UI doesn't render those
+ * (they're the unredacted hook payload + transcript chunks), and on real
+ * data they can blow the JSON payload past 100 MB. Anything the UI actually
+ * reads — id, type, ts, title, description, payload, meta — is preserved.
+ *
+ * NOTE: this runs at chapter-assembly time, AFTER the slice-15/16 sub-agent
+ * enrichment has copied the relevant raw subfields (file_path, agent_id)
+ * up into payload. Stripping `raw` here doesn't lose those derived values.
+ */
+function slimEventForChapter(event: RenderEvent): RenderEvent {
+  const rec = event as Record<string, unknown>;
+  const slim: Record<string, unknown> = {};
+  // Whitelist the fields the UI reads. Anything else (raw / _raw /
+  // tool_args / tool_response / extra hook context) is dropped.
+  const KEEP = [
+    "id",
+    "type",
+    "ts",
+    "timestamp",
+    "title",
+    "description",
+    "body",
+    "sessionId",
+    "tool_name",
+    "agentId",
+    "toolCallCount",
+    "durationMs",
+    "attributionAgent",
+    "skillName",
+    "meta",
+    "payload",
+    "filesTouched",
+  ];
+  for (const k of KEEP) {
+    if (rec[k] !== undefined) slim[k] = rec[k];
+  }
+  return slim as RenderEvent;
+}
+
 /** Group conversation events by sessionId for chapter assembly. */
 function groupEventsBySession(
   events: RenderEvent[] | undefined,
@@ -630,8 +671,58 @@ export async function buildExportPayload(
     return safeMode ? sanitizeForSafeExport(s) : s;
   };
   // --- Sessions / chapters -------------------------------------------------
-  const sessions = ctx.sessions;
   const eventsBySession = groupEventsBySession(ctx.all);
+
+  /*
+   * Slice-20 fallback for projects without captured `SessionStart` hook events
+   * (e.g. when only `Stop` / `PostToolUse` were ever installed). The render
+   * pipeline still has the per-event `sessionId` field on every record, so we
+   * synthesize a minimal session entry per unique sessionId — but ONLY for
+   * sessions that contain at least one MEANINGFUL conversation marker
+   * (user_prompt, claude_message, subagent_complete) or a manual record
+   * (decision/error/fix/lesson/milestone). Hook-only sessions (PreToolUse
+   * fires that each get their own sessionId from Claude Code) would otherwise
+   * explode the chapter count and push the HTML past the budget gate.
+   * Real `ctx.sessions` (from `manual.session_start`) always win.
+   */
+  const MEANINGFUL_TYPES = new Set([
+    "user_prompt",
+    "claude_message",
+    "subagent_complete",
+  ]);
+  const MEANINGFUL_PREFIXES = ["manual."];
+
+  let sessions = ctx.sessions;
+  if (sessions.length === 0 && eventsBySession.size > 0) {
+    const synthesized: RenderEvent[] = [];
+    for (const [sid, evts] of eventsBySession) {
+      if (evts.length === 0) continue;
+      // Filter out hook-only sessions — they're noise.
+      const isMeaningful = evts.some((e) => {
+        if (typeof e.type !== "string") return false;
+        if (MEANINGFUL_TYPES.has(e.type)) return true;
+        return MEANINGFUL_PREFIXES.some((p) => (e.type as string).startsWith(p));
+      });
+      if (!isMeaningful) continue;
+      let earliest = evts[0]!.ts;
+      let latest = evts[0]!.ts;
+      for (const e of evts) {
+        if (e.ts < earliest) earliest = e.ts;
+        if (e.ts > latest) latest = e.ts;
+      }
+      synthesized.push({
+        id: sid,
+        type: "manual.session_start",
+        ts: earliest,
+        sessionId: sid,
+        // Label is a short fingerprint — the UI can show the full id on hover.
+        title: `Session ${sid.slice(0, 8)}`,
+        endTs: latest,
+      } as RenderEvent);
+    }
+    // Sort ascending by start ts so the TOC reads chronologically.
+    sessions = synthesized.sort((a, b) => (a.ts < b.ts ? -1 : a.ts > b.ts ? 1 : 0));
+  }
 
   const sessionSummaries: SessionSummary[] = sessions.map((s) => {
     const id = typeof s["id"] === "string" ? (s["id"] as string) : "";
@@ -777,12 +868,17 @@ export async function buildExportPayload(
       } as RenderEvent;
     });
 
+    // Slice-20: strip the heavy `raw` / `_raw` / `tool_response` fields off
+    // every event AFTER enrichment has read what it needs. Keeps the payload
+    // JSON two orders of magnitude smaller on real data.
+    const slimEvents = enrichedEvents.map(slimEventForChapter);
+
     const chapter: Chapter = {
       sessionId: id,
       label: labelRaw || id || "session",
       ts: s.ts,
       phases,
-      events: enrichedEvents,
+      events: slimEvents,
       filesTouched: aggregateFileTouches(enrichedEvents),
     };
     if (typeof s["endTs"] === "string") chapter.endTs = s["endTs"] as string;

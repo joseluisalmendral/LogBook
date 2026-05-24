@@ -177,9 +177,18 @@ export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
   }
 
   // 5. Inject the payload into the vendored bundle (R-43 </script> escape).
+  //
+  // CRITICAL: pass the replacement as a function, NOT a string. JavaScript's
+  // `String.prototype.replace(re, str)` interprets `$&` / `$1`..`$9` / `$\`` /
+  // `$'` patterns inside the string argument and substitutes the matched text.
+  // If the JSON payload (real event bodies, tool inputs, code blocks) contains
+  // any `$&` literal — Bash output, regex examples, GitHub Actions templates —
+  // each one expands into a full copy of the original lb-data placeholder
+  // (including its `</script>` closing tag) and silently corrupts the HTML.
+  // The function-form replacement is taken verbatim and avoids this entirely.
   let jsonPayload = escapeJsonForScriptTag(JSON.stringify(payload));
   let injected = `<script id="lb-data" type="application/json">${jsonPayload}</script>`;
-  let html = UI_BUNDLE.replace(LB_DATA_TAG_RE, injected);
+  let html = UI_BUNDLE.replace(LB_DATA_TAG_RE, () => injected);
 
   // 5b. Slice-12 P4 budget gate (replaces missing `pnpm doctor --measure`):
   // if the rendered HTML overshoots BUDGET_GATE_MAX_BYTES AND we had not
@@ -204,7 +213,7 @@ export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
     payload = buildResult.payload;
     jsonPayload = escapeJsonForScriptTag(JSON.stringify(payload));
     injected = `<script id="lb-data" type="application/json">${jsonPayload}</script>`;
-    html = UI_BUNDLE.replace(LB_DATA_TAG_RE, injected);
+    html = UI_BUNDLE.replace(LB_DATA_TAG_RE, () => injected);
   }
 
   if (html === UI_BUNDLE) {
