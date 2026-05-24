@@ -25,6 +25,7 @@
  */
 
 import { selection } from "./selection";
+import { getMotionState } from "./motion";
 
 export type Route =
   | { name: "toc" }
@@ -163,7 +164,16 @@ export const router = {
     return current;
   },
 
-  /** Navigate by mutating the hash. Triggers the listener via hashchange. */
+  /**
+   * Navigate by mutating the hash. Triggers the listener via hashchange.
+   *
+   * Slice-18 motion polish (G1): when the View Transitions API is available
+   * AND motion is allowed AND we're moving between toc ↔ chapter (the two
+   * routes that share a `view-transition-name` element via SessionTile and
+   * ChapterHeader), wrap the hash change in `document.startViewTransition`
+   * so the shared header morphs smoothly. Reduced-motion users + browsers
+   * without the API skip the wrapper.
+   */
   navigate(route: Route): void {
     if (typeof window === "undefined") {
       // Test environment without a window — still update internal state so
@@ -174,7 +184,23 @@ export const router = {
       return;
     }
     const target = routeToHash(route);
-    if (window.location.hash !== target) {
+    if (window.location.hash === target) return;
+
+    const motion = getMotionState();
+    const doc = document as Document & {
+      startViewTransition?: (cb: () => void | Promise<void>) => unknown;
+    };
+    const startVT = doc.startViewTransition;
+    const shouldMorph =
+      motion.motionAllowed &&
+      typeof startVT === "function" &&
+      (current.name === "toc" || route.name === "toc");
+
+    if (shouldMorph) {
+      startVT.call(doc, () => {
+        window.location.hash = target;
+      });
+    } else {
       window.location.hash = target;
     }
   },

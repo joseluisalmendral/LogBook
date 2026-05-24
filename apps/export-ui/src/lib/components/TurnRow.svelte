@@ -106,7 +106,7 @@
     <!-- Lesson / fix / generic — minimal row with click-to-inspect. -->
     <button
       type="button"
-      class="generic-row"
+      class="generic-row lb-snap-target"
       data-kind-row={kind}
       data-interactive
       onclick={openInspectorWithSelection}

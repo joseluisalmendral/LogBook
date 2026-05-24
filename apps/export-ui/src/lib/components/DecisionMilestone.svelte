@@ -59,7 +59,7 @@
 
 <button
   type="button"
-  class="decision"
+  class="decision lb-snap-target"
   data-testid="decision-milestone"
   data-event-id={event.id}
   data-interactive

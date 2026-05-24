@@ -21,6 +21,23 @@
   import { payload } from "../stores/data";
   import ThemeToggle from "./ThemeToggle.svelte";
   import { palette } from "../stores/palette";
+  import { editorPref, EDITOR_OPTIONS, type EditorScheme } from "../stores/editor-pref";
+
+  // Slice-18: editor URI picker — small select bound to the editorPref store
+  // so the file-open chips (FileChangeStrip, linkified tool inputs) route to
+  // the user's preferred editor. Subscribing keeps the <select> in sync if
+  // some other surface flips the pref.
+  let editorScheme = $state<EditorScheme>(editorPref.get());
+  $effect(() => {
+    const unsub = editorPref.subscribe((scheme) => {
+      editorScheme = scheme;
+    });
+    return () => unsub();
+  });
+  function onEditorChange(e: Event): void {
+    const value = (e.currentTarget as HTMLSelectElement).value;
+    editorPref.set(value as EditorScheme);
+  }
 
   interface Props {
     open: boolean;
@@ -108,6 +125,23 @@
       <span class="kpi-value lb-tnum kpi-milestone">{payload.course.totals.milestones}</span>
       <span class="kpi-label">Milestones</span>
     </div>
+  </section>
+
+  <!-- Slice-18: editor picker — small, low-emphasis. Sits above the
+       exported-at footer so it's discoverable without dominating the rail. -->
+  <section class="editor-pref" aria-label="Editor preference">
+    <label class="editor-pref-label" for="lb-editor-pref">Open files in</label>
+    <select
+      id="lb-editor-pref"
+      class="editor-pref-select"
+      value={editorScheme}
+      onchange={onEditorChange}
+      data-interactive
+    >
+      {#each EDITOR_OPTIONS as opt (opt.value)}
+        <option value={opt.value} title={opt.hint}>{opt.label}</option>
+      {/each}
+    </select>
   </section>
 
   <footer class="sidebar-footer">
@@ -269,6 +303,39 @@
     color: var(--color-text-secondary);
     text-transform: uppercase;
     letter-spacing: 0.06em;
+  }
+
+  /* Slice-18 editor picker — sits flush against the totals strip, low key. */
+  .editor-pref {
+    display: flex;
+    flex-direction: column;
+    gap: var(--p-space-2);
+    margin-top: auto;
+    padding-top: var(--p-space-3);
+    border-top: 1px solid var(--color-border-hairline);
+  }
+  .editor-pref-label {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+  .editor-pref-select {
+    appearance: none;
+    font: inherit;
+    font-size: var(--font-size-meta);
+    color: var(--color-text-primary);
+    background: var(--color-surface-base);
+    border: var(--card-border);
+    border-radius: var(--card-radius);
+    padding: var(--p-space-2) var(--p-space-3);
+    cursor: pointer;
+    transition: border-color 150ms ease;
+  }
+  .editor-pref-select:hover,
+  .editor-pref-select:focus-visible {
+    border-color: var(--color-accent-primary);
+    outline: none;
   }
 
   .sidebar-footer {

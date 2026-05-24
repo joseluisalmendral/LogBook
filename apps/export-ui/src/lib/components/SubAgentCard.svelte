@@ -145,7 +145,7 @@
 
 <article
   bind:this={cardEl}
-  class="card-wrap"
+  class="card-wrap lb-snap-target"
   data-testid="sub-agent-card"
   data-expanded={expanded}
   data-in-view={inView}

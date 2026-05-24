@@ -43,7 +43,7 @@
 </script>
 
 <div
-  class="commit-row"
+  class="commit-row lb-snap-target"
   data-testid="commit-row"
   data-event-id={event.id}
   data-interactive
