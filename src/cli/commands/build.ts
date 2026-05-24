@@ -9,8 +9,15 @@
  */
 
 import { defineCommand } from "citty";
+import { promises as fs } from "node:fs";
+import * as os from "node:os";
+import * as path from "node:path";
 import { resolveProjectRoot, makePaths } from "../../core/paths.js";
 import { runAllGenerators } from "../../generate/index.js";
+import {
+  runTranscriptScraper,
+  pathToEncoded,
+} from "../../connectors/claude-code/transcript.js";
 
 export default defineCommand({
   meta: {
@@ -50,6 +57,52 @@ export default defineCommand({
       ? args["out"]
       : undefined;
     const safeArg = args["safe"] === true;
+
+    // Slice-23: pre-build transcript backfill.
+    //
+    // Run the transcript scraper for every Claude Code session known to this
+    // project BEFORE generating docs. This is a safety net for when the Stop
+    // / UserPromptSubmit / PostToolUse hooks miss events (real regression:
+    // Claude closed before the hook flushed → 1 user_prompt + 3 claude_messages
+    // lost in a 78-line transcript). The transcript file itself is always
+    // complete because Claude Code persists it before hooks fire.
+    //
+    // Failure-safe: any error here degrades silently — build continues with
+    // whatever events.jsonl already has.
+    try {
+      const encoded = pathToEncoded(root);
+      const claudeDir = path.join(os.homedir(), ".claude", "projects", encoded);
+      let entries: string[] = [];
+      try {
+        entries = await fs.readdir(claudeDir);
+      } catch {
+        // No Claude transcripts for this project — nothing to backfill.
+      }
+      let backfilledSessions = 0;
+      let backfilledWritten = 0;
+      for (const entry of entries) {
+        if (!entry.endsWith(".jsonl")) continue;
+        const sessionId = entry.slice(0, -".jsonl".length);
+        // Basic shape check: Claude Code session ids are UUIDs.
+        if (!/^[0-9a-f-]{32,40}$/i.test(sessionId)) continue;
+        try {
+          const result = await runTranscriptScraper({ paths, sessionId });
+          if (result.written > 0) {
+            backfilledSessions++;
+            backfilledWritten += result.written;
+          }
+        } catch {
+          // Per-session failure: skip and continue.
+        }
+      }
+      if (backfilledWritten > 0) {
+        process.stdout.write(
+          `Backfilled ${backfilledWritten} events from transcripts across ${backfilledSessions} sessions.\n`,
+        );
+      }
+    } catch {
+      // Top-level safety net — never block build on backfill.
+    }
 
     let report: Awaited<ReturnType<typeof runAllGenerators>>;
     try {

@@ -121,25 +121,39 @@ describe("conversation capture — end-to-end pipeline", () => {
       transcriptLineToEvents(line, "sess-e2e-002"),
     );
 
-    // 2 text blocks + 1 thinking block → 3 events (user line skipped per ADR-2).
-    expect(events).toHaveLength(3);
+    // Slice-23 backfill: 2 assistant text blocks + 1 thinking block + 1 user_prompt
+    // (the "next prompt" line) = 4 events. The user_prompt is backfilled with no
+    // dedup set passed so it always emits in this test.
+    expect(events).toHaveLength(4);
 
-    const textEvents = events.filter(
+    const claudeMessages = events.filter((e) => e.kind === "claude_message");
+    const userPrompts = events.filter((e) => e.kind === "user_prompt");
+    const textEvents = claudeMessages.filter(
       (e) => !(e.payload as Record<string, unknown>)["isThinking"],
     );
-    const thinkingEvents = events.filter(
+    const thinkingEvents = claudeMessages.filter(
       (e) => (e.payload as Record<string, unknown>)["isThinking"] === true,
     );
 
     expect(textEvents).toHaveLength(2);
     expect(thinkingEvents).toHaveLength(1);
+    expect(userPrompts).toHaveLength(1);
+    expect((userPrompts[0]!.payload as Record<string, unknown>)["text"]).toBe(
+      "next prompt",
+    );
+    expect(
+      (userPrompts[0]!.payload as Record<string, unknown>)["backfilledFromTranscript"],
+    ).toBe(true);
     expect((textEvents[0]!.payload as Record<string, unknown>)["text"]).toContain(
       "render-context fix",
     );
     expect((textEvents[1]!.payload as Record<string, unknown>)["text"]).toContain("Done!");
   });
 
-  it("user lines in transcript are skipped (no user_prompt duplication — ADR-2)", async () => {
+  it("user lines are deduped against the existing hash set (slice-23 backfill)", async () => {
+    const { userPromptHash } = await import(
+      "../../src/connectors/claude-code/transcript.js"
+    );
     const transcriptLine = JSON.stringify({
       type: "user",
       uuid: "up1",
@@ -150,12 +164,21 @@ describe("conversation capture — end-to-end pipeline", () => {
     fs.writeFileSync(transcriptPath, transcriptLine + "\n", "utf8");
 
     const { lines } = await readTranscriptNewLines(transcriptPath, 0);
-    const events = lines.flatMap((line) =>
+
+    // Without dedup set → emits one user_prompt (the backfill path).
+    const noDedup = lines.flatMap((line) =>
       transcriptLineToEvents(line, "sess-e2e-003"),
     );
+    expect(noDedup).toHaveLength(1);
+    expect(noDedup[0]!.kind).toBe("user_prompt");
 
-    // No events from user lines.
-    expect(events).toHaveLength(0);
+    // With dedup set containing the text's hash → skips (UserPromptSubmit
+    // would have caught it live; scraper must not duplicate).
+    const dedup = new Set<string>([userPromptHash("implement feature")]);
+    const withDedup = lines.flatMap((line) =>
+      transcriptLineToEvents(line, "sess-e2e-003", dedup),
+    );
+    expect(withDedup).toHaveLength(0);
   });
 
   it("pathToEncoded is stable across multiple calls with the same input", () => {

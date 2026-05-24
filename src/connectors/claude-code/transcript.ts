@@ -19,6 +19,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import * as os from "node:os";
+import * as crypto from "node:crypto";
 import { appendEvent } from "../../store/index.js";
 import { readState, writeState } from "../../core/state.js";
 import type { ProjectPaths } from "../../core/paths.js";
@@ -31,6 +32,88 @@ import { redact } from "../../redact/redactor.js";
 
 /** Hard cap on delta bytes read per Stop hook fire. Protects p95 < 200ms. */
 const MAX_DELTA_BYTES = 5_000_000; // 5 MB
+
+/**
+ * Slice-23 backfill: textual content prefixes that Claude Code emits as
+ * `type:"user"` transcript entries but which are NOT real user-typed prompts.
+ * These wrap slash-commands, attachments, and local command output. The
+ * UserPromptSubmit hook also skips them, so we filter consistently.
+ */
+const NON_REAL_USER_PROMPT_PREFIXES = [
+  "<command-name>",
+  "<command-message>",
+  "<command-args>",
+  "<local-command-",
+  "<attachment>",
+  "<user-attachment>",
+  "<session-end>",
+  "<system-reminder>",
+] as const;
+
+/** Slice-23: heuristic — is this transcript content a real user-typed prompt? */
+export function isLikelyRealUserPrompt(text: string): boolean {
+  const t = text.trim();
+  if (!t) return false;
+  for (const prefix of NON_REAL_USER_PROMPT_PREFIXES) {
+    if (t.startsWith(prefix)) return false;
+  }
+  return true;
+}
+
+/** Slice-23: stable hash of a user-prompt body, used for hook↔scraper dedup. */
+export function userPromptHash(text: string): string {
+  return crypto.createHash("sha256").update(text.trim()).digest("hex").slice(0, 16);
+}
+
+/**
+ * Slice-23: scan events.jsonl once and return the set of (sessionId-scoped)
+ * user_prompt text hashes that have already been written by the
+ * UserPromptSubmit hook. The scraper consults this set BEFORE synthesizing
+ * a user_prompt from a transcript line so we never duplicate.
+ *
+ * Reading the entire events.jsonl is O(N) over the project's event log. For
+ * typical projects this is well under 100 ms and runs at Stop hook time
+ * (within the 200 ms p95 budget). If the file is missing or unreadable,
+ * returns an empty set (worst case: a few duplicate user_prompts on first
+ * scrape, deduped by content hash in any subsequent run).
+ */
+export async function loadExistingUserPromptHashes(
+  eventsJsonlPath: string,
+  sessionId: string,
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  let content: string;
+  try {
+    content = await fs.promises.readFile(eventsJsonlPath, "utf8");
+  } catch {
+    return out; // file missing or unreadable → empty set is safe
+  }
+  for (const line of content.split("\n")) {
+    if (!line) continue;
+    if (!line.includes(`"user_prompt"`)) continue; // fast prefilter
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (parsed["kind"] !== "user_prompt") continue;
+    if (parsed["sessionId"] !== sessionId) continue;
+    const payload = parsed["payload"] as Record<string, unknown> | undefined;
+    let text: string | undefined;
+    if (typeof payload?.["text"] === "string") {
+      text = payload["text"] as string;
+    } else {
+      // Hook event shape: payload.raw.prompt or payload.prompt
+      const raw = payload?.["raw"] as Record<string, unknown> | undefined;
+      if (typeof raw?.["prompt"] === "string") text = raw["prompt"] as string;
+      else if (typeof payload?.["prompt"] === "string") text = payload["prompt"] as string;
+    }
+    if (!text) continue;
+    out.add(userPromptHash(text));
+  }
+  return out;
+}
 
 /** Maximum number of cursor entries in transcriptCursors before LRU prune. */
 const MAX_CURSOR_ENTRIES = 500;
@@ -596,6 +679,7 @@ function emitForCall(
 export function transcriptLineToEvents(
   line: ClaudeTranscriptLine,
   sessionId: string,
+  existingUserPromptHashes?: Set<string>,
 ): EventInput[] {
   // Skip meta / sidechain lines.
   if (line.isMeta === true) return [];
@@ -611,9 +695,43 @@ export function transcriptLineToEvents(
     return [];
   }
 
-  // Skip user lines — UserPromptSubmit hook is authoritative for user_prompt (ADR-2).
+  // Slice-23 backfill: emit user_prompt events from transcript when the
+  // UserPromptSubmit hook missed them.
+  //
+  // Original design (ADR-2) made UserPromptSubmit authoritative and skipped
+  // user transcript lines to avoid duplicates. In practice this leaves a
+  // permanent hole whenever Claude Code is closed before the hook flushes
+  // (real regression observed 2026-05-24: 1/3 user prompts missed in a
+  // 78-line transcript). The transcript itself always has the data — Claude
+  // Code persists it before the hook fires — so synthesizing here with a
+  // text-hash dedup against already-captured prompts is safe and complete.
+  //
+  // The dedup set is passed in by the scraper (runTranscriptScraper) which
+  // pre-scans events.jsonl for this session's existing user_prompt hashes.
+  // When called without a dedup set (legacy callers / tests), we emit and
+  // let downstream dedup decide.
   if (line.type === "user") {
-    return [];
+    const content = line.message?.content;
+    if (typeof content !== "string") return [];
+    if (!isLikelyRealUserPrompt(content)) return [];
+    const hash = userPromptHash(content);
+    if (existingUserPromptHashes !== undefined && existingUserPromptHashes.has(hash)) {
+      return [];
+    }
+    return [
+      {
+        kind: "user_prompt",
+        sessionId,
+        payload: {
+          text: content,
+          claudeUuid: line.uuid,
+          // Flag for downstream observability: this was backfilled from
+          // transcript, not captured live by UserPromptSubmit.
+          backfilledFromTranscript: true,
+        },
+        ...(line.timestamp !== undefined && { timestamp: line.timestamp }),
+      },
+    ];
   }
 
   // Process assistant lines.
@@ -790,9 +908,24 @@ export async function runTranscriptScraper(
     return { written, skipped };
   }
 
+  // Slice-23: load already-captured user_prompt text hashes for this session
+  // (from UserPromptSubmit hook writes) so the scraper can backfill ONLY the
+  // ones that the hook missed. Reads events.jsonl once; O(N) over event log.
+  // Failure-safe: errors return an empty set → first scrape may emit dupes
+  // that subsequent scrapes will catch via hash equality.
+  let existingUserPromptHashes = new Set<string>();
+  try {
+    existingUserPromptHashes = await loadExistingUserPromptHashes(
+      paths.eventsJsonl,
+      sessionId,
+    );
+  } catch {
+    // empty set already — safe default
+  }
+
   // 3. Map lines → events → persist.
   for (const line of lines) {
-    const events = transcriptLineToEvents(line, sessionId);
+    const events = transcriptLineToEvents(line, sessionId, existingUserPromptHashes);
     for (const eventInput of events) {
       try {
         await appendEvent(paths, {
@@ -800,6 +933,15 @@ export async function runTranscriptScraper(
           provider: "claude-code-transcript",
         });
         written++;
+        // Slice-23: keep the dedup set fresh within this batch so two
+        // transcript lines with identical prompt text in the same delta
+        // (rare but possible — e.g. user copy-pastes same prompt) only
+        // emit once.
+        if (eventInput.kind === "user_prompt") {
+          const payload = eventInput.payload as Record<string, unknown> | undefined;
+          const text = typeof payload?.["text"] === "string" ? (payload["text"] as string) : "";
+          if (text) existingUserPromptHashes.add(userPromptHash(text));
+        }
       } catch {
         skipped++;
       }
