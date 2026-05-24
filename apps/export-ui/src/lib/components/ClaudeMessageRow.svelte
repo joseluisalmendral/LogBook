@@ -41,6 +41,10 @@
     name: string;
     file_path?: string;
     toolUseId?: string;
+    /** Slice-24: 1-line summary (command / file / pattern / url / etc.) */
+    input?: string;
+    /** Slice-24: truncated tool_response preview (≤500 chars). */
+    outputPreview?: string;
   }
 
   interface Props {
@@ -195,14 +199,46 @@
             {#if toolStrip.length > 0}
               <section class="strip-section" aria-label="Tool calls">
                 <h4 class="strip-title">Tools called</h4>
+                <!--
+                  Slice-24: each chip is a self-contained collapsible row.
+                  Compact face shows: tool name + 1-line input summary
+                  (command / file / pattern / etc.). When `outputPreview`
+                  is available, chip becomes a <details> that reveals the
+                  truncated tool response in a code block.
+                -->
                 <ul class="tool-chips" data-testid="claude-tool-strip">
                   {#each toolStrip as t}
-                    <li class="tool-chip" title={t.file_path ? `${t.name} · ${t.file_path}` : t.name}>
-                      <code class="tool-name">{t.name}</code>
-                      {#if t.file_path}
-                        <span class="tool-file">{basename(t.file_path)}</span>
-                      {/if}
-                    </li>
+                    {@const displayLabel = t.file_path ? basename(t.file_path) : (t.input ?? "")}
+                    {@const hasDetail = (t.outputPreview ?? "").length > 0 || (t.input ?? "").length > 0}
+                    {#if hasDetail}
+                      <li class="tool-chip">
+                        <details class="tool-details">
+                          <summary class="tool-summary" title={t.file_path ? `${t.name} · ${t.file_path}` : t.name}>
+                            <code class="tool-name">{t.name}</code>
+                            {#if displayLabel}
+                              <span class="tool-input" dir="auto">{displayLabel}</span>
+                            {/if}
+                            <span class="tool-chevron" aria-hidden="true">▸</span>
+                          </summary>
+                          <div class="tool-body">
+                            {#if t.input && t.file_path}
+                              <p class="tool-field"><span class="tool-field-label">input</span><code class="tool-field-value">{t.input}</code></p>
+                            {/if}
+                            {#if t.file_path}
+                              <p class="tool-field"><span class="tool-field-label">path</span><code class="tool-field-value">{t.file_path}</code></p>
+                            {/if}
+                            {#if t.outputPreview}
+                              <p class="tool-field tool-field-output"><span class="tool-field-label">output</span></p>
+                              <pre class="tool-output"><code>{t.outputPreview}</code></pre>
+                            {/if}
+                          </div>
+                        </details>
+                      </li>
+                    {:else}
+                      <li class="tool-chip tool-chip-static" title={t.name}>
+                        <code class="tool-name">{t.name}</code>
+                      </li>
+                    {/if}
                   {/each}
                   {#if overflowCount > 0}
                     <li class="tool-chip chip-overflow" title={`${overflowCount} more tool call${overflowCount === 1 ? "" : "s"}`}>
@@ -360,24 +396,54 @@
     font-weight: 600;
   }
 
+  /*
+   * Slice-24: each tool chip is now a vertically-flowing collapsible row
+   * instead of an inline pill. The strip stacks one-per-line so users see
+   * the command/file inline without truncation. Click → expand to reveal
+   * the truncated output preview in a code block.
+   */
   .tool-chips {
     list-style: none;
     margin: 0;
     padding: 0;
     display: flex;
-    flex-wrap: wrap;
-    gap: 0.375rem 0.5rem;
+    flex-direction: column;
+    gap: var(--p-space-2);
   }
 
   .tool-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    padding: 0.18rem 0.5rem;
-    border-radius: 999px;
+    display: block;
+    padding: 0;
+    border-radius: var(--radius-sm);
     border: 1px solid var(--color-border-hairline);
     background: var(--color-surface-sunken);
-    font-size: 0.78rem;
+    font-size: 0.82rem;
+  }
+
+  .tool-chip-static {
+    padding: 0.35rem 0.6rem;
+  }
+
+  .tool-details {
+    margin: 0;
+  }
+
+  .tool-summary {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.4rem 0.65rem;
+    cursor: pointer;
+    list-style: none;
+    user-select: none;
+  }
+
+  .tool-summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .tool-summary:hover {
+    background: color-mix(in srgb, var(--color-accent-primary) 6%, var(--color-surface-sunken));
   }
 
   .tool-name {
@@ -386,16 +452,89 @@
     font-size: var(--font-size-caption);
     background: transparent;
     padding: 0;
+    flex-shrink: 0;
   }
 
-  .tool-file {
+  .tool-input {
     color: var(--color-text-secondary);
     font-family: var(--font-mono);
     font-size: var(--font-size-caption);
-    max-width: 18ch;
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .tool-chevron {
+    color: var(--color-text-tertiary);
+    transition: transform 180ms ease-out;
+    font-size: 0.7rem;
+    flex-shrink: 0;
+  }
+
+  .tool-details[open] .tool-chevron {
+    transform: rotate(90deg);
+  }
+
+  .tool-body {
+    padding: 0.35rem 0.65rem 0.65rem 0.65rem;
+    border-top: 1px dashed var(--color-border-hairline);
+    background: color-mix(in srgb, var(--color-text-primary) 2%, var(--color-surface-sunken));
+  }
+
+  .tool-field {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    margin: 0.3rem 0;
+    font-size: var(--font-size-caption);
+  }
+
+  .tool-field-output {
+    margin-top: 0.6rem;
+  }
+
+  .tool-field-label {
+    color: var(--color-text-tertiary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-size: 0.65rem;
+    flex-shrink: 0;
+    min-width: 3.5rem;
+  }
+
+  .tool-field-value {
+    color: var(--color-text-primary);
+    font-family: var(--font-mono);
+    background: transparent;
+    padding: 0;
+    word-break: break-all;
+    font-size: var(--font-size-caption);
+  }
+
+  .tool-output {
+    margin: 0.2rem 0 0 0;
+    padding: 0.5rem 0.65rem;
+    background: var(--color-surface);
+    border: 1px solid var(--color-border-hairline);
+    border-radius: var(--radius-sm);
+    color: var(--color-text-primary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    line-height: 1.45;
+    overflow-x: auto;
+    max-height: 16rem;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .tool-output code {
+    background: transparent;
+    padding: 0;
+    font: inherit;
+    color: inherit;
   }
 
   .chip-overflow {
@@ -403,17 +542,19 @@
     font-family: var(--font-mono);
     background: transparent;
     border-style: dashed;
+    padding: 0.35rem 0.65rem;
   }
 
-  /* Mobile (R-92): full-width bubble, tighter padding, strips stack. */
+  :global(html[data-motion="reduced"]) .tool-chevron {
+    transition: none;
+  }
+
+  /* Mobile (R-92): full-width bubble, tighter padding. */
   @media (max-width: 767px) {
     .bubble {
       max-width: 100%;
       width: 100%;
       padding: var(--p-space-3);
-    }
-    .tool-file {
-      max-width: 14ch;
     }
   }
 </style>

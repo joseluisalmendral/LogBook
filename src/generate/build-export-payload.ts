@@ -655,6 +655,20 @@ interface ToolStripEntry {
   name: string;
   file_path?: string;
   toolUseId?: string;
+  /**
+   * Slice-24: 1-line summary of the tool's input rendered on the chip face.
+   * Bash → command, Read/Edit/Write → basename(file_path), Grep/Glob →
+   * pattern, WebFetch → url, WebSearch → query, MCP/other → JSON-stringified
+   * input truncated to 160 chars. Empty string when no useful summary.
+   */
+  input?: string;
+  /**
+   * Slice-24: truncated tool_response (≤500 chars) for the chip's expanded
+   * body. Best-effort across the various response shapes Claude Code emits
+   * (string / content-array / stdout). When the response was redacted /
+   * absent the field is omitted and the UI hides the expanded section.
+   */
+  outputPreview?: string;
 }
 
 /**
@@ -823,6 +837,20 @@ function rollupClaudeMessageTools(
   let openTools: ToolStripEntry[] = [];
   let openFiles = new Set<string>();
 
+  // Slice-24: tools that happen between a `user_prompt` and the NEXT
+  // `claude_message` semantically belong to the next message — they are
+  // Claude's response to the new prompt, not a continuation of the prior
+  // turn. Previously these were dropped because the walker closed the
+  // open window on user_prompt and the tools arrived before a new
+  // claude_message opened a new window. Real-data repro: a turn where
+  // user said "eso está bien si" + Claude did 5 tool calls + answered
+  // "Listo..." showed zero tools anywhere.
+  //
+  // Buffer the orphans here. When the next claude_message arrives we
+  // hand the buffer to it as the seed of the open window.
+  let pendingTools: ToolStripEntry[] = [];
+  let pendingFiles = new Set<string>();
+
   function flushOpenMsg(): void {
     if (!openMsg) return;
     const existingPayload =
@@ -845,11 +873,44 @@ function rollupClaudeMessageTools(
     openFiles = new Set();
   }
 
+  function buildEntry(ev: RenderEvent): ToolStripEntry | null {
+    const rec = ev as Record<string, unknown>;
+    const raw = rec["raw"] as Record<string, unknown> | undefined;
+    const toolUseId =
+      typeof raw?.["tool_use_id"] === "string"
+        ? (raw["tool_use_id"] as string)
+        : typeof rec["tool_use_id"] === "string"
+          ? (rec["tool_use_id"] as string)
+          : "";
+    const toolInput = raw?.["tool_input"] as Record<string, unknown> | undefined;
+    const filePath =
+      typeof toolInput?.["file_path"] === "string"
+        ? (toolInput["file_path"] as string)
+        : typeof toolInput?.["path"] === "string"
+          ? (toolInput["path"] as string)
+          : typeof toolInput?.["notebook_path"] === "string"
+            ? (toolInput["notebook_path"] as string)
+            : "";
+    const entry: ToolStripEntry = { name: toolDisplayNameOf(ev) };
+    if (filePath) entry.file_path = filePath;
+    if (toolUseId) entry.toolUseId = toolUseId;
+    // Slice-24: 1-line summary of the tool's input + truncated output so the
+    // UI can render a rich chip ("Bash · eza -la ...") without exploding the
+    // payload. Both fields are best-effort — when raw is missing they stay
+    // undefined and the UI degrades to name-only.
+    const inputSummary = summarizeToolInput(toolDisplayNameOf(ev), toolInput);
+    if (inputSummary) entry.input = inputSummary;
+    const outputPreview = summarizeToolOutput(raw);
+    if (outputPreview) entry.outputPreview = outputPreview;
+    return entry;
+  }
+
   for (const ev of events) {
     const type = typeof ev.type === "string" ? ev.type : "";
     const rec = ev as Record<string, unknown>;
 
-    // tool_result.* — roll up under the open claude_message (or drop).
+    // tool_result.* — roll up under the open claude_message OR buffer for
+    // the next one when we are in a post-user_prompt orphan window.
     if (type.startsWith("tool_result")) {
       const raw = rec["raw"] as Record<string, unknown> | undefined;
       const childAgentId =
@@ -860,8 +921,7 @@ function rollupClaudeMessageTools(
       if (childAgentId && subagentChildAgentIds.has(childAgentId)) {
         continue;
       }
-      // AskUserQuestion dedup: drop tool_results whose tool_use_id matches
-      // a synthesized agent_question already emitted (INV-23).
+      // AskUserQuestion dedup (INV-23 + ADR-SN-B2).
       const toolUseId =
         typeof raw?.["tool_use_id"] === "string"
           ? (raw["tool_use_id"] as string)
@@ -870,51 +930,177 @@ function rollupClaudeMessageTools(
             : "";
       const lowerToolName = toolNameOf(ev);
       if (lowerToolName === "askuserquestion") {
-        // ALL askuserquestion tool_results are dedup-dropped — the
-        // synthesized agent_question is always the better representation
-        // (ADR-SN-B2 defensive secondary drop).
         if (toolUseId && askUserQuestionDedupIds.has(toolUseId)) continue;
-        // Even when no match found we drop AskUserQuestion to avoid bare
-        // tool chips in the strip; the user-facing event is the agent_question.
         continue;
       }
-      // No open claude_message → drop (ghost-turn region or pre-message tool).
-      if (!openMsg) continue;
-      const toolInput = raw?.["tool_input"] as
-        | Record<string, unknown>
-        | undefined;
-      const filePath =
-        typeof toolInput?.["file_path"] === "string"
-          ? (toolInput["file_path"] as string)
-          : typeof toolInput?.["path"] === "string"
-            ? (toolInput["path"] as string)
-            : typeof toolInput?.["notebook_path"] === "string"
-              ? (toolInput["notebook_path"] as string)
-              : "";
-      const entry: ToolStripEntry = { name: toolDisplayNameOf(ev) };
-      if (filePath) entry.file_path = filePath;
-      if (toolUseId) entry.toolUseId = toolUseId;
-      openTools.push(entry);
-      if (filePath) openFiles.add(filePath);
+      const entry = buildEntry(ev);
+      if (!entry) continue;
+      const fp = entry.file_path;
+      if (openMsg) {
+        openTools.push(entry);
+        if (fp) openFiles.add(fp);
+      } else {
+        // Orphan tool (post user_prompt, pre next claude_message) — buffer
+        // it for the next claude_message.
+        pendingTools.push(entry);
+        if (fp) pendingFiles.add(fp);
+      }
       continue;
     }
 
-    // claude_message OPENS a new strip window — flush the previous one.
+    // claude_message OPENS a new strip window — flush the previous one and
+    // seed the new window with any pending orphan tools.
     if (type === "claude_message") {
       flushOpenMsg();
       openMsg = ev;
+      openTools = pendingTools;
+      openFiles = pendingFiles;
+      pendingTools = [];
+      pendingFiles = new Set();
       continue;
     }
 
-    // Any other event closes the open window and is emitted straight through.
+    // user_prompt: close the current message's tool window WITHOUT touching
+    // the pending buffer. Subsequent tools (until the next claude_message)
+    // go to pendingTools — they are part of Claude's NEW turn answering this
+    // prompt.
+    if (type === "user_prompt") {
+      flushOpenMsg();
+      out.push(ev);
+      continue;
+    }
+
+    // Any other event: flush the open window and emit straight through.
+    // We do NOT discard the pending buffer here — it survives across
+    // non-message events so orphans still find their next claude_message.
     flushOpenMsg();
     out.push(ev);
   }
 
-  // End-of-chapter: flush trailing claude_message.
+  // End-of-chapter: flush trailing claude_message. Any tools still in
+  // pendingTools at this point have no home (no claude_message followed the
+  // user_prompt before the chapter ended) — they are dropped, but flagged
+  // so the UI can surface this as a known data-gap.
   flushOpenMsg();
 
   return out;
+}
+
+/**
+ * Slice-24: build a 1-line summary of a tool's input for the chip face.
+ *
+ * Rules per tool kind:
+ *   Bash / BashOutput → first 160 chars of `command`
+ *   Read / Edit / Write / NotebookEdit → basename(file_path)
+ *   Grep / Glob → `pattern` (and `glob` when both present)
+ *   WebFetch → `url`
+ *   WebSearch → `query`
+ *   TodoWrite / Task / AskUserQuestion → empty (header already self-explanatory)
+ *   mcp__server__tool → JSON-stringified input truncated to 160 chars
+ *   default → JSON-stringified input truncated to 120 chars
+ */
+function summarizeToolInput(
+  displayName: string,
+  input: Record<string, unknown> | undefined,
+): string {
+  if (!input) return "";
+  const truncate = (s: string, n: number): string =>
+    s.length > n ? s.slice(0, n - 1) + "…" : s;
+  const lower = displayName.toLowerCase();
+  const get = (k: string): string | undefined =>
+    typeof input[k] === "string" ? (input[k] as string) : undefined;
+  if (lower === "bash" || lower === "bashoutput") return truncate(get("command") ?? "", 160);
+  if (lower === "read" || lower === "edit" || lower === "write" || lower === "multiedit") {
+    const p = get("file_path") ?? get("path") ?? "";
+    return p ? basename(p) : "";
+  }
+  if (lower === "notebookedit") return basename(get("notebook_path") ?? "");
+  if (lower === "grep" || lower === "glob") {
+    const p = get("pattern") ?? get("glob") ?? "";
+    return truncate(p, 160);
+  }
+  if (lower === "webfetch") return truncate(get("url") ?? "", 160);
+  if (lower === "websearch") return truncate(get("query") ?? "", 160);
+  if (lower === "task") return truncate(get("description") ?? get("subagent_type") ?? "", 160);
+  if (lower === "todowrite" || lower === "askuserquestion") return "";
+  // MCP and unknown tools: JSON-stringify the input compactly.
+  try {
+    return truncate(JSON.stringify(input), 160);
+  } catch {
+    return "";
+  }
+}
+
+/**
+ * Slice-24: extract a short preview from the tool's response payload for
+ * the chip's expanded body. Best-effort over the multiple shapes Claude
+ * Code emits: string, { content: [{type:"text", text:...}] }, raw nested
+ * object, etc.
+ */
+function summarizeToolOutput(raw: Record<string, unknown> | undefined): string {
+  if (!raw) return "";
+  const truncate = (s: string, n: number): string =>
+    s.length > n ? s.slice(0, n - 1) + "…" : s;
+  let resp = raw["tool_response"];
+  // Some hook shapes persist tool_response as a JSON-encoded string. Try to
+  // parse it once so we can reach into the structured payload.
+  if (typeof resp === "string" && (resp.startsWith("{") || resp.startsWith("["))) {
+    try {
+      resp = JSON.parse(resp);
+    } catch {
+      // leave as string — falls through to the string branch below.
+    }
+  }
+  if (typeof resp === "string") return truncate(resp, 500);
+  if (!resp || typeof resp !== "object") return "";
+
+  const r = resp as Record<string, unknown>;
+  // Read tool — file content lives at .file.content (Claude Code shape).
+  const file = r["file"];
+  if (file && typeof file === "object") {
+    const f = file as Record<string, unknown>;
+    if (typeof f["content"] === "string") return truncate(f["content"] as string, 500);
+  }
+  // Bash tool — stdout / stderr at top level.
+  if (typeof r["stdout"] === "string" && (r["stdout"] as string).trim()) {
+    return truncate(r["stdout"] as string, 500);
+  }
+  if (typeof r["stderr"] === "string" && (r["stderr"] as string).trim()) {
+    return truncate(r["stderr"] as string, 500);
+  }
+  // Edit/Write — message/result text.
+  if (typeof r["message"] === "string") return truncate(r["message"] as string, 500);
+  if (typeof r["result"] === "string") return truncate(r["result"] as string, 500);
+  // Generic content (string OR Anthropic message-content array).
+  if (typeof r["content"] === "string") return truncate(r["content"] as string, 500);
+  if (Array.isArray(r["content"])) {
+    const parts: string[] = [];
+    for (const item of r["content"] as unknown[]) {
+      if (item && typeof item === "object" && (item as Record<string, unknown>)["type"] === "text") {
+        const t = (item as Record<string, unknown>)["text"];
+        if (typeof t === "string") parts.push(t);
+      }
+    }
+    if (parts.length > 0) return truncate(parts.join("\n"), 500);
+  }
+  // Type-text wrapper (some tool envelopes).
+  if (r["type"] === "text" && typeof r["text"] === "string") {
+    return truncate(r["text"] as string, 500);
+  }
+  // Last resort: JSON-stringify so the user at least sees the shape rather
+  // than nothing.
+  try {
+    return truncate(JSON.stringify(resp), 500);
+  } catch {
+    return "";
+  }
+}
+
+/** Minimal basename — used by summarizeToolInput. Avoids node:path dep. */
+function basename(p: string): string {
+  if (!p) return "";
+  const idx = p.lastIndexOf("/");
+  return idx === -1 ? p : p.slice(idx + 1);
 }
 
 /**
