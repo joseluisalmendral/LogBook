@@ -142,56 +142,68 @@ The v1.3 release (see [`v1.3-roadmap.md`](./v1.3-roadmap.md)) addresses two fric
 1. **`brew install logbook` / `scoop install logbook`** replace the manual clone + link, putting the binary at a stable path (`/opt/homebrew/bin/logbook` or equivalent). This eliminates the "if I move the repo, projects break" failure mode caused by the absolute path in `.mcp.json`.
 2. **`logbook self-update`** adds an in-place upgrade path that detects stale per-project artifacts and refreshes them without requiring `uninstall` + `init`. Pairs with a startup update-check that flags new releases.
 
-## Your first 5 minutes
+## Your first 5 minutes (slice 26+ lean install)
 
-Once the binary is installed, the loop is:
+Once the binary is installed, the loop is dead simple:
 
-1. `cd /to/your/project` — any TypeScript / JavaScript / Python / Go project works. LogBook does not care what stack you use; it captures Claude Code activity, not source code.
-2. Run LogBook for the first time. Two options:
+1. `cd /to/your/project` — any project. LogBook captures Claude Code activity, not source code, so language / stack don't matter.
+
+2. Run `logbook init`:
 
    ```sh
-   logbook                       # zero-arg → opens the TUI wizard
+   logbook init --yes                     # standard preset (default)
    # — or —
-   logbook init --preset standard --yes
+   logbook                                # zero-arg → TUI wizard with animated banner
    ```
 
-   The TUI launches with an animated LogBook banner (cyan ASCII art, 640 ms line-reveal) and then walks you through preset choice and confirmation. `init --yes --preset standard` does the same non-interactively, no banner. Set `LOGBOOK_NO_ANIMATION=1` if you want the banner to render instantly without the typing effect.
+   What gets installed (slice 26 lean):
+   - `.claude/settings.local.json` — registers **2 hooks** (`SessionStart` + `Stop`)
+   - `.claude/mcp.json` — registers `logbook-mcp` server (project-scoped)
+   - `CLAUDE.md` — appends `<!-- lb-augment -->` block with Skill guidance
+   - `.gitignore` — appends `.logbook/` + `logbook/exports/`
+   - Slash commands + Skill files copied to `.claude/`
 
-3. Open the project in Claude Code. The MCP server `logbook-mcp` is registered project-scoped in `.mcp.json`; the PostToolUse hook is registered in `.claude/settings.local.json`; the agent will pick both up on session start.
+3. **Restart Claude Code** so it picks up the new hooks + MCP. (Cerrá la sesión y volvé a abrir `claude`.)
 
-4. Work normally. The agent captures decisions, errors, lessons, and resources automatically via MCP tool calls (driven by the installed Skill). The hook captures every tool call as raw evidence in `logbook/evidence/events.jsonl`.
+4. **Work normally with Claude Code.** Capture is PASSIVE — you do nothing during the session. The transcript is recorded automatically by Claude Code itself. The `Stop` hook triggers the scraper at each turn-end, which backfills `user_prompt`, `claude_message`, `subagent_complete`, `agent_question`, `skill_invoked`, `tool_use`/`tool_result` to `logbook/evidence/events.jsonl`.
 
-5. After a working session, regenerate the docs:
+5. When you want to see the result:
 
    ```sh
-   logbook              # opens TUI dashboard — press [b] to build
-   # — or —
-   logbook build        # non-interactive
+   logbook build                          # backfills from transcripts + generates docs
+   logbook export html --out salida.html  # editorial single-file HTML
+   open salida.html
    ```
 
-6. To see the result, open `logbook/docs/index.md`, or produce a self-contained HTML you can share:
+6. (Optional) For class presentations where you don't want local paths visible:
 
    ```sh
-   logbook export html
-   logbook export instructor-pack
+   logbook export html --safe --out clase.html       # redacts paths/emails/usernames
+   # — or activate Teaching mode in the HTML sidebar (toggleable without re-export)
    ```
 
-   Outputs land in `logbook/exports/`.
+## Sessions you already had BEFORE installing LogBook
 
-7. (Optional) Generate an LLM-backed summary of a milestone. Tokens stream to your terminal in real time as the model writes them (v1.2+); add `--no-stream` if you're piping the output:
+Slice 26's killer feature. The Claude Code transcript at `~/.claude/projects/<encoded>/<sessionId>.jsonl` exists **independently of LogBook** — Claude Code persists it before any hook fires. So:
 
-   ```sh
-   logbook summarize milestone last
-   ```
+```sh
+# Installed LogBook on a repo with months of existing Claude Code sessions?
+cd /to/long-running-project
+logbook init --yes                       # 2 hooks for FUTURE sessions
+logbook build                            # backfills ALL historical sessions from transcripts
+logbook export html --out history.html   # → HTML with every conversation you've ever had
 
-8. (Optional) Check install health and bundle sizes at any time:
+# Output example (real ai-learning-engine repo, no prior LogBook):
+# "Backfilled 175 events from transcripts across 5 sessions."
+```
 
-   ```sh
-   logbook doctor              # quick overview
-   logbook doctor --measure    # full token + bundle breakdown
-   ```
+What `logbook build` actually does (slice 23+26):
+1. Enumerates every `~/.claude/projects/<encoded>/*.jsonl` for the current repo
+2. Runs the transcript scraper on each, idempotent (dedup by `tool_use_id` + `(tool_name, timestamp-second)` fingerprint)
+3. Backfills missed events with `payload.backfilledFromTranscript: true` flag
+4. Generates `logbook/docs/*` markdown files
 
-   See [`03-cli-reference.md`](./03-cli-reference.md#logbook-doctor) for the field reference.
+You can run `logbook build` whenever you want — it never duplicates. If a hook missed something, build recovers it.
 
 ## Choosing your preset
 
@@ -199,16 +211,69 @@ The single most important decision the first-time user makes. Each preset is a f
 
 | Preset | What it installs | Fixed-context tokens | When to use |
 |--------|-------------------|----------------------|-------------|
-| `minimal` | Hook (`PostToolUse`) + `.gitignore` entry. | 0 | You don't use Claude Code, or you want manual CLI capture only with zero context overhead on the agent. |
-| `standard` | minimal + MCP server + 8 slash commands + Skill (`SKILL.md` + `reference.md`) + CLAUDE.md augment block. | 381 | The "use LogBook with Claude Code" default. Captures decisions, errors, lessons, resources automatically via MCP tools driven by the Skill. |
-| `teaching` | standard + 2 subagents (`logbook-curator`, `logbook-teacher`) + statusline + `SessionStart` hook for cross-session memory. | 499 | You are recording a project arc for later teaching, or you want the full pedagogical stack with persistent context across sessions. |
+| `minimal` | 2 hooks (`SessionStart` + `Stop`) + `.gitignore` entry. No MCP, no slash commands, no Skill. | 0 | You don't use Claude Code semantic tools, or you want pure replay capture with zero context overhead. |
+| `standard` (default, slice 26 lean) | minimal + MCP server + 8 slash commands + Skill (`SKILL.md` + `reference.md`) + CLAUDE.md augment block + SessionStart context inject. | ~380 | The "use LogBook with Claude Code" default. Captures decisions, errors, lessons, resources via MCP tools when Claude calls them. |
+| `teaching` | standard + 2 subagents (`logbook-curator`, `logbook-teacher`) + statusline. | ~499 | You are recording a project arc for later teaching, or you want the full pedagogical stack. |
 
 `full` is a forward-compatible alias for `teaching`.
 
+### What slice 26 changed (architectural simplification)
+
+**Before slice 26 (v1.2.x):** 4 hooks — `PostToolUse`, `UserPromptSubmit`, `Stop`, `SessionStart`. Real-time capture path.
+
+**After slice 26 (v1.3+):** 2 hooks — `SessionStart` (context inject) + `Stop` (scraper trigger). Transcript-first capture path.
+
+Why: `PostToolUse` and `UserPromptSubmit` were redundant — Claude Code persists the transcript before any hook fires, so the scraper (which runs at `Stop`) can synthesize identical events with dedup. Removing them = leaner install, fewer points of failure, identical export output. Verified across 9 real sessions, byte-equivalent.
+
+If you specifically need real-time capture (e.g. live dashboard surfaces showing tools as they fire), you can still use a 4-hook install — open an issue or hand-edit `.claude/settings.local.json` after `init`. For the export use case (replay after the session), 2 hooks is strictly better.
+
+### Verifying the install
+
+```sh
+logbook status                           # shows what's installed + recent activity
+logbook doctor                           # diagnostic health check
+logbook doctor --measure                 # full token budget + bundle sizes
+```
+
+If hooks didn't register (Claude Code wasn't restarted), `logbook doctor` flags missing entries.
+
 Notes:
 
-- The 500-token budget is an enforced ceiling (§23, §37). Teaching sits at 499 with a 1-token margin.
+- The 500-token budget is an enforced ceiling (§23, §37). Teaching sits at ~499 with a 1-token margin.
 - All presets are byte-identically reversible (§24.8, §37). `logbook uninstall --force` restores every shared file to its pre-install bytes.
+
+## Workflow recap for your colleague (TL;DR)
+
+```sh
+# ONE TIME, system-wide
+git clone https://github.com/joseluisalmendral/LogBook.git
+cd LogBook
+pnpm install && pnpm build && pnpm link --global
+
+# IN EACH PROJECT
+cd /path/to/repo
+logbook init --yes
+# (restart Claude Code for hooks to register)
+
+# WHEN YOU WANT THE HTML
+logbook build
+logbook export html --out ~/Desktop/replay.html
+open ~/Desktop/replay.html
+```
+
+That's it. Whether the repo is fresh or has 6 months of Claude Code sessions already, `logbook build` recovers everything from transcripts. No risk of data loss; no manual capture during sessions.
+
+## Troubleshooting first run
+
+| Symptom | Fix |
+|---|---|
+| `logbook: command not found` | `pnpm link --global` failed. Run `pnpm setup` (one-time), close+reopen terminal, retry. |
+| Hooks not firing in Claude Code | Restart Claude Code (cerrar la sesión y reabrirla). Hooks register at startup only. |
+| `logbook build` says "0 events" | Either: (a) no Claude Code sessions exist for this repo yet, or (b) the project root doesn't match what Claude Code recorded. Check `~/.claude/projects/` for an encoded folder matching your repo path. |
+| HTML missing tool details | Run `logbook build` first; it backfills tools from transcript. |
+| Repo path changed and now things break | Claude Code encodes the absolute path. If you moved the repo, old transcripts stay under the OLD encoded folder. Recopy them or re-run sessions under the new path. |
+
+For deeper issues see [`07-troubleshooting.md`](./07-troubleshooting.md).
 
 ## Setting up the LLM
 
