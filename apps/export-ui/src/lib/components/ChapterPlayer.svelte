@@ -223,6 +223,21 @@
 
       <ChapterHeader {chapter} />
 
+      {#if chapter.ghostTurns}
+        <!-- Slice-21 R-89 / ADR-SN-B3: this chapter has user prompts but no
+             Claude messages (e.g. session captured on a machine without the
+             transcript scraper). Surface a single neutral notice at chapter
+             top so the gap is explicit, not mysterious. -->
+        <aside class="ghost-turn-notice" data-testid="ghost-turn-notice">
+          <span class="notice-icon" aria-hidden="true">⚠</span>
+          <p>
+            Claude responses unavailable for this session — no local transcript
+            was captured. Your prompts are shown below; tool activity may have
+            run but is not paired with replies.
+          </p>
+        </aside>
+      {/if}
+
       <div class="phases">
         {#each groups as group, gi}
           {#if group.phase}
@@ -301,6 +316,35 @@
 
   .back-btn:hover {
     text-decoration: underline;
+  }
+
+  /* Slice-21 R-89: ghost-turn notice. Subtle neutral surface, accent
+     border-left to flag that something is non-standard without alarming.
+     Static — no entry animation (does not consume motion budget). */
+  .ghost-turn-notice {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--p-space-3);
+    background: var(--color-surface-sunken);
+    border: 1px solid var(--color-border-hairline);
+    border-left: 3px solid var(--color-text-secondary);
+    border-radius: var(--card-radius);
+    padding: var(--p-space-3) var(--p-space-4);
+    margin: var(--p-space-3) 0 var(--p-space-4) 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-size-meta);
+    line-height: 1.5;
+  }
+
+  .ghost-turn-notice .notice-icon {
+    color: var(--color-text-secondary);
+    font-size: 1rem;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .ghost-turn-notice p {
+    margin: 0;
   }
 
   .events-stream {
