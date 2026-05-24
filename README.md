@@ -39,7 +39,7 @@ cd /path/to/your-project
 logbook init --yes                         # install standard preset (or just `logbook` for the TUI wizard)
 # work normally in Claude Code — auto-capture is on
 logbook build                              # regenerate logbook/docs/*
-logbook export instructor-pack             # produce a single shareable HTML
+logbook export html                        # produce a single shareable interactive HTML
 ```
 
 Three presets: `minimal` (hooks only, 0 fixed tokens), `standard` (default, 381 tokens), `teaching` (full pedagogical stack, 499 tokens). Use `--preset minimal` for hook-only installs without MCP or slash commands.
@@ -64,18 +64,10 @@ logbook providers test --task teaching-script --json
 
 ### PDF export
 
-`logbook export pdf` requires Chrome or Chromium:
-
-```sh
-# macOS
-brew install --cask google-chrome
-# Linux
-apt install chromium-browser
-# Then:
-logbook export pdf [--out <path>] [--safe] [--theme <path.css>]
-```
-
-Set `CHROME_PATH` env var to point to a non-default Chrome binary.
+The dedicated `logbook export pdf` command was removed in slice 19 (the legacy
+multi-page shell it depended on was deleted). To produce a PDF, open the new
+interactive HTML (`logbook export html`) in any browser and use its print-to-PDF
+feature.
 
 ### Annotations and speaker notes
 
@@ -85,7 +77,6 @@ logbook annotate <event-id> --note "This decision was pivotal because..."
 
 # Export HTML with speaker notes rendered:
 logbook export html --speaker-mode
-logbook export instructor-pack --speaker-mode
 ```
 
 Speaker note blocks use the `<!-- logbook:speaker start --> ... <!-- logbook:speaker end -->` marker family.
@@ -103,9 +94,7 @@ Quick reference:
 | `logbook decision --title "..." --chosen "..."` | Record an architectural decision (ADR) |
 | `logbook decision --with-diff` | Record ADR + capture git SHA + diff stats |
 | `logbook annotate <event-id> --note "..."` | Add a note to any captured event |
-| `logbook export html [--safe] [--theme <css>] [--speaker-mode]` | Self-contained HTML |
-| `logbook export instructor-pack [--safe] [--speaker-mode]` | Full instructor bundle |
-| `logbook export pdf [--out <path>] [--safe] [--theme <css>]` | PDF via Chrome/Chromium |
+| `logbook export html [--safe] [--speaker-mode] [--no-transcripts]` | Self-contained interactive HTML (single file) |
 | `logbook providers list` | List configured LLM providers |
 | `logbook providers set <target> <provider>` | Configure routing |
 | `logbook providers test [--task <name>]` | Validate provider round-trip |

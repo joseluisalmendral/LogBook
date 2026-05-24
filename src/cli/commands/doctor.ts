@@ -94,7 +94,7 @@ export function formatBundleLine(r: BundleResult, nc: boolean): string {
 }
 
 // D6: bundle cap table — [name, path-relative-to-root, capKb]
-const BC=[["cli","dist/cli/index.cjs",400],["hook","dist/connectors/claude-code/hook.cjs",50],["mcp","dist/mcp/server.cjs",100],["html","dist/export/html.cjs",400],["pdf","dist/export/pdf.cjs",80]] as [string,string,number][];
+const BC=[["cli","dist/cli/index.cjs",400],["hook","dist/connectors/claude-code/hook.cjs",50],["mcp","dist/mcp/server.cjs",100],["html","dist/export/html.cjs",400]] as [string,string,number][];
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const _fs=require("node:fs") as {statSync:(p:string)=>{size:number}};
 function checkBundles(root: string): BundleResult[] {

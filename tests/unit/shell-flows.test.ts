@@ -236,9 +236,9 @@ describe("select on home", () => {
     };
   }
 
-  // HOME_ACTIONS order (0-indexed):
-  // 0=build, 1=review, 2=summarize, 3=export-html, 4=export-instructor-pack,
-  // 5=configure, 6=doctor, 7=install, 8=uninstall, 9=quit  (varies — test by known positions)
+  // HOME_ACTIONS order (0-indexed, slice 19 removed export-instructor-pack):
+  // 0=build, 1=review, 2=summarize, 3=export-html, 4=configure,
+  // 5=doctor, 6=install, 7=uninstall, 8=quit
   //
   // We test structural behaviour: some cursors → doing, install → install, quit → exiting
 
@@ -249,15 +249,16 @@ describe("select on home", () => {
   });
 
   it("cursor mapped to 'configure' → transitions to configure screen, cursor=0", () => {
-    // configure = index 5
-    const s = dispatch(homeState(5), { type: "select" });
+    // configure = index 4 (slice 19 removed export-instructor-pack at index 4,
+    // shifting configure from 5 → 4)
+    const s = dispatch(homeState(4), { type: "select" });
     expect(s.screen.kind).toBe("configure");
     if (s.screen.kind === "configure") expect(s.screen.cursor).toBe(0);
   });
 
   it("cursor mapped to 'install' → transitions to install step 1", () => {
-    // install = index 7
-    const s = dispatch(homeState(7), { type: "select" });
+    // install = index 6 (was 7 pre-slice-19)
+    const s = dispatch(homeState(6), { type: "select" });
     expect(s.screen.kind).toBe("install");
     if (s.screen.kind === "install") {
       expect(s.screen.step).toBe(1);
@@ -266,7 +267,7 @@ describe("select on home", () => {
   });
 
   it("cursor mapped to 'quit' → transitions to exiting", () => {
-    // quit = index 9 (last)
+    // quit = last index (slice 19 menu length 9 → last index = 8)
     const s = dispatch(homeState(HOME_MENU_LEN - 1), { type: "select" });
     expect(s.screen.kind).toBe("exiting");
   });
@@ -283,8 +284,8 @@ describe("select on home", () => {
   });
 
   it("cursor mapped to 'doctor' → transitions to doing with doctor label", () => {
-    // doctor = index 6
-    const s = dispatch(homeState(6), { type: "select" });
+    // doctor = index 5 (was 6 pre-slice-19)
+    const s = dispatch(homeState(5), { type: "select" });
     expect(s.screen.kind).toBe("doing");
     if (s.screen.kind === "doing") {
       expect(s.screen.promise).toBe("pending");
