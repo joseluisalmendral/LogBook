@@ -16,6 +16,7 @@
 -->
 <script lang="ts">
   import { onMount } from "svelte";
+  import { animate, stagger } from "motion";
   import { payload } from "../stores/data";
   import { router } from "../stores/router";
   import { subscribeMotion, getMotionState } from "../stores/motion";
@@ -244,6 +245,48 @@
     onScroll(); // initial state
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
+  });
+
+  /*
+   * Slice 28 — WOW entrance for the events stream via Motion One.
+   *
+   * On mount, animate the first ~20 visible event-anchor rows with a
+   * staggered fade-up. Spring physics + custom ease give the wall of
+   * rows a "settling into place" feel rather than appearing all at
+   * once. Beyond the first 20 we leave at final state (no animation)
+   * to avoid janky compositor work on long chapters.
+   *
+   * Reduced-motion skips the animation entirely — rows stay in their
+   * final position.
+   */
+  onMount(() => {
+    const motionState = getMotionState();
+    if (!motionState.motionAllowed) return;
+
+    // Defer to the next frame so DOM is fully painted before animation.
+    const raf = requestAnimationFrame(() => {
+      const rows = Array.from(
+        document.querySelectorAll<HTMLElement>(".event-anchor"),
+      ).slice(0, 20);
+      if (rows.length === 0) return;
+
+      // Initial state: slightly down + transparent.
+      for (const row of rows) {
+        row.style.opacity = "0";
+        row.style.transform = "translateY(14px)";
+      }
+
+      animate(
+        rows,
+        { opacity: 1, transform: "translateY(0px)" },
+        {
+          delay: stagger(0.05, { startDelay: 0.08 }),
+          duration: 0.55,
+          ease: [0.22, 1, 0.36, 1],
+        },
+      );
+    });
+    return () => cancelAnimationFrame(raf);
   });
 
   // Slice-25: keyboard shortcuts for zen mode.

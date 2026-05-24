@@ -13,24 +13,47 @@
 
 :root {
   /* -----------------------------------------------------------------------
-   * Palette — light mode hex values (design §1.2)
-   * Editorial direction: Stripe Press / Apple Newsroom warm-cream paper.
+   * Palette — Slice 28 editorial rebrand (Syllabus DESIGN.md × Claude)
+   *
+   * Foundation:
+   *   - Canvas Cream    — Syllabus.io "digital blueprint on cream paper"
+   *   - Inkwell Violet  — primary text, gravitas
+   *   - Teal Basin      — block accents (sub-agents, callouts)
+   *   - Glow Yellow     — sparing highlights, focus areas
+   *   - Claude Ember    — Anthropic warm orange, the Claude burst color
+   *                       (custom add: ties the editorial paper to the
+   *                       Claude product identity without the cliché)
+   *
+   * Pitch-Black + Pure-White anchor the strongest contrast endpoints.
    * --------------------------------------------------------------------- */
-  --p-cream-50: #faf8f4;        /* warm-cream page background */
-  --p-cream-25: #ffffff;         /* raised cards, inspector */
-  --p-cream-100: #f1eee8;        /* sunken code blocks, scrubber track */
-  --p-graphite-900: #1a1a1f;     /* deep graphite body text */
-  --p-graphite-600: #5c5c66;     /* secondary text */
-  --p-graphite-400: #8c8c96;     /* tertiary / dimmed */
-  --p-graphite-overlay-10: rgba(26, 26, 31, 0.10);
 
-  --p-navy-700: #1e3a5f;         /* primary action / links */
-  --p-terracotta-600: #9c5226;   /* secondary categories, lessons */
-  --p-sage-600: #2f6b47;         /* success / fix */
-  --p-brick-600: #a33b2a;        /* error markers */
-  --p-amber-700: #b07a2b;        /* warning */
-  --p-plum-700: #5b3a8c;         /* decision milestone */
-  --p-gold-700: #8c5e1f;         /* agent_question forks (antique gold) */
+  /* ── Surfaces ── */
+  --p-cream-50:    #fffcf7;      /* Canvas Cream — primary page bg */
+  --p-cream-25:    #ffffff;      /* Pure White — raised cards */
+  --p-cream-100:   #f5f1ea;      /* slightly deeper sunken (code, scrubber) */
+
+  /* ── Text on cream ── */
+  --p-graphite-900: #0d0129;     /* Inkwell Violet — body / headings */
+  --p-graphite-600: #2c2545;     /* secondary text (lifted violet) */
+  --p-graphite-400: #5a5470;     /* tertiary / dimmed */
+  --p-graphite-overlay-10: rgba(13, 1, 41, 0.10);
+
+  /* ── Accents (categorical, editorial) ── */
+  --p-navy-700:      #d77a4a;    /* Claude Ember — primary action / focus */
+  --p-terracotta-600: #c14a1f;   /* deeper ember for lessons */
+  --p-sage-600:      #19615c;    /* Teal Basin — success / fix */
+  --p-brick-600:     #a33b2a;    /* error */
+  --p-amber-700:     #b07a2b;    /* warning */
+  --p-plum-700:      #0d0129;    /* decision = inkwell violet (gravitas) */
+  --p-gold-700:      #8c5e1f;    /* agent_question forks */
+
+  /* ── Editorial-specific tokens (new in slice 28) ── */
+  --p-teal-basin:    #19615c;    /* Teal Basin — block backgrounds */
+  --p-teal-basin-12: rgba(25, 97, 92, 0.12); /* tinted teal fill */
+  --p-glow-yellow:   #fae59b;    /* Glow Yellow — accents, highlights */
+  --p-glow-yellow-50: rgba(250, 229, 155, 0.50);
+  --p-pitch-black:   #000000;    /* strongest borders */
+  --p-claude-ember:  #d77a4a;    /* the burst color, available as alias */
 
   /* -----------------------------------------------------------------------
    * Palette — dark mode hex values (design §1.3)
@@ -58,12 +81,22 @@
    * Single self-contained HTML, no @font-face, no base64. System stacks
    * resolve to OS-native editorial serifs / sans / mono.
    * --------------------------------------------------------------------- */
+  /*
+   * Slice 28 — Roobert-aligned system stack. Roobert (Syllabus DESIGN.md)
+   * is proprietary; we approximate with Inter (open) and system-ui.
+   * Letter-form proportions match closely. Headlines use the same stack
+   * with weight 700 — the editorial direction discourages a separate
+   * serif. Supply (secondary mono-like) → JetBrains / SF Mono.
+   *
+   * INV-2 self-contained constraint: no @font-face / no CDN. System
+   * stacks resolve to the OS-native closest match.
+   */
   --p-font-serif:
-    "Iowan Old Style", "Palatino Linotype", "Hoefler Text",
-    Palatino, Georgia, serif;
+    "Inter", -apple-system, BlinkMacSystemFont, system-ui,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --p-font-sans:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI",
-    Roboto, "Helvetica Neue", Arial, sans-serif;
+    "Inter", -apple-system, BlinkMacSystemFont, system-ui,
+    "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
   --p-font-mono:
     ui-monospace, "SF Mono", "JetBrains Mono", "Berkeley Mono",
     Menlo, Consolas, monospace;
@@ -94,10 +127,19 @@
   --p-space-9: 96px;
   --p-space-10: 128px;
 
-  /* Radius scale */
-  --p-radius-xs: 4px;
-  --p-radius-sm: 6px;
-  --p-radius-md: 8px;
-  --p-radius-lg: 12px;
-  --p-radius-xl: 16px;
+  /*
+   * Radius scale — Slice 28 editorial (DESIGN.md: "0px for all", 4px
+   * reserved for the Waitlist-style accent button).
+   *
+   * We keep the named tokens so components don't break, but bias them
+   * toward the editorial zero. Pills (chips, toggles) override with 999
+   * locally where roundness IS the right pattern.
+   */
+  --p-radius-xs: 0px;
+  --p-radius-sm: 0px;
+  --p-radius-md: 0px;
+  --p-radius-lg: 0px;
+  --p-radius-xl: 0px;
+  --p-radius-pill: 999px;       /* opt-in for chips / toggles */
+  --p-radius-accent: 4px;       /* DESIGN.md's "Waitlist" exception */
 }

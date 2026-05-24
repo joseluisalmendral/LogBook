@@ -109,6 +109,19 @@
 
   const hasStrips = $derived(toolStrip.length > 0 || filesTouched.length > 0);
 
+  // Slice-28: thinking-marker variant. Reads both top-level and payload
+  // because render-context's normalize sometimes flattens and sometimes
+  // doesn't (depends on the writer). Marker is BEAT-only — Anthropic
+  // encrypts the body so there's no content to render.
+  const isThinking = $derived(
+    (event as { isThinking?: boolean }).isThinking === true ||
+      evPayload["isThinking"] === true,
+  );
+  const thinkingEncrypted = $derived(
+    (event as { thinkingEncrypted?: boolean }).thinkingEncrypted !== false &&
+      evPayload["thinkingEncrypted"] !== false,
+  );
+
   let expanded = $state(false);
   const regionId = $derived(`claude-message-region-${event.id}`);
 
@@ -162,31 +175,84 @@
   button in the eyebrow. Expand lives in the chevron button. Everything
   else is read-only content.
 -->
+<!--
+  Slice 28 thinking-marker fork: a thinking turn renders as a compact
+  inline marker instead of a full bubble. Anthropic encrypts the
+  thinking body, so there's no content to show; the marker still
+  surfaces the BEAT (timestamp + visual pulse) so the audience can
+  follow the conversation pace.
+-->
+{#if isThinking}
+  <div
+    class="thinking-marker lb-snap-target"
+    data-testid="claude-thinking-marker"
+    data-event-id={event.id}
+    data-thinking="true"
+  >
+    <span class="thinking-glyph" aria-hidden="true">
+      <svg viewBox="0 0 20 20" width="14" height="14" fill="currentColor" aria-hidden="true">
+        <g transform="translate(10 10)">
+          <ellipse rx="1.2" ry="8" transform="rotate(0)" />
+          <ellipse rx="1.2" ry="8" transform="rotate(45)" />
+          <ellipse rx="1.2" ry="8" transform="rotate(90)" />
+          <ellipse rx="1.2" ry="8" transform="rotate(135)" />
+          <circle r="2.4" />
+        </g>
+      </svg>
+    </span>
+    <span class="thinking-label">Claude reasoning</span>
+    <span class="thinking-meta">{thinkingEncrypted ? "encrypted" : "internal"}</span>
+    <span class="thinking-time lb-tnum">{formatTime(event.ts)}</span>
+  </div>
+{:else}
 <div
   class="claude-message-row lb-snap-target"
   data-testid="claude-message-row"
   data-event-id={event.id}
   data-expanded={expanded}
-  data-thinking={
-    ((event as { isThinking?: boolean }).isThinking === true ||
-      (event.payload as Record<string, unknown> | undefined)?.["isThinking"] === true)
-      ? "true" : "false"
-  }
 >
   <div class="bubble">
     <header class="eyebrow">
       <!--
-        Slice-27: official Anthropic sparkle/asterisk mark. 8-point burst
-        with thicker cardinal rays — the same geometry Anthropic publishes
-        in its press kit. Drawn inline with `fill="currentColor"` so it
-        adapts to theme (light/dark) without needing two assets.
+        Slice-28: official Claude burst mark (the organic 11-ray sunburst
+        Anthropic uses across product chrome and press kit). Each ray is
+        a tapered shape drawn from the center, with slight angular and
+        length variation so the burst feels hand-drawn rather than
+        geometric.
 
-        Visual proportions match the published mark (16x16 viewBox, 4
-        cardinal arms + 4 diagonal arms half their length).
+        Geometry: viewBox 100x100; rays radiate from the origin (50,50).
+        Each path is a quadrilateral with a rounded tip — `stroke-linecap`
+        isn't enough, so we draw the silhouette explicitly. The angles
+        cycle every ~33° (≈360 ÷ 11) with intentional ±3° jitter for
+        organic feel.
+
+        Fill = currentColor so the avatar inherits whatever the parent
+        sets (Claude Ember in normal use; muted graphite when thinking).
       -->
       <span class="avatar" aria-hidden="true">
-        <svg viewBox="0 0 16 16" width="20" height="20" fill="currentColor" aria-hidden="true">
-          <path d="M8 0.5 C8.6 4 9.3 5.4 10.5 5.6 L15.5 8 L10.5 10.4 C9.3 10.6 8.6 12 8 15.5 C7.4 12 6.7 10.6 5.5 10.4 L0.5 8 L5.5 5.6 C6.7 5.4 7.4 4 8 0.5 Z" />
+        <svg viewBox="0 0 100 100" width="26" height="26" fill="currentColor" aria-hidden="true">
+          <!--
+            Slice-28 take 2: thicker, more organic Claude burst.
+            Each ray = ellipse rotated around the center. Combining
+            ellipses (which the browser unions visually under same fill)
+            gives the fat hand-drawn petal silhouette of the real mark.
+            11 rays with slight length / thickness variation.
+          -->
+          <g transform="translate(50 50)">
+            <ellipse rx="5"   ry="42" cy="-5"  transform="rotate(0)" />
+            <ellipse rx="4.5" ry="38" cy="-6"  transform="rotate(33)" />
+            <ellipse rx="5"   ry="40" cy="-5"  transform="rotate(63)" />
+            <ellipse rx="4.5" ry="36" cy="-7"  transform="rotate(97)" />
+            <ellipse rx="5"   ry="42" cy="-5"  transform="rotate(125)" />
+            <ellipse rx="4.5" ry="38" cy="-6"  transform="rotate(158)" />
+            <ellipse rx="5"   ry="40" cy="-5"  transform="rotate(192)" />
+            <ellipse rx="4.5" ry="38" cy="-7"  transform="rotate(225)" />
+            <ellipse rx="5"   ry="42" cy="-5"  transform="rotate(258)" />
+            <ellipse rx="4.5" ry="36" cy="-6"  transform="rotate(290)" />
+            <ellipse rx="5"   ry="38" cy="-5"  transform="rotate(325)" />
+            <!-- Central anchor blob slightly off-center for organic feel. -->
+            <circle r="9" cy="1" cx="0.5" />
+          </g>
         </svg>
       </span>
       <span class="who">Claude</span>
@@ -324,6 +390,7 @@
     {/if}
   </div>
 </div>
+{/if}
 
 <style>
   /*
@@ -708,5 +775,61 @@
       width: 100%;
       padding: var(--p-space-3);
     }
+  }
+
+  /*
+   * Slice-28 thinking marker — compact beat-only row used when a
+   * claude_message represents an encrypted-by-Anthropic thinking
+   * pause. Centered, dashed border, dim accent. Pulses subtly
+   * (reduced-motion safe) so the audience perceives the beat.
+   */
+  .thinking-marker {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--p-space-2);
+    margin: var(--p-space-2) auto;
+    padding: 6px 12px;
+    border: 1px dashed color-mix(in srgb, var(--color-accent-primary) 32%, var(--color-border-hairline));
+    background: color-mix(in srgb, var(--color-accent-primary) 4%, var(--color-surface));
+    color: color-mix(in srgb, var(--color-accent-primary) 80%, var(--color-text-secondary));
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    align-self: center;
+    width: fit-content;
+  }
+
+  .thinking-glyph {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-accent-primary);
+    animation: thinking-pulse 2.2s ease-in-out infinite;
+  }
+
+  @keyframes thinking-pulse {
+    0%, 100% { opacity: 0.4; transform: rotate(0deg) scale(0.85); }
+    50%      { opacity: 1;    transform: rotate(180deg) scale(1.0); }
+  }
+
+  .thinking-label {
+    color: inherit;
+    font-weight: 700;
+  }
+
+  .thinking-meta {
+    color: var(--color-text-tertiary);
+    font-weight: 400;
+  }
+
+  .thinking-time {
+    color: var(--color-text-tertiary);
+    margin-left: var(--p-space-2);
+  }
+
+  :global(html[data-motion="reduced"]) .thinking-glyph {
+    animation: none;
+    opacity: 0.7;
   }
 </style>

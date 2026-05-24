@@ -11,8 +11,15 @@
  */
 
 :root {
-  /* Card chrome (design §1.5 — editorial card padding 32px = --p-space-6) */
-  --card-padding: var(--p-space-6);
+  /*
+   * Slice 28 — editorial card chrome.
+   *   - Card padding 24px (DESIGN.md "Element gap: 24px").
+   *   - Radius 0 (DESIGN.md "all corner radii should be 0").
+   *   - Border: hairline by default. Components that need stronger
+   *     authority (sub-agent cards, decision milestones) override with
+   *     a 1px Inkwell Violet stroke locally.
+   */
+  --card-padding: var(--p-space-5);
   --card-radius: var(--p-radius-md);
   --card-border: 1px solid var(--color-border-hairline);
 
@@ -27,10 +34,13 @@
   --inspector-width: 480px;
   --inspector-backdrop-color: rgba(0, 0, 0, 0.40);
 
-  /* Radius aliases (re-exported semantic → component for clarity) */
+  /* Radius aliases (re-exported semantic → component for clarity).
+     Slice-28: all 0 by default; pills opt in via --radius-pill. */
   --radius-xs: var(--p-radius-xs);
   --radius-sm: var(--p-radius-sm);
   --radius-md: var(--p-radius-md);
   --radius-lg: var(--p-radius-lg);
   --radius-xl: var(--p-radius-xl);
+  --radius-pill: var(--p-radius-pill);
+  --radius-accent: var(--p-radius-accent);
 }
