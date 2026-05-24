@@ -33,7 +33,12 @@ export interface ExportOptions {
   paths: ProjectPaths;
   /** Output path. Default: <projectRoot>/logbook/exports/index.html */
   outFile?: string;
-  /** Reserved for parity with the legacy API. Currently unused by the new shell. */
+  /**
+   * Slice-17 --safe re-feature: when true, sanitize user-authored text
+   * (event body Markdown, sub-agent fullPrompt / response / promptSummary)
+   * with `sanitizeForSafeExport` before it lands in the embedded payload.
+   * Wired through `buildExportPayload({ safe })`.
+   */
   safe?: boolean;
   /** Reserved for parity with the legacy API. Currently unused — the UI ships its own tokens. */
   themePath?: string;
@@ -144,6 +149,11 @@ export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
 
   const buildOpts: Parameters<typeof buildExportPayload>[2] = {
     noTranscripts: initialNoTranscripts,
+    // Slice-17 --safe re-feature: forward the CLI flag down to payload
+    // assembly so user-authored text (event body Markdown + sub-agent
+    // fullPrompt / response / promptSummary) gets path/email/username
+    // tokens before it lands in the embedded JSON payload.
+    safe: opts.safe === true,
   };
   if (remoteUrl !== undefined) buildOpts.remoteUrl = remoteUrl;
   let buildResult = await buildExportPayload(ctx, paths, buildOpts);
@@ -187,6 +197,7 @@ export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
     );
     const rebuildOpts: Parameters<typeof buildExportPayload>[2] = {
       noTranscripts: true,
+      safe: opts.safe === true,
     };
     if (remoteUrl !== undefined) rebuildOpts.remoteUrl = remoteUrl;
     buildResult = await buildExportPayload(ctx, paths, rebuildOpts);

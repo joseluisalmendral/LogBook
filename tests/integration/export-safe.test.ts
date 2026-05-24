@@ -48,18 +48,11 @@ beforeAll(() => {
 const SENSITIVE_PATH = "/Users/alice/myproject/src/index.ts";
 const SENSITIVE_EMAIL = "alice@example.com";
 
-/**
- * The redaction tokens as they appear in the final HTML body.
- *
- * sanitizeForSafeExport outputs &lt;path&gt; into the markdown source.
- * When remark-parse reads &lt;, it decodes it to the literal `<` character.
- * rehype-stringify then re-encodes `<` using its own scheme: &#x3C;
- * So the final HTML body contains &#x3C;path> (not &lt;path&gt;).
- *
- * Both forms are semantically equivalent and render as <path> in the browser.
- */
-const HTML_TOKEN_PATH = "&#x3C;path>";
-const HTML_TOKEN_EMAIL = "&#x3C;email>";
+// Slice-17: removed HTML_TOKEN_PATH / HTML_TOKEN_EMAIL constants. They were
+// keyed to the legacy remark/rehype pipeline that re-encoded `<` to `&#x3C;`.
+// The new pipeline (slice 10 onwards) embeds events as JSON and sanitization
+// lands tokens like `&lt;path&gt;` directly; the corresponding payload-level
+// assertions live in `tests/unit/build-export-payload.test.ts`.
 
 function makeTmpProject(): string {
   const tmp = fs.realpathSync(os.tmpdir());
@@ -171,17 +164,6 @@ describe("export-html-safe — --safe flag integration", () => {
     expect(html).not.toContain("/Users/alice");
   });
 
-  // SLICE-13 SKIP: new export pipeline does not embed docs markdown into HTML.
-  // Re-enable when --safe is re-featured for event-body + transcript content.
-  it.skip("--safe: HTML contains the HTML-encoded <path> token", () => {
-    const dir = makeTmpProject();
-    runCli(["export", "html", "--safe"], dir);
-    const htmlPath = path.join(dir, "logbook", "exports", "index.html");
-    const html = fs.readFileSync(htmlPath, "utf8");
-    // sanitizeForSafeExport emits &lt;path&gt; which rehype passes through
-    expect(html).toContain(HTML_TOKEN_PATH);
-  });
-
   it("--safe: HTML does not contain the original email address", () => {
     const dir = makeTmpProject();
     runCli(["export", "html", "--safe"], dir);
@@ -190,35 +172,13 @@ describe("export-html-safe — --safe flag integration", () => {
     expect(html).not.toContain(SENSITIVE_EMAIL);
   });
 
-  // SLICE-13 SKIP: same reason as <path> token above.
-  it.skip("--safe: HTML contains the HTML-encoded <email> token", () => {
-    const dir = makeTmpProject();
-    runCli(["export", "html", "--safe"], dir);
-    const htmlPath = path.join(dir, "logbook", "exports", "index.html");
-    const html = fs.readFileSync(htmlPath, "utf8");
-    expect(html).toContain(HTML_TOKEN_EMAIL);
-  });
-
-  // SLICE-13 SKIP: docs no longer flow into HTML payload (slice-10 rewrite).
-  // Re-enable when --safe re-feature lands and event bodies carry user content.
-  it.skip("negative control: without --safe, original path appears in HTML", () => {
-    const dir = makeTmpProject();
-    runCli(["export", "html"], dir);
-    const htmlPath = path.join(dir, "logbook", "exports", "index.html");
-    const html = fs.readFileSync(htmlPath, "utf8");
-    // Without --safe the path is not redacted
-    expect(html).toContain("/Users/alice");
-  });
-
-  // SLICE-13 SKIP: same reason as path negative control above.
-  it.skip("negative control: without --safe, original email appears in HTML", () => {
-    const dir = makeTmpProject();
-    runCli(["export", "html"], dir);
-    const htmlPath = path.join(dir, "logbook", "exports", "index.html");
-    const html = fs.readFileSync(htmlPath, "utf8");
-    // Without --safe the email is not redacted
-    expect(html).toContain("alice@example.com");
-  });
+  // Slice-17: the 4 token-presence + negative-control assertions that lived
+  // here previously asserted contracts of the slice-10-pre legacy shell (docs
+  // markdown → rendered HTML body). The new pipeline reads only events.jsonl
+  // into the JSON payload, so those assertions no longer fit. End-to-end
+  // --safe behavior is covered at the payload assembly layer by the
+  // slice-17 unit tests in `tests/unit/build-export-payload.test.ts` (event
+  // body redaction + sub-agent prompt/response redaction).
 
   it("--safe with --json emits ExportReport JSON with externalRefs=0", () => {
     const dir = makeTmpProject();
