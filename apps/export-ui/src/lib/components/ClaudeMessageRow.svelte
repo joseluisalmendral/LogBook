@@ -800,17 +800,18 @@
     width: fit-content;
   }
 
+  /*
+   * Slice 29.0: the glyph is STATIC. The slice-28 pulse animation was
+   * visually noisy and pulled attention away from the conversation
+   * proper. The Claude burst now sits in its final state and lets the
+   * dashed border + label carry the "thinking beat" message.
+   */
   .thinking-glyph {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     color: var(--color-accent-primary);
-    animation: thinking-pulse 2.2s ease-in-out infinite;
-  }
-
-  @keyframes thinking-pulse {
-    0%, 100% { opacity: 0.4; transform: rotate(0deg) scale(0.85); }
-    50%      { opacity: 1;    transform: rotate(180deg) scale(1.0); }
+    opacity: 0.85;
   }
 
   .thinking-label {
@@ -829,7 +830,6 @@
   }
 
   :global(html[data-motion="reduced"]) .thinking-glyph {
-    animation: none;
     opacity: 0.7;
   }
 </style>
