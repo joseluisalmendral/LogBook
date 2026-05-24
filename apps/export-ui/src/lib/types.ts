@@ -76,6 +76,14 @@ export interface Chapter {
    * `src/generate/build-export-payload.ts → Chapter.filesTouched`.
    */
   filesTouched?: FileTouch[];
+  /**
+   * Slice-21 narrative-rebuild (R-89, ADR-SN-B3): true when this chapter has
+   * one or more `user_prompt` events but ZERO `claude_message` events
+   * (e.g. a session captured on a machine where the transcript scraper did
+   * not run). Backend sets this in build-export-payload.ts; the UI surfaces
+   * a notice at chapter top when true. Optional — older payloads omit it.
+   */
+  ghostTurns?: boolean;
 }
 
 /**
