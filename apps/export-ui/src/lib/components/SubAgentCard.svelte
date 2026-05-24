@@ -296,17 +296,26 @@
    * interpolate-size: allow-keywords lets `auto` be a transition target on
    * supporting browsers; older browsers fall through to instant resize.
    */
+  /*
+   * Slice 30 — Paper Brutalism for sub-agent cards.
+   *   - 0px corners.
+   *   - 1px hairline violet border + 4px Teal Basin border-left.
+   *   - Hard 4px drop shadow at 14% violet when expanded.
+   */
   .card-wrap {
     display: block;
-    margin: var(--p-space-3) 0;
+    margin: var(--p-space-4) 0;
     background: var(--color-surface-raised);
-    border: var(--card-border);
-    border-radius: var(--card-radius);
-    border-left: 3px solid var(--color-subagent);
-    box-shadow: 0 1px 0 var(--color-border-hairline);
+    border: 1px solid color-mix(in srgb, var(--color-text-primary) 16%, transparent);
+    border-left: 4px solid var(--color-subagent);
+    border-radius: 0;
     interpolate-size: allow-keywords;
     overflow: hidden;
     position: relative;
+  }
+
+  .card-wrap[data-expanded="true"] {
+    box-shadow: 4px 4px 0 0 color-mix(in srgb, var(--color-subagent) 30%, transparent);
   }
 
   /* ---- MOMENT 1: sub-agent deploy entrance --------------------------- */
@@ -465,7 +474,7 @@
     margin-left: var(--p-space-2);
     width: 32px;
     height: 32px;
-    border-radius: 999px;
+    border-radius: 4px;   /* Slice 30: editorial 4px (was 999 pill) */
     background: var(--color-surface-sunken);
     border: 1px solid var(--color-border-hairline);
     color: var(--color-text-secondary);

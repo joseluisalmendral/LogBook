@@ -90,20 +90,25 @@
     cursor: pointer;
   }
 
+  /*
+   * Slice 30 — Paper Brutalism for the user-prompt bubble.
+   *
+   *  - 0px corners.
+   *  - Glow-Yellow wash background (the editorial highlight role).
+   *  - 3px Inkwell Violet border-right (mirror of Claude's accent-left
+   *    so the two voices feel visually anchored to opposite sides of
+   *    the page).
+   *  - 1px hairline violet on top/bottom/left at 16%.
+   *  - No soft shadow; no transition on borders (static feel).
+   */
   .bubble {
-    background: color-mix(in srgb, var(--color-accent-secondary, var(--color-surface-raised)) 12%, var(--color-surface));
-    border: 1px solid color-mix(in srgb, var(--color-accent-secondary, var(--color-border-hairline)) 32%, transparent);
-    border-radius: var(--card-radius);
-    padding: var(--p-space-3) var(--p-space-4);
-    max-width: 720px;
+    background: color-mix(in srgb, var(--p-glow-yellow) 28%, var(--color-surface-raised));
+    border: 1px solid color-mix(in srgb, var(--color-text-primary) 16%, transparent);
+    border-right: 3px solid var(--color-text-primary);
+    border-radius: 0;
+    padding: var(--p-space-4) var(--p-space-5);
+    max-width: 760px;
     width: fit-content;
-    box-shadow: 0 1px 0 var(--color-border-hairline);
-    transition: border-color 200ms ease-out, background 200ms ease-out;
-  }
-
-  .user-prompt-row:hover .bubble,
-  .user-prompt-row:focus-visible .bubble {
-    border-color: color-mix(in srgb, var(--color-accent-secondary, var(--color-accent-primary)) 56%, transparent);
   }
 
   .user-prompt-row:focus-visible {

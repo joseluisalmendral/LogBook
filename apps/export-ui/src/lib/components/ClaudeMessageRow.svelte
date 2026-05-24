@@ -394,25 +394,31 @@
 
 <style>
   /*
-   * Slice-27: the row container is no longer clickable. cursor stays
-   * default; no hover affordance on the bubble. The only interactive
-   * elements are the inspector icon and the activity toggle in the
-   * eyebrow, plus any tool-details summaries inside the expanded body.
+   * Slice 30 — Paper Brutalism update.
+   *   - Bubble corners 0 (was 0 via token, restating explicitly for audit).
+   *   - LEFT BORDER 3px Claude Ember accent — paper-folder feel.
+   *   - Top/bottom/right borders are 1px Inkwell Violet hairline @ 16%.
+   *   - No soft shadow; a 2px hard drop shadow on the editorial side
+   *     (visible only when expanded, see [data-expanded="true"] rule).
    */
   .claude-message-row {
     display: flex;
     justify-content: flex-start;
-    margin: var(--p-space-3) 0;
+    margin: var(--p-space-4) 0;
   }
 
   .bubble {
     background: var(--color-surface-raised);
-    border: 1px solid var(--color-border-hairline);
-    border-radius: var(--card-radius);
-    padding: var(--p-space-3) var(--p-space-4);
-    max-width: 720px;
+    border: 1px solid color-mix(in srgb, var(--color-text-primary) 16%, transparent);
+    border-left: 3px solid var(--color-accent-primary);
+    border-radius: 0;
+    padding: var(--p-space-4) var(--p-space-5);
+    max-width: 760px;
     width: fit-content;
-    box-shadow: 0 1px 0 var(--color-border-hairline);
+  }
+
+  .claude-message-row[data-expanded="true"] .bubble {
+    box-shadow: 4px 4px 0 0 color-mix(in srgb, var(--color-text-primary) 14%, transparent);
   }
 
   .eyebrow {
@@ -472,7 +478,7 @@
     border: 1px solid transparent;
     color: var(--color-text-tertiary);
     padding: 4px;
-    border-radius: 999px;
+    border-radius: 4px;     /* Slice 30: editorial 4px (DESIGN.md exception) */
     cursor: pointer;
     flex-shrink: 0;
     display: inline-flex;
@@ -508,7 +514,7 @@
     border: 1px solid var(--color-border-hairline);
     color: var(--color-text-secondary);
     padding: 4px 10px 4px 12px;
-    border-radius: 999px;
+    border-radius: 4px;     /* Slice 30: editorial 4px (DESIGN.md exception) */
     cursor: pointer;
     flex-shrink: 0;
     display: inline-flex;
@@ -546,7 +552,7 @@
     min-width: 18px;
     height: 16px;
     padding: 0 4px;
-    border-radius: 999px;
+    border-radius: 4px;     /* Slice 30: editorial 4px (DESIGN.md exception) */
     background: color-mix(in srgb, var(--color-text-primary) 6%, var(--color-surface));
     font-size: 10px;
     font-weight: 700;
