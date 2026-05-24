@@ -146,14 +146,26 @@
     font-weight: 600;
   }
 
+  /*
+   * Slice-25 fix: the previous version set `display:flex` unconditionally,
+   * which overrode the HTML `hidden` attribute (browser default
+   * `[hidden]{display:none}` was beaten on specificity by the class rule).
+   * Net effect: the toggle button flipped aria-expanded but the strip
+   * stayed visible. Move the display rule under [aria-hidden="false"] so
+   * the strip is hidden by default and revealed only when expanded.
+   */
   .legend-strip {
     list-style: none;
     margin: 0;
     padding: 0;
-    display: flex;
+    display: none;
     flex-wrap: wrap;
     gap: var(--p-space-3) var(--p-space-4);
     align-items: center;
+  }
+
+  .legend-strip[aria-hidden="false"] {
+    display: flex;
   }
 
   .legend[data-variant="mobile"] .legend-strip {

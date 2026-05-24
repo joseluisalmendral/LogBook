@@ -606,6 +606,9 @@ function slimEventForChapter(event: RenderEvent): RenderEvent {
     "toolStrip",
     "overflow",
     "ghostTurns",
+    // Slice-25: thinking flag survives so the UI can hide/show
+    // claude_message events flagged as Claude's pre-response thinking.
+    "isThinking",
   ];
   for (const k of KEEP) {
     if (rec[k] !== undefined) slim[k] = rec[k];
@@ -1009,7 +1012,7 @@ function summarizeToolInput(
   const lower = displayName.toLowerCase();
   const get = (k: string): string | undefined =>
     typeof input[k] === "string" ? (input[k] as string) : undefined;
-  if (lower === "bash" || lower === "bashoutput") return truncate(get("command") ?? "", 160);
+  if (lower === "bash" || lower === "bashoutput") return truncate(get("command") ?? "", 1200);
   if (lower === "read" || lower === "edit" || lower === "write" || lower === "multiedit") {
     const p = get("file_path") ?? get("path") ?? "";
     return p ? basename(p) : "";
@@ -1017,15 +1020,16 @@ function summarizeToolInput(
   if (lower === "notebookedit") return basename(get("notebook_path") ?? "");
   if (lower === "grep" || lower === "glob") {
     const p = get("pattern") ?? get("glob") ?? "";
-    return truncate(p, 160);
+    return truncate(p, 800);
   }
-  if (lower === "webfetch") return truncate(get("url") ?? "", 160);
-  if (lower === "websearch") return truncate(get("query") ?? "", 160);
-  if (lower === "task") return truncate(get("description") ?? get("subagent_type") ?? "", 160);
+  if (lower === "webfetch") return truncate(get("url") ?? "", 600);
+  if (lower === "websearch") return truncate(get("query") ?? "", 600);
+  if (lower === "task") return truncate(get("description") ?? get("subagent_type") ?? "", 600);
   if (lower === "todowrite" || lower === "askuserquestion") return "";
-  // MCP and unknown tools: JSON-stringify the input compactly.
+  // MCP and unknown tools: JSON-stringify the input compactly. Truncated
+  // generously — MCP calls often carry meaningful payload context.
   try {
-    return truncate(JSON.stringify(input), 160);
+    return truncate(JSON.stringify(input), 800);
   } catch {
     return "";
   }
@@ -1572,6 +1576,25 @@ export async function buildExportPayload(
     }
     if (safeResponse !== undefined) {
       merged["response"] = safeResponse;
+    }
+    // Slice-25: pre-render the sub-agent's response markdown to sanitized
+    // HTML so the UI can show formatted bold / italic / lists / code blocks
+    // instead of raw markdown characters. Uses the same renderEventBody
+    // pipeline as event bodies (INV-11). Best-effort: parse failures fall
+    // back to the plain string already on `response`.
+    if (safeResponse !== undefined) {
+      try {
+        merged["responseHtml"] = await renderEventBody(safeResponse);
+      } catch {
+        // leave responseHtml undefined; UI falls back to plain text.
+      }
+    }
+    if (safePrompt !== undefined) {
+      try {
+        merged["fullPromptHtml"] = await renderEventBody(safePrompt);
+      } catch {
+        // leave fullPromptHtml undefined.
+      }
     }
     ev["payload"] = merged;
   }
