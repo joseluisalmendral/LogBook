@@ -19,6 +19,7 @@ import type { ProjectPaths } from "../core/paths.js";
 import type { RenderContext, RenderEvent } from "./render-context.js";
 import { renderEventBody } from "./markdown-body.js";
 import { buildCommitLink } from "../connectors/git.js";
+import { sanitizeForSafeExport } from "../export/safe.js";
 import {
   sanitizeTranscriptSession,
   type SanitizedTranscript,
@@ -612,8 +613,22 @@ export async function buildExportPayload(
      * env var (see budget gate in src/export/html.ts).
      */
     noTranscripts?: boolean;
+    /**
+     * Slice-17 --safe re-feature: when true, run path / username / email
+     * redaction (`sanitizeForSafeExport`) over user-authored text fields that
+     * flow into the rendered HTML — sub-agent fullPrompt / promptSummary /
+     * response, and event body Markdown rendered into the `bodies` map.
+     * Events.jsonl content is already redacted at hook time; sub-agent
+     * transcript files in `~/.claude/projects/` are NOT, hence this gate.
+     */
+    safe?: boolean;
   } = {},
 ): Promise<BuildExportPayloadResult> {
+  const safeMode = opts.safe === true;
+  const sanitizeIfSafe = (s: string | undefined): string | undefined => {
+    if (s === undefined) return undefined;
+    return safeMode ? sanitizeForSafeExport(s) : s;
+  };
   // --- Sessions / chapters -------------------------------------------------
   const sessions = ctx.sessions;
   const eventsBySession = groupEventsBySession(ctx.all);
@@ -787,7 +802,12 @@ export async function buildExportPayload(
     const raw = extractBodyMarkdown(event);
     if (!raw) continue;
     try {
-      bodies[eid] = await renderEventBody(raw);
+      // Slice-17: when --safe is on, redact path / username / email tokens in
+      // the raw Markdown BEFORE it goes through remark → rehype. Running it
+      // before parsing keeps the HTML-entity tokens (`&lt;path&gt;` etc.)
+      // intact through the pipeline.
+      const source = safeMode ? sanitizeForSafeExport(raw) : raw;
+      bodies[eid] = await renderEventBody(source);
     } catch {
       // Render failures degrade silently — the UI shows a blank body rather
       // than crashing the whole export. P5 may surface a banner.
@@ -893,23 +913,29 @@ export async function buildExportPayload(
     if (details.toolUseId !== undefined) {
       merged["toolUseId"] = details.toolUseId;
     }
-    if (details.fullPrompt !== undefined) {
-      merged["fullPrompt"] = details.fullPrompt;
+    // Slice-17 --safe: sub-agent transcript files come from Claude Code's own
+    // `~/.claude/projects/` tree, NOT the LogBook-redacted events.jsonl. When
+    // --safe is on, run sanitizeForSafeExport on every user-authored string
+    // we surface (prompt / summary / response) before it lands in payload.
+    const safePrompt = sanitizeIfSafe(details.fullPrompt);
+    const safeResponse = sanitizeIfSafe(details.response);
+    const safeDescription = sanitizeIfSafe(details.description);
+    if (safePrompt !== undefined) {
+      merged["fullPrompt"] = safePrompt;
       // promptSummary derivation priority: description (if present) > derived
       // from fullPrompt > unchanged. description is already a short summary
       // Claude Code generated, so it wins when available.
       if (merged["promptSummary"] === undefined || merged["promptSummary"] === "") {
-        merged["promptSummary"] =
-          details.description ?? deriveSummary(details.fullPrompt);
+        merged["promptSummary"] = safeDescription ?? deriveSummary(safePrompt);
       }
-    } else if (details.description !== undefined) {
+    } else if (safeDescription !== undefined) {
       // No full prompt but description exists — still useful as a summary.
       if (merged["promptSummary"] === undefined || merged["promptSummary"] === "") {
-        merged["promptSummary"] = details.description;
+        merged["promptSummary"] = safeDescription;
       }
     }
-    if (details.response !== undefined) {
-      merged["response"] = details.response;
+    if (safeResponse !== undefined) {
+      merged["response"] = safeResponse;
     }
     ev["payload"] = merged;
   }

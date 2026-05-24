@@ -141,6 +141,19 @@ describe("redact — negative cases (benign values must pass through)", () => {
     expect(result.redacted).toBe(input);
     expect(result.hits).toHaveLength(0);
   });
+
+  it("does NOT redact long absolute file paths (slice-17 regression guard)", () => {
+    // Pre-slice-17 the entropy regex included `/`, so a path like
+    // `fernandez/Documents/CONSTRUCCION` (35+ chars contiguous via /) matched
+    // and produced false-positive `[REDACTED:high-entropy]` chunks inside
+    // otherwise harmless absolute paths in tool_input.file_path. The regex
+    // now excludes `/`, so each `/`-delimited segment is its own short token.
+    const input =
+      "/Users/joseluis.fernandez/Documents/CONSTRUCCION FORMACION IA B2B/LogBook-repo/src/export/markdown-to-html.ts";
+    const result = redact(input);
+    expect(result.redacted).toBe(input);
+    expect(result.hits).toHaveLength(0);
+  });
 });
 
 // ---------------------------------------------------------------------------

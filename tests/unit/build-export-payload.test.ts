@@ -800,6 +800,82 @@ describe("buildExportPayload", () => {
       });
     });
 
+    describe("slice-17 --safe sanitization", () => {
+      // The pure parser intentionally returns raw text — sanitization is the
+      // orchestrator's responsibility. We exercise the orchestrator through
+      // buildExportPayload, asserting the redaction tokens land on the
+      // re-nested payload fields when opts.safe is true.
+      it("redacts paths/emails/usernames in event Markdown bodies when safe=true", async () => {
+        const sensitive: RenderEvent = {
+          id: "evt-body-safe",
+          type: "manual.lesson",
+          ts: "2026-05-24T11:00:00.000Z",
+          sessionId: "sess-1",
+          title: "Path leak",
+          body: "Touched /Users/alice/proj/src/foo.ts; contact alice@example.com.",
+        };
+        const session: RenderEvent = {
+          id: "sess-1",
+          type: "manual.session_start",
+          ts: "2026-05-24T10:00:00.000Z",
+          sessionId: "sess-1",
+        };
+        const ctx = mkCtx({
+          sessions: [session as unknown as RenderContext["sessions"][number]],
+          lessons: [sensitive],
+          all: [session, sensitive],
+        });
+        const { payload } = await buildExportPayload(ctx, mkPaths(), { safe: true });
+        const body = payload.bodies["evt-body-safe"];
+        expect(body).toBeDefined();
+        // The raw path/email must not appear; redaction tokens must.
+        expect(body).not.toContain("/Users/alice");
+        expect(body).not.toContain("alice@example.com");
+        expect(body).toContain("path"); // &lt;path&gt; decodes to literal in <pre>; rendered HTML keeps the entity
+        expect(body).toContain("email");
+      });
+
+      it("leaves event Markdown bodies untouched when safe is false (default)", async () => {
+        const sensitive: RenderEvent = {
+          id: "evt-body-nosafe",
+          type: "manual.lesson",
+          ts: "2026-05-24T11:00:00.000Z",
+          sessionId: "sess-1",
+          title: "Unredacted",
+          body: "Path /Users/alice/proj/src/foo.ts",
+        };
+        const session: RenderEvent = {
+          id: "sess-1",
+          type: "manual.session_start",
+          ts: "2026-05-24T10:00:00.000Z",
+          sessionId: "sess-1",
+        };
+        const ctx = mkCtx({
+          sessions: [session as unknown as RenderContext["sessions"][number]],
+          lessons: [sensitive],
+          all: [session, sensitive],
+        });
+        const { payload } = await buildExportPayload(ctx, mkPaths()); // safe unset
+        const body = payload.bodies["evt-body-nosafe"];
+        expect(body).toContain("/Users/alice");
+      });
+
+      // Pure-function smoke: re-check that parseSubagentTranscript stays
+      // sanitization-agnostic (the orchestrator owns redaction).
+      it("parseSubagentTranscript returns raw text — redaction is the caller's job", () => {
+        const jsonl = JSON.stringify({
+          type: "user",
+          message: {
+            role: "user",
+            content: "Read /Users/alice/proj/src/index.ts and email alice@example.com",
+          },
+        });
+        const out = parseSubagentTranscript(null, jsonl);
+        expect(out!.fullPrompt).toContain("/Users/alice");
+        expect(out!.fullPrompt).toContain("alice@example.com");
+      });
+    });
+
     it("does not break filesTouched/tools enrichment when sub-agent transcript files are missing (slice-16 integration)", async () => {
       // mkPaths() points at /tmp/fixture-project — no encoded directory under
       // ~/.claude/projects/, so loadSubagentDetails resolves to null. The

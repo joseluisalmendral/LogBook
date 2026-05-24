@@ -65,9 +65,16 @@ export interface RedactOptions {
  * "123e4567-e89b-12d3-a456-426614174000" has 5 hyphen-separated segments, each
  * shorter than the minEntropyLength threshold.
  *
- * Includes `+`, `/`, `=`, `_` for base64 and base64url variants.
+ * Slice-17: `/` removed (was: `[A-Za-z0-9+/=_]`). Long absolute file paths like
+ * `fernandez/Documents/CONSTRUCCION` were matching this pattern and tripping
+ * the entropy pass, producing `[REDACTED:high-entropy]` chunks inside otherwise
+ * harmless paths. Real secrets that contain `/`:
+ *   - AWS secret access keys (20+ chars with /+=) — caught by AWS-specific
+ *     Gitleaks rules first; this entropy pass is a fallback.
+ *   - Plain base64 (uses `+/=`) — modern secrets use base64url with `-_` instead.
+ * Keeping `+=_` preserves base64-padded / underscore-separated detection.
  */
-const ENTROPY_TOKEN_RE = /[A-Za-z0-9+/=_]{20,}/g;
+const ENTROPY_TOKEN_RE = /[A-Za-z0-9+=_]{20,}/g;
 
 /**
  * Collect all regex matches from `text` as RedactionHit objects.
