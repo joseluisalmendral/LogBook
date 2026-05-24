@@ -12,6 +12,7 @@
 import { describe, it, expect } from "vitest";
 import {
   buildExportPayload,
+  parseSubagentTranscript,
   PAYLOAD_CAP_BYTES_FOR_TESTS,
 } from "../../src/generate/build-export-payload.js";
 import type { RenderContext, RenderEvent } from "../../src/generate/render-context.js";
@@ -660,6 +661,167 @@ describe("buildExportPayload", () => {
       const sa2 = p2.chapters[0]!.events.find((e) => e.type === "subagent_complete");
       const pl2 = (sa2 as unknown as { payload?: Record<string, unknown> }).payload;
       expect(pl2?.["agent"]).toBe("sdd-apply");
+    });
+
+    describe("slice-16 sub-agent prompt/response — pure parser", () => {
+      // Tests the pure `parseSubagentTranscript` directly so we don't need
+      // to override homedir() / mock fs (Node's homedir() ignores HOME on
+      // some platforms via getpwuid). The fs wrapper `loadSubagentDetails`
+      // is verified separately via real-data smoke (slice-15 integration).
+
+      it("populates agent/description/toolUseId from meta.json", () => {
+        const meta = JSON.stringify({
+          agentType: "sdd-explorer",
+          description: "Explore export-replan codebase",
+          toolUseId: "toolu_abc123",
+        });
+        const out = parseSubagentTranscript(meta, null);
+        expect(out).not.toBeNull();
+        expect(out!.agentType).toBe("sdd-explorer");
+        expect(out!.description).toBe("Explore export-replan codebase");
+        expect(out!.toolUseId).toBe("toolu_abc123");
+        expect(out!.fullPrompt).toBeUndefined();
+        expect(out!.response).toBeUndefined();
+      });
+
+      it("extracts fullPrompt from first user message and response from last assistant message in JSONL", () => {
+        const jsonl = [
+          JSON.stringify({
+            type: "user",
+            message: { role: "user", content: "Please refactor src/foo.ts" },
+          }),
+          JSON.stringify({
+            type: "assistant",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "Working on it..." }],
+            },
+          }),
+          JSON.stringify({
+            type: "assistant",
+            message: {
+              role: "assistant",
+              content: [{ type: "text", text: "Done — refactored." }],
+            },
+          }),
+        ].join("\n");
+        const out = parseSubagentTranscript(null, jsonl);
+        expect(out).not.toBeNull();
+        expect(out!.fullPrompt).toBe("Please refactor src/foo.ts");
+        // Last assistant wins.
+        expect(out!.response).toBe("Done — refactored.");
+      });
+
+      it("joins multi-block assistant content with double newlines (text-typed blocks only)", () => {
+        const jsonl = [
+          JSON.stringify({
+            type: "user",
+            message: { role: "user", content: "Multi-block test" },
+          }),
+          JSON.stringify({
+            type: "assistant",
+            message: {
+              role: "assistant",
+              content: [
+                { type: "text", text: "First paragraph." },
+                { type: "tool_use", name: "Read" }, // non-text block ignored
+                { type: "text", text: "Second paragraph." },
+              ],
+            },
+          }),
+        ].join("\n");
+        const out = parseSubagentTranscript(null, jsonl);
+        expect(out!.response).toBe("First paragraph.\n\nSecond paragraph.");
+      });
+
+      it("treats user content as block array too (when applicable)", () => {
+        // Less common shape: user content as an array of blocks.
+        const jsonl = JSON.stringify({
+          type: "user",
+          message: {
+            role: "user",
+            content: [
+              { type: "text", text: "Block one." },
+              { type: "text", text: "Block two." },
+            ],
+          },
+        });
+        const out = parseSubagentTranscript(null, jsonl);
+        expect(out!.fullPrompt).toBe("Block one.\n\nBlock two.");
+      });
+
+      it("returns null when both inputs are null", () => {
+        expect(parseSubagentTranscript(null, null)).toBeNull();
+      });
+
+      it("returns null when meta is malformed and JSONL is missing", () => {
+        expect(parseSubagentTranscript("{ broken", null)).toBeNull();
+      });
+
+      it("skips malformed JSONL lines without aborting extraction", () => {
+        const jsonl = [
+          "not valid json at all",
+          JSON.stringify({
+            type: "user",
+            message: { role: "user", content: "Valid prompt" },
+          }),
+          "{ broken json",
+          JSON.stringify({
+            type: "assistant",
+            message: { role: "assistant", content: "Valid response" },
+          }),
+        ].join("\n");
+        const out = parseSubagentTranscript(null, jsonl);
+        expect(out!.fullPrompt).toBe("Valid prompt");
+        expect(out!.response).toBe("Valid response");
+      });
+
+      it("ignores empty-content messages", () => {
+        const jsonl = [
+          JSON.stringify({ type: "user", message: { role: "user", content: "" } }),
+          JSON.stringify({
+            type: "user",
+            message: { role: "user", content: "Real prompt" },
+          }),
+          JSON.stringify({
+            type: "assistant",
+            message: { role: "assistant", content: [] }, // empty block array
+          }),
+          JSON.stringify({
+            type: "assistant",
+            message: { role: "assistant", content: "Real response" },
+          }),
+        ].join("\n");
+        const out = parseSubagentTranscript(null, jsonl);
+        // First "" is skipped, real prompt captured.
+        expect(out!.fullPrompt).toBe("Real prompt");
+        // Empty array assistant doesn't override the next real one.
+        expect(out!.response).toBe("Real response");
+      });
+    });
+
+    it("does not break filesTouched/tools enrichment when sub-agent transcript files are missing (slice-16 integration)", async () => {
+      // mkPaths() points at /tmp/fixture-project — no encoded directory under
+      // ~/.claude/projects/, so loadSubagentDetails resolves to null. The
+      // slice-15 fallback (agent from agentId, filesTouched/tools from
+      // event correlation) must keep working.
+      const ctx = mkCtx({
+        sessions: [sessionStart],
+        conversation: [subagent, editEvent],
+        all: [sessionStart, subagent, editEvent],
+      });
+      const { payload } = await buildExportPayload(ctx, mkPaths());
+      const sa = payload.chapters[0]!.events.find(
+        (e) => e.type === "subagent_complete",
+      );
+      const p = (sa as unknown as { payload?: Record<string, unknown> }).payload;
+      expect(p?.["agent"]).toBe("agent-explorer-x");
+      expect(p?.["fullPrompt"]).toBeUndefined();
+      expect(p?.["response"]).toBeUndefined();
+      // Slice-15 derived fields still populated:
+      const tools = p?.["tools"] as Array<{ name: string }>;
+      expect(tools).toHaveLength(1);
+      expect(tools[0]?.name).toBe("Edit");
     });
 
     it("returns empty filesTouched arrays when no tool_result.edit/write/multiedit/read events exist", async () => {
