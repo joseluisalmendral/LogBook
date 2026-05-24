@@ -116,30 +116,20 @@
     inspector.open(event.id);
   }
 
-  // Moment 1: gate the entrance on first viewport intersection. We use a
-  // single observer per card; once fired, we disconnect to avoid replaying.
-  // Under reduced-motion the entrance CSS is a no-op (see styles below), so
-  // we still set inView so the card lands in its final state without delay.
+  // Slice-22 hygiene: VISIBILITY IS NEVER GATED BY THE OBSERVER.
+  //
+  // Background: the slice-12 Moment-1 entrance used `clip-path: inset(100%)`
+  // as the pre-state, gated to flip via IntersectionObserver. In production on
+  // long narrative chapters (200+ rows) the IO callbacks did NOT fire for
+  // cards rendered below the fold even after the user scrolled to them —
+  // resulting in every sub-agent card permanently invisible.
+  //
+  // Fix: set inView = true synchronously on mount. The card lands visible.
+  // The CSS pre-state was also changed from `clip-path: inset(100% 0 0 0)`
+  // to a subtle opacity+translateY (see styles) so the worst case is a
+  // slightly-dimmed card rather than a clipped-to-zero invisible one.
   onMount(() => {
-    if (!cardEl) return;
-    if (typeof IntersectionObserver === "undefined") {
-      inView = true;
-      return;
-    }
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) {
-          if (entry.isIntersecting) {
-            inView = true;
-            io.disconnect();
-            break;
-          }
-        }
-      },
-      { rootMargin: "0px 0px -10% 0px", threshold: 0.1 },
-    );
-    io.observe(cardEl);
-    return () => io.disconnect();
+    inView = true;
   });
 </script>
 
@@ -294,14 +284,23 @@
   }
 
   /* ---- MOMENT 1: sub-agent deploy entrance --------------------------- */
-  /* Pre-state (before viewport hit). clip-path inset hides the card from
-     above; opacity stays at 1 so the color bleed feels like "deploying". */
+  /*
+   * Slice-22 hygiene: the previous pre-state used `clip-path: inset(100%)`
+   * which clipped the card to zero painted area. When the IntersectionObserver
+   * failed to fire (real regression on 200+ row chapters), the card stayed
+   * invisible forever. Replaced with opacity+translateY so the worst case
+   * is a slightly-dim card rather than a missing one. JS now sets
+   * data-in-view="true" synchronously on mount; this CSS only animates the
+   * transition for that one-time state change.
+   */
   .card-wrap[data-in-view="false"] {
-    clip-path: inset(100% 0 0 0);
+    opacity: 0;
+    transform: translateY(8px);
   }
   .card-wrap[data-in-view="true"] {
-    clip-path: inset(0 0 0 0);
-    transition: clip-path 280ms cubic-bezier(0.16, 1, 0.3, 1);
+    opacity: 1;
+    transform: translateY(0);
+    transition: opacity 280ms ease-out, transform 280ms cubic-bezier(0.16, 1, 0.3, 1);
   }
   /* Color bleed pseudo-element — paints the kind border-color across the
      surface with a quick fade, then settles. 50ms delay per brief moment #1. */
@@ -323,7 +322,8 @@
   /* Reduced-motion: skip entrance entirely; the card lands in final state. */
   :global(html[data-motion="reduced"]) .card-wrap[data-in-view="false"],
   :global(html[data-motion="reduced"]) .card-wrap[data-in-view="true"] {
-    clip-path: none;
+    opacity: 1;
+    transform: none;
     transition: none;
   }
   :global(html[data-motion="reduced"]) .card-wrap[data-in-view="true"]::before {
