@@ -65,12 +65,61 @@ describe("transcriptLineToEvents", () => {
     expect(transcriptLineToEvents(line, SESSION_ID)).toHaveLength(0);
   });
 
-  it("skips user lines (ADR-2: UserPromptSubmit hook is authoritative)", () => {
+  it("emits user_prompt for real user lines when not deduped (slice-23 backfill)", () => {
     const line: ClaudeTranscriptLine = {
       type: "user",
       uuid: "uuid-6",
+      timestamp: "2026-05-20T10:00:00.000Z",
       message: { role: "user", content: "fix the bug" },
     };
+    const events = transcriptLineToEvents(line, SESSION_ID);
+    expect(events).toHaveLength(1);
+    expect(events[0]!.kind).toBe("user_prompt");
+    expect((events[0]!.payload as Record<string, unknown>)["text"]).toBe("fix the bug");
+    expect(
+      (events[0]!.payload as Record<string, unknown>)["backfilledFromTranscript"],
+    ).toBe(true);
+  });
+
+  it("skips user lines when the dedup set already contains the text hash (slice-23)", async () => {
+    const { userPromptHash } = await import(
+      "../../src/connectors/claude-code/transcript.js"
+    );
+    const line: ClaudeTranscriptLine = {
+      type: "user",
+      uuid: "uuid-6b",
+      message: { role: "user", content: "fix the bug" },
+    };
+    const existing = new Set<string>([userPromptHash("fix the bug")]);
+    expect(transcriptLineToEvents(line, SESSION_ID, existing)).toHaveLength(0);
+  });
+
+  it("skips user lines that are slash-command echoes, not real prompts (slice-23)", () => {
+    const echoes = [
+      "<command-name>/model</command-name>",
+      "<command-message>model</command-message>",
+      "<local-command-stdout>Set model to Opus</local-command-stdout>",
+      "<attachment>some.png</attachment>",
+    ];
+    for (const content of echoes) {
+      const line: ClaudeTranscriptLine = {
+        type: "user",
+        uuid: "u-echo",
+        message: { role: "user", content },
+      };
+      expect(transcriptLineToEvents(line, SESSION_ID)).toHaveLength(0);
+    }
+  });
+
+  it("skips user lines with non-string content (tool_result arrays)", () => {
+    const line = {
+      type: "user",
+      uuid: "uuid-tr",
+      message: {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "x", content: "ok" }],
+      },
+    } as unknown as ClaudeTranscriptLine;
     expect(transcriptLineToEvents(line, SESSION_ID)).toHaveLength(0);
   });
 
