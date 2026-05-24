@@ -211,21 +211,30 @@ export function buildStandardArtifacts(projectRoot?: string): Artifact[] {
   }));
 
   return [
-    // 1. hook (PostToolUse — same as minimal)
+    // Slice-26 lean install: only SessionStart + Stop survive in the standard
+    // preset. PostToolUse and UserPromptSubmit were removed because the
+    // transcript scraper (extended in slice 26 to synthesize tool_use /
+    // tool_result events with toolUseId + fingerprint dedup) now backfills
+    // every kind of event from `~/.claude/projects/<encoded>/<sid>.jsonl`
+    // at Stop hook time AND on every `logbook build`. The two removed hooks
+    // were redundant; SessionStart provides cross-session context inject and
+    // Stop triggers the scraper.
+    //
+    // To keep the realtime hooks (e.g. for live dashboard surfaces), add the
+    // 2-hook delta back manually OR run `logbook init --preset full` (which
+    // still registers them under its `realtime` opt-in flag).
+    //
+    // SessionStart fires when Claude opens a session — captures git SHA +
+    // emits the cross-session summary to stdout so Claude sees it as context.
     {
       kind: "hook",
-      hookEvent: "PostToolUse",
+      hookEvent: "SessionStart",
       command: `node ${shellQuote(hookPath)}`,
-      _logbookId: "lb-hook-posttooluse-001",
+      _logbookId: "lb-hook-sessionstart-001",
     },
-    // 1b. hook (UserPromptSubmit — captures typed prompts via hook bus)
-    {
-      kind: "hook",
-      hookEvent: "UserPromptSubmit",
-      command: `node ${shellQuote(hookPath)}`,
-      _logbookId: "lb-hook-userpromptsubmit-001",
-    },
-    // 1c. hook (Stop — triggers transcript scraper to capture assistant turns)
+    // Stop fires at every end-of-agent-turn — triggers runTranscriptScraper
+    // which is the single backfill point for user_prompt, claude_message,
+    // tool_result, subagent_complete, skill_invoked, agent_question.
     {
       kind: "hook",
       hookEvent: "Stop",
@@ -350,13 +359,11 @@ export function buildTeachingArtifacts(projectRoot?: string): Artifact[] {
       command: statuslineCommand,
       _logbookId: "lb-statusline-001",
     },
-    // 16. hook (SessionStart) — distinct id from PostToolUse hook
-    {
-      kind: "hook",
-      hookEvent: "SessionStart",
-      command: `node ${shellQuote(hookPath)}`,
-      _logbookId: "lb-hook-sessionstart-001",
-    },
+    // Slice-26: SessionStart was historically added by teaching on top of
+    // standard. Since slice 26 moved SessionStart into the standard preset
+    // (now that it's one of the two surviving hooks), teaching no longer
+    // needs to re-register it — the buildStandardArtifacts call above
+    // already includes it.
     // 17+. gitignore_entries (LAST — per iter1 install-order contract)
     ...trailingGitignoreEntries,
   ];
