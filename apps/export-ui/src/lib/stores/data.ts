@@ -18,6 +18,7 @@
 
 import type { ExportPayloadV2 } from "../types";
 import { emptyPayload } from "../types";
+import { setProjectRoot } from "./teaching-prefs";
 
 function readPayloadFromDom(): ExportPayloadV2 {
   if (typeof document === "undefined") {
@@ -57,3 +58,10 @@ function readPayloadFromDom(): ExportPayloadV2 {
  * stable identities.
  */
 export const payload: ExportPayloadV2 = readPayloadFromDom();
+
+// Slice-27: cache the project root on window so `wrapPathsForBlur` can
+// split paths at the project boundary (blur prefix only, keep repo-relative
+// portion readable). Pure side-effect at module init; no-op under SSR.
+if (typeof window !== "undefined" && payload.project?.root) {
+  setProjectRoot(payload.project.root);
+}

@@ -1,3 +1,5 @@
+/* SLICE-26 SUPERSEDED: lean install (SessionStart + Stop only) changed manifest counts and hook order; the new contract is covered by tests/unit/presets-extract.test.ts and tests/integration/byte-identity-with-conversation-hooks.test.ts. Reversibility (INV-1) is covered by tests/e2e/byte-identity-{clean,crlf,with-fake-plugin}.test.ts. Re-enable + rewrite when revisiting the legacy install matrix. */
+
 /**
  * I-INIT1 — init --preset standard on an empty project.
  *
@@ -50,7 +52,7 @@ function runCli(
   };
 }
 
-describe("I-INIT1 — init --preset standard", () => {
+describe.skip("I-INIT1 — init --preset standard", () => {
   let tmp: string;
   let manifest: {
     version: number;
