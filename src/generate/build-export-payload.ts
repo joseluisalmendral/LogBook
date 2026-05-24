@@ -332,6 +332,178 @@ function aggregateFileTouches(events: RenderEvent[]): FileTouch[] {
 }
 
 /**
+ * Slice-16: minimal shape returned by `loadSubagentDetails`. All fields
+ * optional so partial transcript files (e.g. only meta.json exists, or only
+ * the JSONL) still produce a useful enrichment.
+ */
+interface SubagentDetails {
+  /** From meta.json — the registered sub-agent name (e.g. "sdd-tasks"). */
+  agentType?: string;
+  /** From meta.json — Claude Code's short auto-generated description. */
+  description?: string;
+  /** From meta.json — the parent agent's Task tool_use_id (correlation key). */
+  toolUseId?: string;
+  /** First user message in the sub-agent JSONL — the full prompt given to the sub-agent. */
+  fullPrompt?: string;
+  /** Last assistant message text — the sub-agent's final response, joined across text blocks. */
+  response?: string;
+}
+
+/**
+ * Slice-16: pure parser for the sub-agent meta+JSONL pair. Extracted from
+ * `loadSubagentDetails` so it can be unit-tested without fs / homedir setup.
+ * Either argument may be `null` to signal "file missing".
+ */
+export function parseSubagentTranscript(
+  metaText: string | null,
+  jsonlText: string | null,
+): SubagentDetails | null {
+  const out: SubagentDetails = {};
+  let any = false;
+
+  if (metaText !== null) {
+    try {
+      const meta = JSON.parse(metaText) as Record<string, unknown>;
+      if (typeof meta["agentType"] === "string") {
+        out.agentType = meta["agentType"];
+        any = true;
+      }
+      if (typeof meta["description"] === "string") {
+        out.description = meta["description"];
+        any = true;
+      }
+      if (typeof meta["toolUseId"] === "string") {
+        out.toolUseId = meta["toolUseId"];
+        any = true;
+      }
+    } catch {
+      // Malformed meta.json — non-fatal.
+    }
+  }
+
+  if (jsonlText !== null) {
+    const lines = jsonlText.split("\n");
+    let foundPrompt = false;
+    let lastAssistantText: string | undefined;
+    for (const line of lines) {
+      const t = line.trim();
+      if (!t) continue;
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(t);
+      } catch {
+        continue;
+      }
+      if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+        continue;
+      }
+      const rec = parsed as Record<string, unknown>;
+      const msg = rec["message"] as Record<string, unknown> | undefined;
+      const role = msg?.["role"];
+      const content = msg?.["content"];
+
+      // First user message — that's the prompt the parent agent handed in.
+      if (!foundPrompt && role === "user") {
+        if (typeof content === "string" && content.length > 0) {
+          out.fullPrompt = content;
+          foundPrompt = true;
+          any = true;
+        } else if (Array.isArray(content)) {
+          const parts: string[] = [];
+          for (const block of content as Array<Record<string, unknown>>) {
+            if (block && block["type"] === "text" && typeof block["text"] === "string") {
+              parts.push(block["text"] as string);
+            }
+          }
+          if (parts.length > 0) {
+            out.fullPrompt = parts.join("\n\n");
+            foundPrompt = true;
+            any = true;
+          }
+        }
+      }
+
+      // Track every assistant message — keep the LAST one as the response.
+      if (role === "assistant") {
+        if (typeof content === "string") {
+          lastAssistantText = content;
+        } else if (Array.isArray(content)) {
+          const parts: string[] = [];
+          for (const block of content as Array<Record<string, unknown>>) {
+            if (block && block["type"] === "text" && typeof block["text"] === "string") {
+              parts.push(block["text"] as string);
+            }
+          }
+          if (parts.length > 0) lastAssistantText = parts.join("\n\n");
+        }
+      }
+    }
+    if (lastAssistantText !== undefined && lastAssistantText.length > 0) {
+      out.response = lastAssistantText;
+      any = true;
+    }
+  }
+
+  return any ? out : null;
+}
+
+/**
+ * Slice-16 SubAgentCard rendering completion: read the sub-agent's transcript
+ * files at `~/.claude/projects/<encoded>/<sessionId>/subagents/agent-<agentId>.{jsonl,meta.json}`
+ * and extract the prompt + response via `parseSubagentTranscript`. PASSIVE
+ * per INV-1 — we only read files Claude Code already wrote.
+ *
+ * Returns null when neither file exists. Never throws — best effort.
+ *
+ * Note on redaction: the sub-agent JSONL is Claude Code's own file, NOT the
+ * LogBook-redacted events.jsonl. Prompts may contain user-authored secrets.
+ * Slice 17 (--safe re-feature) will plumb redaction through this path.
+ */
+async function loadSubagentDetails(
+  agentId: string,
+  sessionId: string,
+  projectRoot: string,
+): Promise<SubagentDetails | null> {
+  if (!agentId || !sessionId) return null;
+  const encoded = encodeProjectPath(projectRoot);
+  const baseDir = join(
+    homedir(),
+    ".claude",
+    "projects",
+    encoded,
+    sessionId,
+    "subagents",
+  );
+  const jsonlPath = join(baseDir, `agent-${agentId}.jsonl`);
+  const metaPath = join(baseDir, `agent-${agentId}.meta.json`);
+
+  let metaText: string | null;
+  try {
+    metaText = await readFile(metaPath, "utf8");
+  } catch {
+    metaText = null;
+  }
+  let jsonlText: string | null;
+  try {
+    jsonlText = await readFile(jsonlPath, "utf8");
+  } catch {
+    jsonlText = null;
+  }
+  return parseSubagentTranscript(metaText, jsonlText);
+}
+
+/** Slice-16: derive a short summary from a long prompt. Word-boundary safe. */
+function deriveSummary(prompt: string | undefined, maxChars = 200): string | undefined {
+  if (typeof prompt !== "string" || prompt.length === 0) return undefined;
+  if (prompt.length <= maxChars) return prompt;
+  // Trim to nearest space below the cap so we don't slice through a word.
+  const slice = prompt.slice(0, maxChars);
+  const lastSpace = slice.lastIndexOf(" ");
+  const cut = lastSpace > maxChars - 40 ? lastSpace : maxChars;
+  return `${prompt.slice(0, cut).trimEnd()}...`;
+}
+
+/**
  * Slice-15 SubAgentCard rendering fix: build the per-tool entry that
  * SubAgentCard.svelte reads off `payload.tools`. Picks the most useful "input"
  * summary string per tool kind so the UI can render something meaningful.
@@ -668,6 +840,79 @@ export async function buildExportPayload(
       payload: { ...payloadRecord, commitUrl: url },
     };
   });
+
+  // --- Slice-16: subagent prompt/response enrichment -----------------------
+  // For each subagent_complete event across all chapters, load its meta.json
+  // + transcript JSONL from Claude Code's `~/.claude/projects/.../subagents/`
+  // directory and merge agentType / description / fullPrompt / response into
+  // the re-nested payload. Parallel I/O via Promise.all.
+  //
+  // PASSIVE per INV-1: reads only files Claude Code already wrote. Missing
+  // files (sub-agent ran on another machine, fresh checkout) produce no
+  // enrichment — the UI gracefully falls back to whatever slice-15 supplied.
+  const subagentEnrichments: Array<{
+    chapterIdx: number;
+    eventIdx: number;
+    details: SubagentDetails;
+  }> = [];
+  await Promise.all(
+    chapters.flatMap((ch, chapterIdx) =>
+      ch.events.map(async (ev, eventIdx) => {
+        if (ev.type !== "subagent_complete") return;
+        const rec = ev as Record<string, unknown>;
+        const payload = rec["payload"] as Record<string, unknown> | undefined;
+        const agentId =
+          typeof payload?.["agentId"] === "string"
+            ? (payload["agentId"] as string)
+            : typeof rec["agentId"] === "string"
+              ? (rec["agentId"] as string)
+              : "";
+        if (!agentId) return;
+        const details = await loadSubagentDetails(agentId, ch.sessionId, paths.root);
+        if (details !== null) {
+          subagentEnrichments.push({ chapterIdx, eventIdx, details });
+        }
+      }),
+    ),
+  );
+
+  // Apply enrichments — same payload re-nest pattern slice 14/15 established.
+  // agentType (from meta.json) wins over the slice-15 attributionAgent fallback
+  // for the `agent` display field because it is the *registered* sub-agent
+  // name (e.g. "sdd-tasks"). description becomes a sensible promptSummary
+  // when no other one was set.
+  for (const { chapterIdx, eventIdx, details } of subagentEnrichments) {
+    const ch = chapters[chapterIdx]!;
+    const ev = ch.events[eventIdx]! as Record<string, unknown>;
+    const existing = (ev["payload"] as Record<string, unknown> | undefined) ?? {};
+    const merged: Record<string, unknown> = { ...existing };
+    if (details.agentType !== undefined) {
+      merged["agent"] = details.agentType;
+      merged["agentType"] = details.agentType;
+    }
+    if (details.toolUseId !== undefined) {
+      merged["toolUseId"] = details.toolUseId;
+    }
+    if (details.fullPrompt !== undefined) {
+      merged["fullPrompt"] = details.fullPrompt;
+      // promptSummary derivation priority: description (if present) > derived
+      // from fullPrompt > unchanged. description is already a short summary
+      // Claude Code generated, so it wins when available.
+      if (merged["promptSummary"] === undefined || merged["promptSummary"] === "") {
+        merged["promptSummary"] =
+          details.description ?? deriveSummary(details.fullPrompt);
+      }
+    } else if (details.description !== undefined) {
+      // No full prompt but description exists — still useful as a summary.
+      if (merged["promptSummary"] === undefined || merged["promptSummary"] === "") {
+        merged["promptSummary"] = details.description;
+      }
+    }
+    if (details.response !== undefined) {
+      merged["response"] = details.response;
+    }
+    ev["payload"] = merged;
+  }
 
   // --- Raw transcripts (slice 12 P4, ADR-SC-D2, R-66) ----------------------
   // PASSIVE per INV-1 — we read the JSONL files Claude Code already wrote at
