@@ -24,6 +24,7 @@ import {
   sanitizeTranscriptSession,
   type SanitizedTranscript,
 } from "../export/transcript-sanitize.js";
+import { isNarrativeKind, isNoiseKind } from "../types/narrative-kinds.js";
 
 // ---------------------------------------------------------------------------
 // Payload v2 types (design §5.1 — co-located with the builder)
@@ -96,6 +97,13 @@ export interface Chapter {
    * "strongest" wins (write > edit > multi_edit > read).
    */
   filesTouched?: FileTouch[];
+  /**
+   * Slice-21: true when the chapter contains one or more `user_prompt` events
+   * but zero `claude_message` events — i.e. the transcript scraper did not
+   * capture Claude's responses on the machine that produced this events.jsonl.
+   * The UI renders a single inline notice at chapter start when set.
+   */
+  ghostTurns?: boolean;
 }
 
 /**
@@ -592,6 +600,12 @@ function slimEventForChapter(event: RenderEvent): RenderEvent {
     "meta",
     "payload",
     "filesTouched",
+    // Slice-21: narrative-filter fields. They live under `payload` (preserved
+    // implicitly via the `payload` key above) but we list them defensively in
+    // case any future code-path surfaces them at top-level.
+    "toolStrip",
+    "overflow",
+    "ghostTurns",
   ];
   for (const k of KEEP) {
     if (rec[k] !== undefined) slim[k] = rec[k];
@@ -625,6 +639,255 @@ function groupEventsBySession(
 function projectNameFrom(root: string): string {
   const parts = root.split("/").filter(Boolean);
   return parts[parts.length - 1] ?? "project";
+}
+
+// ---------------------------------------------------------------------------
+// Slice-21: narrative filter + toolStrip rollup
+// ---------------------------------------------------------------------------
+
+/**
+ * Entry in a `claude_message.payload.toolStrip`. Compact by design — the
+ * inspector still has access to the full raw transcript for deep details.
+ *
+ * Spec: R-82 binds the shape to `{ name, file_path?, toolUseId? }`.
+ */
+interface ToolStripEntry {
+  name: string;
+  file_path?: string;
+  toolUseId?: string;
+}
+
+/**
+ * Walk a chapter's events once to collect every AskUserQuestion toolUseId
+ * that already has a corresponding synthesized `agent_question` event. The
+ * matching `tool_result.askuserquestion` events will be filtered out so the
+ * UI does not render the same question twice (INV-23, ADR-SN-B2).
+ */
+function collectAskUserQuestionToolUseIds(
+  events: RenderEvent[],
+): Set<string> {
+  const ids = new Set<string>();
+  for (const ev of events) {
+    if (ev.type !== "agent_question") continue;
+    const rec = ev as Record<string, unknown>;
+    const fromTop =
+      typeof rec["toolUseId"] === "string" ? (rec["toolUseId"] as string) : "";
+    const fromPayload =
+      typeof (rec["payload"] as Record<string, unknown> | undefined)?.[
+        "toolUseId"
+      ] === "string"
+        ? (((rec["payload"] as Record<string, unknown>)["toolUseId"]) as string)
+        : "";
+    const id = fromTop || fromPayload;
+    if (id) ids.add(id);
+  }
+  return ids;
+}
+
+/**
+ * Slice-21 narrative filter (R-81, R-85, INV-21, INV-23, ADR-SN-B2).
+ *
+ * Drops every event whose type is in NOISE_KINDS (`hook_event`, `system`,
+ * `tool_result.*`) AND every event whose type is NOT in NARRATIVE_KINDS.
+ * Additionally drops any `tool_result.askuserquestion` whose `tool_use_id`
+ * matches a synthesized agent_question (already rendered as AgentQuestionCard).
+ *
+ * Pure function — does not mutate `events`. Single linear pass (NFR-1).
+ */
+function applyNarrativeFilter(
+  events: RenderEvent[],
+  excludedAskUserQuestionToolUseIds: Set<string>,
+): RenderEvent[] {
+  const out: RenderEvent[] = [];
+  for (const ev of events) {
+    const type = typeof ev.type === "string" ? ev.type : "";
+    if (!type) continue;
+    if (isNoiseKind(type)) continue;
+    if (!isNarrativeKind(type)) continue;
+    // Defensive secondary AskUserQuestion drop (in case a tool_result slipped
+    // through the noise filter — currently impossible because `tool_result.*`
+    // is in NOISE_KINDS, but keeps the contract robust if NOISE_KIND_PREFIXES
+    // ever changes). Real dedup happens against the agent_question matching
+    // set during the rollup walk for ANY tool_result, see rollupClaudeMessageTools.
+    void excludedAskUserQuestionToolUseIds;
+    out.push(ev);
+  }
+  return out;
+}
+
+/**
+ * Lowercased tool name from a normalized `tool_result.<tool>` event.
+ * Falls back to the top-level `tool_name` field when the type was not
+ * suffix-encoded (older capture paths).
+ */
+function toolNameOf(ev: RenderEvent): string {
+  const t = typeof ev.type === "string" ? ev.type : "";
+  if (t.startsWith("tool_result.")) {
+    return t.slice("tool_result.".length).toLowerCase();
+  }
+  const rec = ev as Record<string, unknown>;
+  return typeof rec["tool_name"] === "string"
+    ? (rec["tool_name"] as string).toLowerCase()
+    : "";
+}
+
+/**
+ * Extract the original (case-preserving) display name of the tool used by
+ * a `tool_result.*` event. Falls back to the lowercased suffix when the
+ * top-level `tool_name` is absent.
+ */
+function toolDisplayNameOf(ev: RenderEvent): string {
+  const rec = ev as Record<string, unknown>;
+  if (typeof rec["tool_name"] === "string" && rec["tool_name"]) {
+    return rec["tool_name"] as string;
+  }
+  const t = typeof ev.type === "string" ? ev.type : "";
+  if (t.startsWith("tool_result.")) {
+    return t.slice("tool_result.".length);
+  }
+  return "tool";
+}
+
+/**
+ * Slice-21 toolStrip + filesTouched rollup walker (R-82, R-83, R-86,
+ * ADR-SN-B1).
+ *
+ * Sequential single pass over the chapter's enriched events. For each
+ * `claude_message` we accumulate the file paths and a compact list of
+ * `{name, file_path?, toolUseId?}` entries from every following `tool_result`
+ * up to (but not including) the next `claude_message` boundary. Sub-agent
+ * children (matched by `raw.agent_id` to a sub-agent's `agentId`) are skipped
+ * — those tools already live on `subagent_complete.payload.tools` from the
+ * slice-14/15 enrichment.
+ *
+ * Returns an array containing every event from `events` EXCEPT bare
+ * `tool_result.*` events (which roll up under the open claude_message). Noise
+ * events are not filtered here — call `applyNarrativeFilter` afterwards.
+ *
+ * R-90: when more than 12 entries accumulate under a single claude_message,
+ * the strip is truncated to the first 8 and the overflow count is recorded
+ * under `payload.overflow` so the UI can render a "+N more" expander.
+ */
+function rollupClaudeMessageTools(
+  events: RenderEvent[],
+  subagentChildAgentIds: Set<string>,
+  askUserQuestionDedupIds: Set<string>,
+): RenderEvent[] {
+  const TOOL_STRIP_OVERFLOW_CAP = 12;
+  const TOOL_STRIP_VISIBLE_HEAD = 8;
+  const out: RenderEvent[] = [];
+
+  let openMsg: RenderEvent | null = null;
+  let openTools: ToolStripEntry[] = [];
+  let openFiles = new Set<string>();
+
+  function flushOpenMsg(): void {
+    if (!openMsg) return;
+    const existingPayload =
+      ((openMsg as Record<string, unknown>)["payload"] as
+        | Record<string, unknown>
+        | undefined) ?? {};
+    const payload: Record<string, unknown> = { ...existingPayload };
+    let visible = openTools;
+    let overflow = 0;
+    if (openTools.length > TOOL_STRIP_OVERFLOW_CAP) {
+      overflow = openTools.length - TOOL_STRIP_VISIBLE_HEAD;
+      visible = openTools.slice(0, TOOL_STRIP_VISIBLE_HEAD);
+    }
+    payload["toolStrip"] = visible;
+    if (overflow > 0) payload["overflow"] = overflow;
+    payload["filesTouched"] = [...openFiles];
+    out.push({ ...(openMsg as Record<string, unknown>), payload } as unknown as RenderEvent);
+    openMsg = null;
+    openTools = [];
+    openFiles = new Set();
+  }
+
+  for (const ev of events) {
+    const type = typeof ev.type === "string" ? ev.type : "";
+    const rec = ev as Record<string, unknown>;
+
+    // tool_result.* — roll up under the open claude_message (or drop).
+    if (type.startsWith("tool_result")) {
+      const raw = rec["raw"] as Record<string, unknown> | undefined;
+      const childAgentId =
+        typeof raw?.["agent_id"] === "string"
+          ? (raw["agent_id"] as string)
+          : "";
+      // Sub-agent children belong on the subagent_complete card, not here.
+      if (childAgentId && subagentChildAgentIds.has(childAgentId)) {
+        continue;
+      }
+      // AskUserQuestion dedup: drop tool_results whose tool_use_id matches
+      // a synthesized agent_question already emitted (INV-23).
+      const toolUseId =
+        typeof raw?.["tool_use_id"] === "string"
+          ? (raw["tool_use_id"] as string)
+          : typeof rec["tool_use_id"] === "string"
+            ? (rec["tool_use_id"] as string)
+            : "";
+      const lowerToolName = toolNameOf(ev);
+      if (lowerToolName === "askuserquestion") {
+        // ALL askuserquestion tool_results are dedup-dropped — the
+        // synthesized agent_question is always the better representation
+        // (ADR-SN-B2 defensive secondary drop).
+        if (toolUseId && askUserQuestionDedupIds.has(toolUseId)) continue;
+        // Even when no match found we drop AskUserQuestion to avoid bare
+        // tool chips in the strip; the user-facing event is the agent_question.
+        continue;
+      }
+      // No open claude_message → drop (ghost-turn region or pre-message tool).
+      if (!openMsg) continue;
+      const toolInput = raw?.["tool_input"] as
+        | Record<string, unknown>
+        | undefined;
+      const filePath =
+        typeof toolInput?.["file_path"] === "string"
+          ? (toolInput["file_path"] as string)
+          : typeof toolInput?.["path"] === "string"
+            ? (toolInput["path"] as string)
+            : typeof toolInput?.["notebook_path"] === "string"
+              ? (toolInput["notebook_path"] as string)
+              : "";
+      const entry: ToolStripEntry = { name: toolDisplayNameOf(ev) };
+      if (filePath) entry.file_path = filePath;
+      if (toolUseId) entry.toolUseId = toolUseId;
+      openTools.push(entry);
+      if (filePath) openFiles.add(filePath);
+      continue;
+    }
+
+    // claude_message OPENS a new strip window — flush the previous one.
+    if (type === "claude_message") {
+      flushOpenMsg();
+      openMsg = ev;
+      continue;
+    }
+
+    // Any other event closes the open window and is emitted straight through.
+    flushOpenMsg();
+    out.push(ev);
+  }
+
+  // End-of-chapter: flush trailing claude_message.
+  flushOpenMsg();
+
+  return out;
+}
+
+/**
+ * R-87 / R-89 / ADR-SN-B3 — true when the chapter has user_prompts but no
+ * claude_messages, i.e. the transcript scraper did not capture Claude's side.
+ */
+function computeGhostTurns(events: RenderEvent[]): boolean {
+  let hasUserPrompt = false;
+  let hasClaudeMessage = false;
+  for (const ev of events) {
+    if (ev.type === "user_prompt") hasUserPrompt = true;
+    else if (ev.type === "claude_message") hasClaudeMessage = true;
+    if (hasUserPrompt && hasClaudeMessage) return false;
+  }
+  return hasUserPrompt && !hasClaudeMessage;
 }
 
 // ---------------------------------------------------------------------------
@@ -868,10 +1131,54 @@ export async function buildExportPayload(
       } as RenderEvent;
     });
 
+    // Slice-21: narrative filter + toolStrip rollup.
+    //
+    // 1. Collect the set of sub-agent agentIds in this chapter — used by the
+    //    rollup walker to keep sub-agent tools OFF the parent claude_message's
+    //    toolStrip (those tools already live on subagent_complete.payload.tools).
+    // 2. Collect AskUserQuestion toolUseIds that match synthesized
+    //    agent_question events, so the rollup can dedupe them (INV-23).
+    // 3. Run the rollup walker — emits claude_messages with payload.toolStrip /
+    //    filesTouched / overflow attached, drops bare tool_results, preserves
+    //    every other narrative kind in order.
+    // 4. Run the narrative filter to drop any non-narrative leftovers
+    //    (hook_event, system, unknown).
+    //
+    // Pre-filter `enrichedEvents` is still used for `chapter.filesTouched`
+    // (top-level aggregator) because R-83 binds that field to the un-filtered
+    // tool_result stream — regression-safe with slice-14/15 behavior.
+    const subagentChildAgentIds = new Set<string>(
+      enrichedEvents
+        .filter((e) => e.type === "subagent_complete")
+        .map((e) => {
+          const rec = e as Record<string, unknown>;
+          const fromTop =
+            typeof rec["agentId"] === "string" ? (rec["agentId"] as string) : "";
+          const payload = rec["payload"] as Record<string, unknown> | undefined;
+          const fromPayload =
+            typeof payload?.["agentId"] === "string"
+              ? (payload["agentId"] as string)
+              : "";
+          return fromTop || fromPayload;
+        })
+        .filter((id) => id.length > 0),
+    );
+    const askUserQuestionDedupIds = collectAskUserQuestionToolUseIds(enrichedEvents);
+    const rolledUpEvents = rollupClaudeMessageTools(
+      enrichedEvents,
+      subagentChildAgentIds,
+      askUserQuestionDedupIds,
+    );
+    const narrativeEvents = applyNarrativeFilter(
+      rolledUpEvents,
+      askUserQuestionDedupIds,
+    );
+    const ghostTurns = computeGhostTurns(enrichedEvents);
+
     // Slice-20: strip the heavy `raw` / `_raw` / `tool_response` fields off
     // every event AFTER enrichment has read what it needs. Keeps the payload
     // JSON two orders of magnitude smaller on real data.
-    const slimEvents = enrichedEvents.map(slimEventForChapter);
+    const slimEvents = narrativeEvents.map(slimEventForChapter);
 
     const chapter: Chapter = {
       sessionId: id,
@@ -881,6 +1188,7 @@ export async function buildExportPayload(
       events: slimEvents,
       filesTouched: aggregateFileTouches(enrichedEvents),
     };
+    if (ghostTurns) chapter.ghostTurns = true;
     if (typeof s["endTs"] === "string") chapter.endTs = s["endTs"] as string;
     if (typeof s["goal"] === "string") chapter.goal = s["goal"] as string;
     if (typeof s["outcome"] === "string") chapter.outcome = s["outcome"] as string;
@@ -1036,6 +1344,27 @@ export async function buildExportPayload(
     ev["payload"] = merged;
   }
 
+  // --- Slice-21: empty-chapter elision (R-88, ADR-SN-B4) -------------------
+  // Drop chapters whose post-filter `events` array is empty AND that carry no
+  // phase boundaries. These contribute nothing pedagogical and pollute the
+  // TOC. `course.totals.sessions` is recomputed against the visible list.
+  const preFilterChapterCount = chapters.length;
+  const visibleChapters = chapters.filter(
+    (ch) => ch.events.length > 0 || ch.phases.length > 0,
+  );
+  // Sanity check (AG-44 / AG-48): if the filter removed more than 95 % of the
+  // chapters, the most likely cause is an over-aggressive narrative filter
+  // upstream — surface a single warning so the build doesn't silently lose
+  // sessions in production.
+  if (
+    preFilterChapterCount > 0 &&
+    visibleChapters.length / preFilterChapterCount < 0.05
+  ) {
+    process.stderr.write(
+      `[logbook] narrative-filter: visible chapters dropped from ${preFilterChapterCount} to ${visibleChapters.length} (>95% loss). Check NARRATIVE_KINDS coverage.\n`,
+    );
+  }
+
   // --- Raw transcripts (slice 12 P4, ADR-SC-D2, R-66) ----------------------
   // PASSIVE per INV-1 — we read the JSONL files Claude Code already wrote at
   // `~/.claude/projects/<encoded>/<sessionId>.jsonl`. Missing files (e.g. the
@@ -1059,7 +1388,7 @@ export async function buildExportPayload(
   }
 
   const totals: CourseTotals = {
-    sessions: sessions.length,
+    sessions: visibleChapters.length,
     decisions: decisions.length,
     errors: errors.length,
     fixes: fixes.length,
@@ -1084,7 +1413,7 @@ export async function buildExportPayload(
       sha: opts.gitSha ?? "",
     },
     course: { sessions: sessionSummaries, totals },
-    chapters,
+    chapters: visibleChapters,
     decisions,
     errors,
     fixes,
