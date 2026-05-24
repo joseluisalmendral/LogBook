@@ -22,6 +22,7 @@
   import ThemeToggle from "./ThemeToggle.svelte";
   import { palette } from "../stores/palette";
   import { editorPref, EDITOR_OPTIONS, type EditorScheme } from "../stores/editor-pref";
+  import { teachingPrefs } from "../stores/teaching-prefs";
 
   // Slice-18: editor URI picker — small select bound to the editorPref store
   // so the file-open chips (FileChangeStrip, linkified tool inputs) route to
@@ -38,6 +39,21 @@
     const value = (e.currentTarget as HTMLSelectElement).value;
     editorPref.set(value as EditorScheme);
   }
+
+  // Slice-25 teaching / zen / thinking toggles. Subscribed so the checkboxes
+  // stay in sync if some other surface (keyboard shortcut, top-of-chapter
+  // button) flips a preference.
+  let pathBlur = $state(teachingPrefs.get().pathBlur);
+  let zen = $state(teachingPrefs.get().zen);
+  let showThinking = $state(teachingPrefs.get().showThinking);
+  $effect(() => {
+    const unsub = teachingPrefs.subscribe((s) => {
+      pathBlur = s.pathBlur;
+      zen = s.zen;
+      showThinking = s.showThinking;
+    });
+    return () => unsub();
+  });
 
   interface Props {
     open: boolean;
@@ -125,6 +141,51 @@
       <span class="kpi-value lb-tnum kpi-milestone">{payload.course.totals.milestones}</span>
       <span class="kpi-label">Milestones</span>
     </div>
+  </section>
+
+  <!--
+    Slice-25 teaching prefs — three toggles that change how the export is
+    DISPLAYED without re-exporting. State persists to localStorage so the
+    same HTML opened tomorrow keeps the user's choices.
+  -->
+  <section class="teaching-prefs" aria-label="Display preferences">
+    <p class="teaching-prefs-title">Display</p>
+    <label class="pref-row" data-interactive>
+      <input
+        type="checkbox"
+        checked={pathBlur}
+        onchange={() => teachingPrefs.togglePathBlur()}
+        data-testid="toggle-path-blur"
+      />
+      <span class="pref-label">
+        <span class="pref-title">Teaching mode</span>
+        <span class="pref-hint">Blur absolute filesystem paths</span>
+      </span>
+    </label>
+    <label class="pref-row" data-interactive>
+      <input
+        type="checkbox"
+        checked={zen}
+        onchange={() => teachingPrefs.toggleZen()}
+        data-testid="toggle-zen"
+      />
+      <span class="pref-label">
+        <span class="pref-title">Zen mode</span>
+        <span class="pref-hint">Hide sidebar &amp; chrome (Z / F to toggle, Esc to exit)</span>
+      </span>
+    </label>
+    <label class="pref-row" data-interactive>
+      <input
+        type="checkbox"
+        checked={showThinking}
+        onchange={() => teachingPrefs.toggleShowThinking()}
+        data-testid="toggle-show-thinking"
+      />
+      <span class="pref-label">
+        <span class="pref-title">Show Claude's thinking</span>
+        <span class="pref-hint">Render thinking blocks as muted cards</span>
+      </span>
+    </label>
   </section>
 
   <!-- Slice-18: editor picker — small, low-emphasis. Sits above the
@@ -380,5 +441,58 @@
       border: 0;
       cursor: pointer;
     }
+  }
+
+  /* Slice-25 teaching prefs block. Compact, low-emphasis — discoverable
+     without competing visually with the KPI strip or theme controls. */
+  .teaching-prefs {
+    display: flex;
+    flex-direction: column;
+    gap: var(--p-space-2);
+    border-top: 1px dashed var(--color-border-hairline);
+    padding-top: var(--p-space-3);
+  }
+
+  .teaching-prefs-title {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+    margin: 0 0 var(--p-space-1) 0;
+  }
+
+  .pref-row {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--p-space-2);
+    cursor: pointer;
+    padding: 4px 0;
+  }
+
+  .pref-row input[type="checkbox"] {
+    margin: 2px 0 0 0;
+    accent-color: var(--color-accent-primary);
+    flex-shrink: 0;
+    cursor: pointer;
+  }
+
+  .pref-label {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  .pref-title {
+    font-size: var(--font-size-meta);
+    color: var(--color-text-primary);
+    line-height: 1.25;
+  }
+
+  .pref-hint {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-tertiary);
+    line-height: 1.25;
   }
 </style>

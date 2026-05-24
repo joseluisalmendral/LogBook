@@ -147,3 +147,106 @@ html[data-motion="reduced"] {
   scroll-snap-stop: normal;
   scroll-margin-top: 6rem; /* keep the row clear of the sticky header band */
 }
+
+/* ============================================================ */
+/* Slice-25 — Teaching mode (path-blur) + Zen mode               */
+/* ============================================================ */
+
+/*
+ * Path tokens wrapped by `wrapPathsForBlur()` get a blur filter when
+ * teaching mode is active. Blur is heavy enough that the path is
+ * unreadable on screen yet copy-paste still works (the underlying text
+ * is unchanged). Hover lifts the blur so the presenter can verify what
+ * is blurred without disabling the toggle.
+ */
+.lb-path {
+  display: inline;
+  transition: filter 180ms ease-out, color 180ms ease-out;
+}
+
+html[data-path-blur="true"] .lb-path {
+  filter: blur(4.5px);
+  color: var(--color-text-secondary);
+  user-select: text;
+  border-radius: 2px;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+html[data-path-blur="true"] .lb-path:hover {
+  filter: blur(0);
+  color: var(--color-text-primary);
+  background: transparent;
+}
+
+html[data-motion="reduced"] .lb-path {
+  transition: none;
+}
+
+/*
+ * Zen mode — hides chrome and centers the conversation for presentations.
+ *
+ * Active when html[data-zen="true"]. The mode is reversible at any time
+ * via the toggle button or the Z / F shortcut. Esc also exits zen.
+ *
+ * Hidden in zen:
+ *   - Sidebar (left)
+ *   - TimelineScrubber (right, desktop)
+ *   - MobileTimeline (bottom, mobile)
+ *   - Back-to-course button
+ *   - ChapterHeader (the heavy editorial header)
+ *
+ * Kept visible:
+ *   - The events stream (chat bubbles + sub-agents + questions)
+ *   - The back-to-top floating button (so user can return to chapter top)
+ *   - Zen exit button (replaces toggle in chapter header position)
+ */
+html[data-zen="true"] [data-testid="sidebar"],
+html[data-zen="true"] [data-testid="timeline-scrubber"],
+html[data-zen="true"] [data-testid="mobile-timeline"],
+html[data-zen="true"] [data-testid="mobile-nav"],
+html[data-zen="true"] [data-testid="chapter-back"],
+html[data-zen="true"] [data-testid="chapter-header"] {
+  display: none !important;
+}
+
+html[data-zen="true"] [data-testid="main-pane"] {
+  margin-left: 0 !important;
+  padding-top: 1.5rem;
+}
+
+html[data-zen="true"] .player-doc {
+  max-width: 980px !important;
+  padding-top: 1rem !important;
+}
+
+html[data-zen="true"] .chapter-player {
+  /* Pull the events stream up to where the header used to live. */
+  padding-top: 0;
+}
+
+/*
+ * Thinking blocks toggle — when html[data-show-thinking="false"] (default),
+ * any claude_message marked as thinking is hidden. When "true", they render
+ * as muted inline cards. The render still happens server-side; we only
+ * toggle visibility.
+ */
+html[data-show-thinking="false"] [data-thinking="true"] {
+  display: none;
+}
+
+html[data-show-thinking="true"] [data-thinking="true"] .bubble {
+  background: color-mix(in srgb, var(--color-text-tertiary) 8%, var(--color-surface));
+  border: 1px dashed var(--color-border-hairline);
+  opacity: 0.85;
+}
+
+html[data-show-thinking="true"] [data-thinking="true"] .bubble::before {
+  content: "thinking";
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: var(--font-size-caption);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--p-space-2);
+}

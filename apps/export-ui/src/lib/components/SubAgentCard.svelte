@@ -74,6 +74,11 @@
   const promptSummary = $derived(typeof payload.promptSummary === "string" ? payload.promptSummary : "");
   const fullPrompt = $derived(typeof payload.fullPrompt === "string" ? payload.fullPrompt : "");
   const response = $derived(typeof payload.response === "string" ? payload.response : "");
+  // Slice-25: pre-rendered HTML versions (markdown → sanitized HTML) from
+  // build-export-payload. When present, the UI renders formatted output
+  // (bold, lists, code blocks, links). Falls back to the plain string.
+  const fullPromptHtml = $derived(typeof payload.fullPromptHtml === "string" ? payload.fullPromptHtml : "");
+  const responseHtml = $derived(typeof payload.responseHtml === "string" ? payload.responseHtml : "");
   const skillsLoaded = $derived(Array.isArray(payload.skillsLoaded) ? (payload.skillsLoaded as string[]) : []);
   const tools = $derived(
     Array.isArray(payload.tools)
@@ -192,10 +197,21 @@
   <div class="expand-grid" id={regionId} role="region" aria-label={`${agent} details`}>
     <div class="expand-inner">
       <div class="expand-content">
-        {#if fullPrompt}
-          <section class="back-section" aria-label="Full prompt">
+        {#if fullPrompt || fullPromptHtml}
+          <!--
+            Slice-25: full prompt now renders the pre-built HTML when the
+            backend pre-renders it (bold / lists / code-block-aware). Falls
+            back to a wrapping <pre> for plain text. The wrapper width
+            stretches to the card edges (no narrow column) so long prompts
+            stay readable without horizontal scroll.
+          -->
+          <section class="back-section back-section-wide" aria-label="Full prompt">
             <h4 class="back-section-title">Full prompt</h4>
-            <pre class="back-pre">{fullPrompt}</pre>
+            {#if fullPromptHtml}
+              <div class="back-md"><MarkdownBlock body={fullPromptHtml} /></div>
+            {:else}
+              <pre class="back-pre">{fullPrompt}</pre>
+            {/if}
           </section>
         {/if}
 
@@ -239,10 +255,20 @@
           </section>
         {/if}
 
-        {#if response}
-          <section class="back-section" aria-label="Response synthesis">
+        {#if response || responseHtml}
+          <!--
+            Slice-25: response renders the pre-rendered markdown HTML when
+            available (formatted bold / lists / code blocks). The previous
+            implementation wrapped the raw markdown string in <p>...</p>
+            and splatted that, showing literal **bold** characters.
+          -->
+          <section class="back-section back-section-wide" aria-label="Response synthesis">
             <h4 class="back-section-title">Response synthesis</h4>
-            <MarkdownBlock body={`<p>${response}</p>`} />
+            {#if responseHtml}
+              <div class="back-md"><MarkdownBlock body={responseHtml} /></div>
+            {:else}
+              <pre class="back-pre">{response}</pre>
+            {/if}
           </section>
         {/if}
 
@@ -427,8 +453,67 @@
     color: var(--color-accent-primary);
   }
 
+  /*
+   * Slice-25: chevron is larger + sits in a chip-like circle so the
+   * affordance is obvious. The icon itself scales via CSS (overrides the
+   * inline svg width/height) and a hover state on the parent card makes
+   * the chevron pop. All other "lb-chevron" instances inherit the same
+   * styling from affordance.css; this rule only overrides for the
+   * SubAgentCard's prominent header chevron.
+   */
   .card-chevron {
     margin-left: var(--p-space-2);
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    background: var(--color-surface-sunken);
+    border: 1px solid var(--color-border-hairline);
+    color: var(--color-text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    transition: background 160ms ease-out, color 160ms ease-out, border-color 160ms ease-out;
+  }
+
+  .card-chevron :global(svg) {
+    width: 14px;
+    height: 14px;
+  }
+
+  .card-wrap:hover .card-chevron,
+  .card:focus-visible .card-chevron {
+    background: color-mix(in srgb, var(--color-accent-primary) 14%, var(--color-surface-sunken));
+    color: var(--color-accent-primary);
+    border-color: color-mix(in srgb, var(--color-accent-primary) 36%, var(--color-border-hairline));
+  }
+
+  :global(html[data-motion="reduced"]) .card-chevron {
+    transition: none;
+  }
+
+  /*
+   * Slice-25: `back-section-wide` overrides the default reading-column
+   * max-width so the full prompt and response synthesis fill the card
+   * edge-to-edge. Improves legibility on long markdown content.
+   */
+  .back-section-wide :global(.md-block) {
+    max-width: none;
+  }
+  .back-section-wide .back-pre {
+    max-width: none;
+  }
+  .back-md {
+    background: var(--color-surface-sunken);
+    border-radius: var(--radius-sm);
+    padding: var(--p-space-3) var(--p-space-4);
+    border: 1px solid var(--color-border-hairline);
+  }
+  .back-md :global(p:first-child) {
+    margin-top: 0;
+  }
+  .back-md :global(p:last-child) {
+    margin-bottom: 0;
   }
 
   /* ---- EXPAND GRID — ADR-SC-B1 --------------------------------------- */

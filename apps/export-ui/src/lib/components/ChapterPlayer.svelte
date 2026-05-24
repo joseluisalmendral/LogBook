@@ -47,6 +47,21 @@
     window.scrollTo({ top: 0, behavior: motion.motionAllowed ? "smooth" : "auto" });
   }
 
+  // Slice-25 zen mode. We subscribe to the prefs store so the button reflects
+  // the current state and any keyboard-driven toggle (Z / F / Esc) is also
+  // reflected.
+  import { teachingPrefs } from "../stores/teaching-prefs";
+  let zen = $state(teachingPrefs.get().zen);
+  $effect(() => {
+    const unsub = teachingPrefs.subscribe((s) => {
+      zen = s.zen;
+    });
+    return () => unsub();
+  });
+  function toggleZen(): void {
+    teachingPrefs.toggleZen();
+  }
+
   interface Props {
     chapterId: string;
   }
@@ -230,14 +245,72 @@
     window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   });
+
+  // Slice-25: keyboard shortcuts for zen mode.
+  //   Z or F  → toggle zen
+  //   Esc     → exit zen (only when currently in zen — leaves Esc alone
+  //             so it still works for inspector / palette closes elsewhere)
+  // Ignore key events when typing in inputs/textareas so the search palette
+  // and inspector textareas don't accidentally toggle the mode.
+  onMount(() => {
+    const isEditableTarget = (el: EventTarget | null): boolean => {
+      if (!(el instanceof HTMLElement)) return false;
+      const tag = el.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return true;
+      if (el.isContentEditable) return true;
+      return false;
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (isEditableTarget(e.target)) return;
+      const key = e.key.toLowerCase();
+      if (key === "z" || key === "f") {
+        e.preventDefault();
+        teachingPrefs.toggleZen();
+      } else if (key === "escape" && teachingPrefs.get().zen) {
+        e.preventDefault();
+        teachingPrefs.setZen(false);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
 </script>
 
 <section class="chapter-player" data-testid="chapter-player">
   {#if chapter}
     <div class="player-doc">
-      <button type="button" class="back-btn" onclick={back} data-testid="chapter-back">
-        <span aria-hidden="true">←</span> Back to course
-      </button>
+      <div class="chapter-toolbar">
+        <button type="button" class="back-btn" onclick={back} data-testid="chapter-back">
+          <span aria-hidden="true">←</span> Back to course
+        </button>
+        <button
+          type="button"
+          class="zen-btn"
+          onclick={toggleZen}
+          aria-pressed={zen}
+          aria-label={zen ? "Exit zen mode" : "Enter zen mode"}
+          title={zen ? "Exit zen mode (Esc or Z)" : "Zen mode — hide chrome (Z)"}
+          data-testid="zen-toggle"
+        >
+          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            {#if zen}
+              <!-- Exit-zen glyph: arrows collapsing inward -->
+              <polyline points="6 3 6 6 3 6" />
+              <polyline points="10 3 10 6 13 6" />
+              <polyline points="6 13 6 10 3 10" />
+              <polyline points="10 13 10 10 13 10" />
+            {:else}
+              <!-- Enter-zen glyph: arrows expanding outward -->
+              <polyline points="3 7 3 3 7 3" />
+              <polyline points="13 7 13 3 9 3" />
+              <polyline points="3 9 3 13 7 13" />
+              <polyline points="13 9 13 13 9 13" />
+            {/if}
+          </svg>
+          <span class="zen-btn-label">{zen ? "Exit zen" : "Zen mode"}</span>
+        </button>
+      </div>
 
       <ChapterHeader {chapter} />
 
@@ -353,6 +426,64 @@
 
   .back-btn:hover {
     text-decoration: underline;
+  }
+
+  /* Slice-25: chapter toolbar (back + zen toggle). */
+  .chapter-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--p-space-3);
+    margin-bottom: var(--p-space-4);
+  }
+
+  .zen-btn {
+    appearance: none;
+    border: 1px solid var(--color-border-hairline);
+    background: var(--color-surface-raised);
+    color: var(--color-text-secondary);
+    padding: 6px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+    font-family: var(--font-body);
+    font-size: var(--font-size-caption);
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--p-space-2);
+    transition: background 160ms ease-out, color 160ms ease-out, border-color 160ms ease-out;
+  }
+
+  .zen-btn:hover {
+    background: color-mix(in srgb, var(--color-accent-primary) 8%, var(--color-surface-raised));
+    color: var(--color-text-primary);
+    border-color: color-mix(in srgb, var(--color-accent-primary) 40%, var(--color-border-hairline));
+  }
+
+  .zen-btn[aria-pressed="true"] {
+    background: var(--color-accent-primary);
+    color: var(--color-bg);
+    border-color: var(--color-accent-primary);
+  }
+
+  .zen-btn:focus-visible {
+    outline: 2px solid var(--color-accent-primary);
+    outline-offset: 3px;
+  }
+
+  :global(html[data-zen="true"]) .zen-btn {
+    /* In zen mode the back button is hidden; the zen-btn becomes the
+       primary chrome control. Make it slightly more present so users can
+       always exit. */
+    position: fixed;
+    top: var(--p-space-4);
+    right: var(--p-space-4);
+    z-index: 50;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+  }
+
+  :global(html[data-motion="reduced"]) .zen-btn {
+    transition: none;
   }
 
   /* Slice-22: back-to-top floating button. Bottom-right anchored, above the

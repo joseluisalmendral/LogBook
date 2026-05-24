@@ -36,6 +36,7 @@
   import { payload as dataPayload } from "../stores/data";
   import MarkdownBlock from "./MarkdownBlock.svelte";
   import FileChangeStrip from "./FileChangeStrip.svelte";
+  import { wrapPathsForBlur } from "../stores/teaching-prefs";
 
   interface ToolStripEntry {
     name: string;
@@ -157,6 +158,11 @@
   data-testid="claude-message-row"
   data-event-id={event.id}
   data-expanded={expanded}
+  data-thinking={
+    ((event as { isThinking?: boolean }).isThinking === true ||
+      (event.payload as Record<string, unknown> | undefined)?.["isThinking"] === true)
+      ? "true" : "false"
+  }
   data-interactive
   role="button"
   tabindex="0"
@@ -166,7 +172,18 @@
 >
   <div class="bubble">
     <header class="eyebrow">
-      <span class="avatar" aria-hidden="true">C</span>
+      <!--
+        Slice-25: replaced the "C" monogram with the Claude orbit glyph
+        (Anthropic's open public mark — a centered dot with a soft halo).
+        Renders entirely inline so it works in dark/light mode via
+        currentColor. Sized 22px to match the previous avatar footprint.
+      -->
+      <span class="avatar" aria-hidden="true">
+        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
+          <path d="M5.9 17 11.3 7.5 13.6 7.5 8.1 17 5.9 17ZM12.6 17 18 7.5 20.3 7.5 14.8 17 12.6 17ZM6.5 7.5l1.5 0 0 9.5L6.5 17 6.5 7.5ZM17.5 7.5l1.5 0 0 9.5-1.5 0L17.5 7.5Z" fill="currentColor" opacity="0.92" />
+          <circle cx="12" cy="12" r="1.6" fill="currentColor" />
+        </svg>
+      </span>
       <span class="who">Claude</span>
       <span class="time lb-tnum">{formatTime(event.ts)}</span>
       {#if hasStrips}
@@ -216,20 +233,27 @@
                           <summary class="tool-summary" title={t.file_path ? `${t.name} · ${t.file_path}` : t.name}>
                             <code class="tool-name">{t.name}</code>
                             {#if displayLabel}
-                              <span class="tool-input" dir="auto">{displayLabel}</span>
+                              <!--
+                                Slice-25: paths in the chip face are wrapped
+                                in `<span class="lb-path">` so the CSS in
+                                app.css (gated on html[data-path-blur="true"])
+                                can blur them for teaching mode. Hover lifts
+                                the blur so presenters can verify silently.
+                              -->
+                              <span class="tool-input" dir="auto">{@html wrapPathsForBlur(displayLabel)}</span>
                             {/if}
                             <span class="tool-chevron" aria-hidden="true">▸</span>
                           </summary>
                           <div class="tool-body">
-                            {#if t.input && t.file_path}
-                              <p class="tool-field"><span class="tool-field-label">input</span><code class="tool-field-value">{t.input}</code></p>
+                            {#if t.input}
+                              <p class="tool-field"><span class="tool-field-label">input</span><code class="tool-field-value">{@html wrapPathsForBlur(t.input)}</code></p>
                             {/if}
                             {#if t.file_path}
-                              <p class="tool-field"><span class="tool-field-label">path</span><code class="tool-field-value">{t.file_path}</code></p>
+                              <p class="tool-field"><span class="tool-field-label">path</span><code class="tool-field-value">{@html wrapPathsForBlur(t.file_path)}</code></p>
                             {/if}
                             {#if t.outputPreview}
                               <p class="tool-field tool-field-output"><span class="tool-field-label">output</span></p>
-                              <pre class="tool-output"><code>{t.outputPreview}</code></pre>
+                              <pre class="tool-output"><code>{@html wrapPathsForBlur(t.outputPreview)}</code></pre>
                             {/if}
                           </div>
                         </details>
@@ -302,18 +326,20 @@
   }
 
   .avatar {
-    width: 22px;
-    height: 22px;
+    width: 28px;
+    height: 28px;
     border-radius: 50%;
     background: var(--color-surface-sunken);
     color: var(--color-accent-primary);
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: var(--font-size-caption);
-    font-weight: 700;
-    font-family: var(--font-headline);
     flex-shrink: 0;
+    border: 1px solid color-mix(in srgb, var(--color-accent-primary) 22%, var(--color-border-hairline));
+  }
+
+  .avatar svg {
+    display: block;
   }
 
   .who {
