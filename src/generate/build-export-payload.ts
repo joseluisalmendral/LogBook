@@ -716,6 +716,48 @@ function applyNarrativeFilter(
 }
 
 /**
+ * Slice-22 hygiene: re-nest `agent_question` flattened fields back into
+ * `payload`. `render-context.normalizeEvent` flattens the original payload
+ * (question/options/chosen/etc.) up to top-level so all downstream filters
+ * can read them, then `slimEventForChapter` whitelists which top-level fields
+ * survive into the chapter — and the AskUserQuestion fields are NOT in that
+ * whitelist by design (the slim layer only keeps id/type/ts/title/meta/payload).
+ *
+ * Slice-14/15 already does this re-nesting for `subagent_complete`. We need
+ * the same treatment for `agent_question` so AgentQuestionCard finds the data
+ * under `event.payload` after slim. Without this, every question renders with
+ * "Untitled question" and zero options.
+ *
+ * Pure function. Single shallow copy per agent_question event. Other event
+ * types pass through unchanged.
+ */
+function repackAgentQuestionPayload(events: RenderEvent[]): RenderEvent[] {
+  return events.map((ev) => {
+    if (ev.type !== "agent_question") return ev;
+    const rec = ev as Record<string, unknown>;
+    const existing = (rec["payload"] as Record<string, unknown> | undefined) ?? {};
+    const repacked: Record<string, unknown> = { ...existing };
+    const FIELDS = [
+      "question",
+      "header",
+      "options",
+      "multiSelect",
+      "chosen",
+      "notes",
+      "askedAt",
+      "toolUseId",
+      "questionIndex",
+    ];
+    for (const k of FIELDS) {
+      if (rec[k] !== undefined && repacked[k] === undefined) {
+        repacked[k] = rec[k];
+      }
+    }
+    return { ...ev, payload: repacked } as RenderEvent;
+  });
+}
+
+/**
  * Lowercased tool name from a normalized `tool_result.<tool>` event.
  * Falls back to the top-level `tool_name` field when the type was not
  * suffix-encoded (older capture paths).
@@ -1173,12 +1215,16 @@ export async function buildExportPayload(
       rolledUpEvents,
       askUserQuestionDedupIds,
     );
+    // Slice-22: AgentQuestionCard reads payload.question/options/chosen. The
+    // upstream normalizeEvent flattens those to top-level, so we re-nest before
+    // slim or the card renders "Untitled question" with zero options.
+    const repackedEvents = repackAgentQuestionPayload(narrativeEvents);
     const ghostTurns = computeGhostTurns(enrichedEvents);
 
     // Slice-20: strip the heavy `raw` / `_raw` / `tool_response` fields off
     // every event AFTER enrichment has read what it needs. Keeps the payload
     // JSON two orders of magnitude smaller on real data.
-    const slimEvents = narrativeEvents.map(slimEventForChapter);
+    const slimEvents = repackedEvents.map(slimEventForChapter);
 
     const chapter: Chapter = {
       sessionId: id,

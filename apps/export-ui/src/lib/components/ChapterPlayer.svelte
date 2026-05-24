@@ -39,6 +39,14 @@
   let activeEventId = $state<string | null>(null);
   let playMode = $state<"scroll" | "play">("scroll");
 
+  // Slice-22: back-to-top button visibility (>400px scrolled).
+  let showBackToTop = $state(false);
+
+  function scrollToTop(): void {
+    const motion = getMotionState();
+    window.scrollTo({ top: 0, behavior: motion.motionAllowed ? "smooth" : "auto" });
+  }
+
   interface Props {
     chapterId: string;
   }
@@ -212,6 +220,16 @@
       clearPreviousPulse();
     };
   });
+
+  // Slice-22: scroll listener for back-to-top button visibility.
+  onMount(() => {
+    const onScroll = (): void => {
+      showBackToTop = (window.scrollY || document.documentElement.scrollTop) > 400;
+    };
+    onScroll(); // initial state
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  });
 </script>
 
 <section class="chapter-player" data-testid="chapter-player">
@@ -270,6 +288,25 @@
     {#if !isMobile}
       <TimelineScrubber events={chapter.events} />
     {/if}
+
+    <!-- Slice-22: back-to-top floating button. Long chapters (177-1492 rows)
+         make scrolling back to the chapter header tedious. Button fades in
+         after 400px of scroll. Click → smooth scroll to top (or auto under
+         reduced-motion). -->
+    {#if showBackToTop}
+      <button
+        type="button"
+        class="back-to-top"
+        data-testid="back-to-top"
+        aria-label="Back to top of chapter"
+        onclick={scrollToTop}
+      >
+        <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="4 10 8 6 12 10" />
+        </svg>
+        <span class="back-to-top-label">Top</span>
+      </button>
+    {/if}
   {:else}
     <div class="not-found">
       <button type="button" class="back-btn" onclick={back}>
@@ -316,6 +353,71 @@
 
   .back-btn:hover {
     text-decoration: underline;
+  }
+
+  /* Slice-22: back-to-top floating button. Bottom-right anchored, above the
+     TimelineScrubber. Visible only when scrolled past 400px (toggled by the
+     JS scroll listener). Smooth-scroll to top on click (auto under
+     reduced-motion). */
+  .back-to-top {
+    position: fixed;
+    right: var(--p-space-5);
+    bottom: calc(var(--p-space-6) + 88px); /* above the scrubber strip */
+    z-index: 40;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--p-space-2);
+    padding: 10px 14px;
+    background: var(--color-surface-raised);
+    border: 1px solid var(--color-border-hairline);
+    border-radius: 999px;
+    color: var(--color-text-primary);
+    font-family: var(--font-body);
+    font-size: var(--font-size-meta);
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
+    transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), background 160ms ease-out, border-color 160ms ease-out;
+    opacity: 0;
+    animation: btt-fade-in 200ms ease-out forwards;
+  }
+
+  .back-to-top:hover {
+    background: color-mix(in srgb, var(--color-accent-primary) 8%, var(--color-surface-raised));
+    border-color: color-mix(in srgb, var(--color-accent-primary) 40%, var(--color-border-hairline));
+    transform: translateY(-2px);
+  }
+
+  .back-to-top:focus-visible {
+    outline: 2px solid var(--color-accent-primary);
+    outline-offset: 3px;
+  }
+
+  .back-to-top svg { color: var(--color-accent-primary); }
+  .back-to-top-label { line-height: 1; }
+
+  @keyframes btt-fade-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  :global(html[data-motion="reduced"]) .back-to-top {
+    animation: none !important;
+    opacity: 1;
+    transition: none !important;
+  }
+  :global(html[data-motion="reduced"]) .back-to-top:hover {
+    transform: none;
+  }
+
+  /* Mobile: anchor to bottom corner above any mobile timeline strip. */
+  @media (max-width: 767px) {
+    .back-to-top {
+      right: var(--p-space-3);
+      bottom: var(--p-space-5);
+      padding: 8px 12px;
+    }
+    .back-to-top-label { display: none; } /* icon-only on mobile to save space */
   }
 
   /* Slice-21 R-89: ghost-turn notice. Subtle neutral surface, accent
