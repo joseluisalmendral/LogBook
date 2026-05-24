@@ -992,19 +992,28 @@ export function transcriptLineToEvents(
           },
           ...(line.timestamp !== undefined && { timestamp: line.timestamp }),
         });
-      } else if (
-        block.type === "thinking" &&
-        typeof block.thinking === "string" &&
-        block.thinking.trim()
-      ) {
+      } else if (block.type === "thinking") {
+        // Slice-28: emit thinking events EVEN when the text content is
+        // empty. Anthropic encrypts the thinking body in most transcripts
+        // — only a signature is exposed — so `block.thinking` is "" for
+        // ~99% of real captures. We still want to record the moment so
+        // the UI can render a "Claude is reasoning" marker (no leaked
+        // content; just a beat that helps the audience follow the pace
+        // of the conversation).
+        const rawText = typeof block.thinking === "string" ? block.thinking : "";
+        const hasText = rawText.trim().length > 0;
         events.push({
           kind: "claude_message",
           sessionId,
           payload: {
-            text: block.thinking,
+            text: hasText ? rawText : "",
             requestId: line.requestId,
             claudeUuid: line.uuid,
             isThinking: true,
+            // Flag so the UI can distinguish encrypted/empty from real
+            // thinking on the rare sessions where Anthropic does expose
+            // the body (e.g. extended-thinking with raw output enabled).
+            thinkingEncrypted: !hasText,
           },
           ...(line.timestamp !== undefined && { timestamp: line.timestamp }),
         });

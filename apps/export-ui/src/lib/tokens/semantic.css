@@ -37,19 +37,38 @@
   /* Borders / hairlines */
   --color-border-hairline: var(--p-graphite-overlay-10);
 
-  /* Accents — categorical, not decorative */
-  --color-accent-primary:    var(--p-navy-700);
-  --color-accent-secondary:  var(--p-terracotta-600);
-  --color-success:           var(--p-sage-600);
+  /*
+   * Slice 28 — accents under the editorial rebrand.
+   *
+   * --color-accent-primary  → Claude Ember (#d77a4a) — the warm Anthropic
+   *                           burst. Functional links + focus rings + the
+   *                           visual signature of this product.
+   * --color-accent-secondary → Glow Yellow @ 50% — subtle highlight wash
+   *                           used for selected states and key emphasis.
+   * --color-subagent        → Teal Basin — DESIGN.md's anchor for blocks;
+   *                           sub-agent cards adopt this tone for their
+   *                           border-left accent.
+   * --color-decision        → Inkwell Violet — gravitas marker (DESIGN.md
+   *                           treats decisions as deeply structural).
+   * --color-question        → Claude Ember — branching = warm, attention.
+   */
+  --color-accent-primary:    var(--p-claude-ember);
+  --color-accent-secondary:  var(--p-glow-yellow);
+  --color-success:           var(--p-teal-basin);
   --color-error:             var(--p-brick-600);
   --color-warning:           var(--p-amber-700);
-  --color-decision:          var(--p-plum-700);
-  --color-fix:               var(--p-sage-600);   /* alias of success */
-  --color-lesson:            var(--p-terracotta-600); /* alias of accent-secondary */
-  --color-question:          var(--p-gold-700);
-  --color-milestone:         var(--p-navy-700);   /* alias of accent-primary */
-  --color-subagent:          var(--p-graphite-900); /* slice 12: matches scrubber chip mapping */
-  --color-generic:           var(--p-graphite-400); /* tertiary tone for unknown kinds */
+  --color-decision:          var(--p-graphite-900);  /* inkwell violet */
+  --color-fix:               var(--p-teal-basin);    /* alias of success */
+  --color-lesson:            var(--p-terracotta-600);
+  --color-question:          var(--p-claude-ember);
+  --color-milestone:         var(--p-graphite-900);  /* inkwell violet */
+  --color-subagent:          var(--p-teal-basin);    /* slice 28: Teal Basin */
+  --color-generic:           var(--p-graphite-400);
+  --color-focus:             var(--p-claude-ember);
+
+  /* Slice-28 editorial accent fills (semi-transparent). */
+  --color-glow:              var(--p-glow-yellow-50);
+  --color-teal-fill:         var(--p-teal-basin-12);
 
   /* Type */
   --font-headline: var(--p-font-serif);

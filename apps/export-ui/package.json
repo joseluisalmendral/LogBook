@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "motion": "^12.40.0",
     "svelte": "5.55.9"
   },
   "devDependencies": {

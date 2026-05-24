@@ -101,20 +101,30 @@
  * elements. The default Chromium fade is fine; we add a tiny scale + slide
  * on the outgoing TOC root for the "page-peel" register (motion #10).
  */
+/*
+ * Slice 28 — WOW view transitions.
+ *
+ * Outgoing root: dive away (slight scale down + push to top + fade out)
+ * over a longer 520ms with the cinematic ease.
+ * Incoming root: zoom from 1.06 with a subtle blur lift, fading to crisp
+ * — gives a "developing" feel like a polaroid resolving. Filter blur is
+ * GPU-friendly on modern engines.
+ */
 @supports (view-transition-name: root) {
   ::view-transition-old(root) {
-    animation: vt-old 350ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: vt-old 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
   ::view-transition-new(root) {
-    animation: vt-new 400ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation: vt-new 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
   }
   @keyframes vt-old {
-    from { opacity: 1; transform: scale(1); }
-    to   { opacity: 0; transform: scale(0.96) translateY(8px); }
+    from { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }
+    to   { opacity: 0; transform: scale(0.94) translateY(-24px); filter: blur(6px); }
   }
   @keyframes vt-new {
-    from { opacity: 0; transform: scale(1.02); }
-    to   { opacity: 1; transform: scale(1); }
+    from { opacity: 0; transform: scale(1.06); filter: blur(8px); }
+    50%  { opacity: 1; }
+    to   { opacity: 1; transform: scale(1); filter: blur(0); }
   }
 }
 
@@ -172,11 +182,14 @@ html[data-path-blur="true"] .lb-path {
   background: color-mix(in srgb, currentColor 12%, transparent);
 }
 
-html[data-path-blur="true"] .lb-path:hover {
-  filter: blur(0);
-  color: var(--color-text-primary);
-  background: transparent;
-}
+/*
+ * Slice 28: blur is LOCKED. The previous hover-lifts-blur affordance
+ * defeated the privacy intent — anyone watching a screen recording or
+ * presentation could read a path by pausing the cursor over it. Now the
+ * blurred tokens stay blurred regardless of cursor state. If a presenter
+ * needs to inspect their own path, they can toggle Teaching off briefly
+ * from the sidebar.
+ */
 
 html[data-motion="reduced"] .lb-path {
   transition: none;
@@ -214,14 +227,76 @@ html[data-zen="true"] [data-testid="main-pane"] {
   padding-top: 1.5rem;
 }
 
+/*
+ * Slice 28 — zen mode goes BIGGER and softer for presentation contexts.
+ *
+ *   - Typography scales x1.18 across body / lead / headings so the room
+ *     can read at a distance.
+ *   - The reading column widens (1080px) so the larger type still feels
+ *     proportioned, not crammed.
+ *   - A subtle radial wash behind the column simulates the spotlight
+ *     of a paper notebook under desk lighting (warm, low-contrast).
+ *   - Entrance animation: the document fades + scales from 0.97 → 1
+ *     and the cream wash bleeds in. Reduced-motion zeroes this.
+ */
+html[data-zen="true"] {
+  --p-size-12: 13px;
+  --p-size-14: 16px;
+  --p-size-16: 18px;
+  --p-size-20: 22px;
+  --p-size-25: 28px;
+  --p-size-31: 36px;
+  --p-size-39: 44px;
+  --p-size-48: 56px;
+}
+
 html[data-zen="true"] .player-doc {
-  max-width: 980px !important;
-  padding-top: 1rem !important;
+  max-width: 1080px !important;
+  padding-top: 1.5rem !important;
+  padding-bottom: 6rem !important;
+  animation: lb-zen-enter 480ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
 html[data-zen="true"] .chapter-player {
-  /* Pull the events stream up to where the header used to live. */
   padding-top: 0;
+  position: relative;
+}
+
+html[data-zen="true"] .chapter-player::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      ellipse 60% 40% at 50% 30%,
+      color-mix(in srgb, var(--color-accent-secondary) 30%, transparent) 0%,
+      transparent 70%
+    );
+  opacity: 0.45;
+  z-index: -1;
+  animation: lb-zen-bleed 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes lb-zen-enter {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes lb-zen-bleed {
+  from { opacity: 0; }
+  to   { opacity: 0.45; }
+}
+
+html[data-motion="reduced"] html[data-zen="true"] .player-doc,
+html[data-motion="reduced"] html[data-zen="true"] .chapter-player::before {
+  animation: none !important;
 }
 
 /*

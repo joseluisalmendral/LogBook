@@ -609,6 +609,10 @@ function slimEventForChapter(event: RenderEvent): RenderEvent {
     // Slice-25: thinking flag survives so the UI can hide/show
     // claude_message events flagged as Claude's pre-response thinking.
     "isThinking",
+    // Slice-28: flag set by the transcript scraper when Anthropic
+    // encrypted the thinking body (the common case). UI renders a
+    // content-less "Claude reasoning" beat marker.
+    "thinkingEncrypted",
   ];
   for (const k of KEEP) {
     if (rec[k] !== undefined) slim[k] = rec[k];
