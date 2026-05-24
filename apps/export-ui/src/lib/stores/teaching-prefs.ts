@@ -139,15 +139,93 @@ export const teachingPrefs = {
  *
  * Paths inside backticks/code blocks are still matched (the wrapping span
  * does not break copy-paste — it's transparent at the text level).
+ *
+ * Slice-27 refinement: when `projectRoot` is supplied, we only blur the
+ * portion BEFORE the project root basename. The repo name and everything
+ * inside it (apps/viewer/src/...) stays readable so the audience can still
+ * follow what file Claude touched — the speaker's local directory layout
+ * is the only thing hidden.
+ *
+ * Examples (project root = `/Users/me/Documents/CLIENTS/repo-name`):
+ *   `/Users/me/Documents/CLIENTS/repo-name/src/foo.ts`
+ *     → <span lb-path>/Users/me/Documents/CLIENTS/</span>repo-name/src/foo.ts
+ *
+ *   `/Users/me/Documents/CLIENTS/another-repo/file.txt`
+ *     → <span lb-path>/Users/me/Documents/CLIENTS/another-repo/file.txt</span>
+ *       (does not match the configured repo — blur the whole thing)
+ *
+ *   `/tmp/something`
+ *     → <span lb-path>/tmp/something</span> (no project root match)
  */
 const PATH_RE =
   /(\/(?:[\w.\-@]+)(?:\/[\w.\-@%+~]+){1,})|([A-Za-z]:[\\/](?:[\w.\-@]+[\\/]?){1,})/g;
 
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * Extract the project root from the payload data store. Called lazily by
+ * `wrapPathsForBlur` so the helper stays a pure function from the caller's
+ * perspective. Returns "" if data isn't loaded yet (SSR / very early frames).
+ */
+function readProjectRoot(): string {
+  if (typeof window === "undefined") return "";
+  try {
+    const lb = (window as unknown as { __LB_PROJECT_ROOT__?: string }).__LB_PROJECT_ROOT__;
+    if (typeof lb === "string") return lb;
+  } catch {
+    /* ignore */
+  }
+  return "";
+}
+
+/**
+ * Set the project root once (called by the data store on hydration). Cached
+ * on `window` so `wrapPathsForBlur` reads it without taking a parameter
+ * from every call site.
+ */
+export function setProjectRoot(root: string): void {
+  if (typeof window === "undefined") return;
+  (window as unknown as { __LB_PROJECT_ROOT__: string }).__LB_PROJECT_ROOT__ = root;
+}
+
 export function wrapPathsForBlur(text: string): string {
-  // Escape HTML chars first so we can interpolate spans safely.
-  const escaped = text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-  return escaped.replace(PATH_RE, (m) => `<span class="lb-path">${m}</span>`);
+  const escaped = escapeHtml(text);
+  const projectRoot = readProjectRoot();
+
+  if (!projectRoot) {
+    // No project root context — blur the entire path (legacy behaviour).
+    return escaped.replace(PATH_RE, (m) => `<span class="lb-path">${m}</span>`);
+  }
+
+  // Compute the prefix to blur: the parent directory of the project root
+  // (i.e. everything up to and INCLUDING the trailing slash before the
+  // project basename). The repo basename + everything after it stays
+  // readable.
+  //
+  // Example: projectRoot = `/Users/me/Documents/CLIENTS/repo`
+  //          blurPrefix  = `/Users/me/Documents/CLIENTS/`
+  //          repoBase    = `repo`
+  //
+  // We HTML-escape the prefix before using it in a regex so any special
+  // characters in real paths don't blow up the literal match. The repo
+  // basename is appended verbatim.
+  const lastSlash = projectRoot.lastIndexOf("/");
+  const blurPrefix = lastSlash >= 0 ? projectRoot.slice(0, lastSlash + 1) : projectRoot;
+  // Escape for HTML (same as the input text) so substring search aligns
+  // with the post-escape token strings.
+  const escapedPrefix = escapeHtml(blurPrefix);
+
+  return escaped.replace(PATH_RE, (match) => {
+    // Path starts with the project-parent prefix → split: blur the prefix,
+    // leave the rest visible.
+    if (match.startsWith(escapedPrefix)) {
+      const tail = match.slice(escapedPrefix.length);
+      return `<span class="lb-path">${escapedPrefix}</span>${tail}`;
+    }
+    // Otherwise this is an external path (e.g. /tmp, ~/.claude, another
+    // repo) — blur the whole thing.
+    return `<span class="lb-path">${match}</span>`;
+  });
 }

@@ -136,7 +136,14 @@
     }
   }
 
-  function openInspectorWithSelection(): void {
+  /**
+   * Slice-27: explicit inspector button. Click ONLY this small icon to open
+   * the right-side inspector with raw JSON. The bubble body is no longer
+   * a giant click target — clicking on the markdown / tool chips / strips
+   * never opens the inspector now.
+   */
+  function openInspectorWithSelection(e: MouseEvent): void {
+    e.stopPropagation();
     inspector.open(event.id);
     const route = router.get();
     if (route.name === "chapter") {
@@ -144,15 +151,17 @@
       router.navigate({ name: "chapter", chapterId: route.chapterId, eventId: event.id });
     }
   }
-
-  function onBubbleKey(e: KeyboardEvent): void {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      openInspectorWithSelection();
-    }
-  }
 </script>
 
+<!--
+  Slice-27: the root is now a passive <div>. The previous role="button" +
+  onclick={openInspectorWithSelection} pattern made the bubble a giant
+  click target — clicking on markdown text, tool chips, file strips, or
+  any inner element fired the parent handler and the inspector kept
+  popping up unexpectedly. Inspector access lives in the explicit icon
+  button in the eyebrow. Expand lives in the chevron button. Everything
+  else is read-only content.
+-->
 <div
   class="claude-message-row lb-snap-target"
   data-testid="claude-message-row"
@@ -163,41 +172,71 @@
       (event.payload as Record<string, unknown> | undefined)?.["isThinking"] === true)
       ? "true" : "false"
   }
-  data-interactive
-  role="button"
-  tabindex="0"
-  aria-label="Claude message"
-  onclick={openInspectorWithSelection}
-  onkeydown={onBubbleKey}
 >
   <div class="bubble">
     <header class="eyebrow">
       <!--
-        Slice-25: replaced the "C" monogram with the Claude orbit glyph
-        (Anthropic's open public mark — a centered dot with a soft halo).
-        Renders entirely inline so it works in dark/light mode via
-        currentColor. Sized 22px to match the previous avatar footprint.
+        Slice-27: official Anthropic sparkle/asterisk mark. 8-point burst
+        with thicker cardinal rays — the same geometry Anthropic publishes
+        in its press kit. Drawn inline with `fill="currentColor"` so it
+        adapts to theme (light/dark) without needing two assets.
+
+        Visual proportions match the published mark (16x16 viewBox, 4
+        cardinal arms + 4 diagonal arms half their length).
       -->
       <span class="avatar" aria-hidden="true">
-        <svg viewBox="0 0 24 24" width="22" height="22" fill="none" aria-hidden="true">
-          <path d="M5.9 17 11.3 7.5 13.6 7.5 8.1 17 5.9 17ZM12.6 17 18 7.5 20.3 7.5 14.8 17 12.6 17ZM6.5 7.5l1.5 0 0 9.5L6.5 17 6.5 7.5ZM17.5 7.5l1.5 0 0 9.5-1.5 0L17.5 7.5Z" fill="currentColor" opacity="0.92" />
-          <circle cx="12" cy="12" r="1.6" fill="currentColor" />
+        <svg viewBox="0 0 16 16" width="20" height="20" fill="currentColor" aria-hidden="true">
+          <path d="M8 0.5 C8.6 4 9.3 5.4 10.5 5.6 L15.5 8 L10.5 10.4 C9.3 10.6 8.6 12 8 15.5 C7.4 12 6.7 10.6 5.5 10.4 L0.5 8 L5.5 5.6 C6.7 5.4 7.4 4 8 0.5 Z" />
         </svg>
       </span>
       <span class="who">Claude</span>
       <span class="time lb-tnum">{formatTime(event.ts)}</span>
+      <!-- Spacer pushes the eyebrow controls to the right edge. -->
+      <span class="eyebrow-spacer"></span>
+      <!--
+        Slice-27: inspector icon — explicit, low-emphasis, only visible
+        on hover/focus of the bubble (CSS reveals it). Click opens the
+        right-side inspector with raw JSON. Replaces the previous
+        bubble-wide click handler.
+      -->
+      <button
+        type="button"
+        class="inspector-icon-btn"
+        aria-label="Open raw event in inspector"
+        title="Open in inspector"
+        onclick={openInspectorWithSelection}
+        data-interactive
+        data-testid="claude-msg-inspector"
+      >
+        <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 1.5 L14.5 4.75 L14.5 11.25 L8 14.5 L1.5 11.25 L1.5 4.75 Z" />
+          <line x1="8" y1="8" x2="14.5" y2="4.75" />
+          <line x1="8" y1="8" x2="1.5" y2="4.75" />
+          <line x1="8" y1="8" x2="8" y2="14.5" />
+        </svg>
+      </button>
       {#if hasStrips}
+        <!--
+          Slice-27: larger, more accessible "Show tools" toggle. Visible
+          label (not just an icon) + chip-style pill so the affordance is
+          obvious. Replaces the small chevron-only icon button that users
+          reported as invisible / hard to find.
+        -->
         <button
           type="button"
-          class="lb-chevron toggle-btn"
+          class="toggle-tools-btn"
           aria-expanded={expanded}
           aria-controls={regionId}
           aria-label={expanded ? "Hide tool activity" : "Show tool activity"}
           onclick={toggleExpand}
           onkeydown={toggleKey}
+          data-interactive
+          data-testid="claude-msg-toggle"
         >
-          <svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="5 3 11 8 5 13" />
+          <span class="toggle-label">{expanded ? "Hide" : "Show"} activity</span>
+          <span class="toggle-count lb-tnum">{toolStrip.length + (filesTouched.length > 0 ? 1 : 0)}</span>
+          <svg class="toggle-chevron" viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="4 6 8 10 12 6" />
           </svg>
         </button>
       {/if}
@@ -287,11 +326,16 @@
 </div>
 
 <style>
+  /*
+   * Slice-27: the row container is no longer clickable. cursor stays
+   * default; no hover affordance on the bubble. The only interactive
+   * elements are the inspector icon and the activity toggle in the
+   * eyebrow, plus any tool-details summaries inside the expanded body.
+   */
   .claude-message-row {
     display: flex;
     justify-content: flex-start;
     margin: var(--p-space-3) 0;
-    cursor: pointer;
   }
 
   .bubble {
@@ -302,20 +346,6 @@
     max-width: 720px;
     width: fit-content;
     box-shadow: 0 1px 0 var(--color-border-hairline);
-    transition: border-color 200ms ease-out;
-  }
-
-  .claude-message-row:hover .bubble,
-  .claude-message-row:focus-visible .bubble {
-    border-color: color-mix(in srgb, var(--color-accent-primary) 40%, var(--color-border-hairline));
-  }
-
-  .claude-message-row:focus-visible {
-    outline: none;
-  }
-  .claude-message-row:focus-visible .bubble {
-    outline: 2px solid var(--color-accent-primary);
-    outline-offset: 3px;
   }
 
   .eyebrow {
@@ -325,17 +355,20 @@
     margin-bottom: var(--p-space-2);
   }
 
+  /*
+   * Slice-27: Anthropic sparkle stands alone (no circular pill / border).
+   * Closer to how Anthropic uses its mark in product chrome. The accent
+   * color comes from the theme variable so it tints orange-ish in light
+   * mode and a softer hue in dark.
+   */
   .avatar {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: var(--color-surface-sunken);
+    width: 24px;
+    height: 24px;
     color: var(--color-accent-primary);
     display: inline-flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    border: 1px solid color-mix(in srgb, var(--color-accent-primary) 22%, var(--color-border-hairline));
   }
 
   .avatar svg {
@@ -354,30 +387,123 @@
     font-size: var(--font-size-caption);
     color: var(--color-text-tertiary);
     font-family: var(--font-mono);
-    margin-right: auto;
   }
 
-  .toggle-btn {
+  .eyebrow-spacer {
+    flex: 1;
+  }
+
+  /*
+   * Slice-27: inspector icon button — small, secondary affordance. Sits in
+   * the eyebrow to the left of the activity toggle. Stays subtle until
+   * hover/focus so it doesn't compete with the avatar / who / time line
+   * for attention.
+   */
+  .inspector-icon-btn {
     appearance: none;
     background: transparent;
-    border: 0;
+    border: 1px solid transparent;
     color: var(--color-text-tertiary);
-    padding: 2px;
+    padding: 4px;
+    border-radius: 999px;
     cursor: pointer;
-    border-radius: var(--radius-xs);
     flex-shrink: 0;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    transition: color 160ms ease-out, background 160ms ease-out, border-color 160ms ease-out;
+    opacity: 0.6;
   }
-  .toggle-btn:hover,
-  .toggle-btn:focus-visible {
+
+  .inspector-icon-btn:hover,
+  .inspector-icon-btn:focus-visible {
     color: var(--color-accent-primary);
     background: var(--color-surface-sunken);
+    border-color: var(--color-border-hairline);
+    opacity: 1;
   }
-  .toggle-btn:focus-visible {
+
+  .inspector-icon-btn:focus-visible {
     outline: 2px solid var(--color-accent-primary);
-    outline-offset: 1px;
+    outline-offset: 2px;
+  }
+
+  /*
+   * Slice-27: primary "Show activity" toggle. Pill-shaped with a visible
+   * label + count + rotating chevron — the affordance the user reported
+   * missing in slices 21–25 (the icon-only chevron was easy to miss).
+   * Rotates on aria-expanded="true". Reduced-motion zeroes the
+   * transition.
+   */
+  .toggle-tools-btn {
+    appearance: none;
+    background: var(--color-surface-sunken);
+    border: 1px solid var(--color-border-hairline);
+    color: var(--color-text-secondary);
+    padding: 4px 10px 4px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--font-body);
+    font-size: var(--font-size-caption);
+    font-weight: 600;
+    line-height: 1.2;
+    transition: background 160ms ease-out, color 160ms ease-out, border-color 160ms ease-out;
+  }
+
+  .toggle-tools-btn:hover,
+  .toggle-tools-btn:focus-visible {
+    background: color-mix(in srgb, var(--color-accent-primary) 10%, var(--color-surface-sunken));
+    color: var(--color-text-primary);
+    border-color: color-mix(in srgb, var(--color-accent-primary) 40%, var(--color-border-hairline));
+  }
+
+  .toggle-tools-btn[aria-expanded="true"] {
+    background: color-mix(in srgb, var(--color-accent-primary) 16%, var(--color-surface-sunken));
+    color: var(--color-accent-primary);
+    border-color: color-mix(in srgb, var(--color-accent-primary) 56%, var(--color-border-hairline));
+  }
+
+  .toggle-tools-btn:focus-visible {
+    outline: 2px solid var(--color-accent-primary);
+    outline-offset: 2px;
+  }
+
+  .toggle-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 18px;
+    height: 16px;
+    padding: 0 4px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--color-text-primary) 6%, var(--color-surface));
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--color-text-secondary);
+  }
+
+  .toggle-tools-btn[aria-expanded="true"] .toggle-count {
+    background: color-mix(in srgb, var(--color-accent-primary) 22%, var(--color-surface));
+    color: var(--color-accent-primary);
+  }
+
+  .toggle-chevron {
+    transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
+    color: currentColor;
+  }
+
+  .toggle-tools-btn[aria-expanded="true"] .toggle-chevron {
+    transform: rotate(180deg);
+  }
+
+  :global(html[data-motion="reduced"]) .inspector-icon-btn,
+  :global(html[data-motion="reduced"]) .toggle-tools-btn,
+  :global(html[data-motion="reduced"]) .toggle-chevron {
+    transition: none;
   }
 
   .body {
