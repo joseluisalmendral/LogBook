@@ -201,6 +201,17 @@ export function redact(input: string, opts: RedactOptions = {}): RedactionResult
   const HASH_HEX_RE = /^[a-f0-9]+$/i;
   const KNOWN_HASH_LENGTHS = new Set([32, 40, 64, 128]);
 
+  // Slice-26: tool_use_id values are NOT secrets — they're internal API
+  // ids that downstream code uses to JOIN tool_use ↔ tool_result events
+  // during hook ↔ scraper dedup. Without this exception the entropy regex
+  // shreds them (`toolu_01...` is base64-shaped) and the dedup fails,
+  // producing duplicate tool_result entries on every re-scrape.
+  //
+  // Stable shape: `toolu_` followed by ~22 base64-url chars. Anthropic
+  // documents this prefix in the Messages API; it has been stable for
+  // years.
+  const TOOL_USE_ID_RE = /^toolu_[A-Za-z0-9]{8,}$/;
+
   ENTROPY_TOKEN_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = ENTROPY_TOKEN_RE.exec(input)) !== null) {
@@ -223,6 +234,10 @@ export function redact(input: string, opts: RedactOptions = {}): RedactionResult
     if (KNOWN_HASH_LENGTHS.has(hashCandidate.length) && HASH_HEX_RE.test(hashCandidate)) {
       continue;
     }
+
+    // Slice-26: skip Anthropic tool_use_id tokens — they are JOIN keys, not
+    // secrets. See the comment on TOOL_USE_ID_RE above.
+    if (TOOL_USE_ID_RE.test(token)) continue;
 
     if (shannonEntropy(token) >= entropyThreshold) {
       entropyHits.push({

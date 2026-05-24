@@ -80,11 +80,16 @@ const MINIMAL_EXPECTED: ArtifactSummary[] = [
   { kind: "hook", hookEvent: "PostToolUse", _logbookId: "lb-hook-posttooluse-001" },
 ].sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
 
+// Slice-26 lean install: PostToolUse + UserPromptSubmit removed (scraper
+// handles them via transcript backfill with toolUseId + fingerprint dedup).
+// SessionStart moved from teaching into standard. Net: standard goes from
+// 16 → 15 artifacts (drops 2 hooks, adds 1 hook). Teaching goes from 20 →
+// 18 artifacts (loses the 2 dropped hooks, no longer re-registers
+// SessionStart since standard already includes it).
 const STANDARD_EXPECTED: ArtifactSummary[] = [
   { kind: "augment_claudemd", file_path: "CLAUDE.md", _logbookId: "lb-claudemd-001" },
   { kind: "gitignore_entry", file_path: ".gitignore", marker: "# lb-gitignore-001" },
-  { kind: "hook", hookEvent: "PostToolUse", _logbookId: "lb-hook-posttooluse-001" },
-  { kind: "hook", hookEvent: "UserPromptSubmit", _logbookId: "lb-hook-userpromptsubmit-001" },
+  { kind: "hook", hookEvent: "SessionStart", _logbookId: "lb-hook-sessionstart-001" },
   { kind: "hook", hookEvent: "Stop", _logbookId: "lb-hook-stop-001" },
   { kind: "mcp_server", name: "logbook-mcp", _logbookId: "lb-mcp-001" },
   { kind: "slash_command", name: "lb-decision", file_path: ".claude/commands/lb-decision.md", _logbookId: "lb-cmd-lb-decision" },
@@ -102,10 +107,9 @@ const STANDARD_EXPECTED: ArtifactSummary[] = [
 const TEACHING_EXPECTED: ArtifactSummary[] = [
   { kind: "augment_claudemd", file_path: "CLAUDE.md", _logbookId: "lb-claudemd-001" },
   { kind: "gitignore_entry", file_path: ".gitignore", marker: "# lb-gitignore-001" },
-  { kind: "hook", hookEvent: "PostToolUse", _logbookId: "lb-hook-posttooluse-001" },
-  { kind: "hook", hookEvent: "UserPromptSubmit", _logbookId: "lb-hook-userpromptsubmit-001" },
-  { kind: "hook", hookEvent: "Stop", _logbookId: "lb-hook-stop-001" },
+  // Slice-26 lean install: only 2 hooks now (SessionStart + Stop).
   { kind: "hook", hookEvent: "SessionStart", _logbookId: "lb-hook-sessionstart-001" },
+  { kind: "hook", hookEvent: "Stop", _logbookId: "lb-hook-stop-001" },
   { kind: "mcp_server", name: "logbook-mcp", _logbookId: "lb-mcp-001" },
   { kind: "slash_command", name: "lb-decision", file_path: ".claude/commands/lb-decision.md", _logbookId: "lb-cmd-lb-decision" },
   { kind: "slash_command", name: "lb-error", file_path: ".claude/commands/lb-error.md", _logbookId: "lb-cmd-lb-error" },
@@ -137,9 +141,10 @@ describe("buildArtifactsForPreset — extraction regression guard", () => {
     expect(summarize(artifacts)).toEqual(MINIMAL_EXPECTED);
   });
 
-  test("standard: returns exactly 16 artifacts", () => {
+  test("standard: returns exactly 15 artifacts (slice 26 lean install)", () => {
+    // Slice-26: -PostToolUse, -UserPromptSubmit, +SessionStart = net -1.
     const artifacts = buildArtifactsForPreset("standard");
-    expect(artifacts).toHaveLength(16);
+    expect(artifacts).toHaveLength(15);
   });
 
   test("standard: artifact shape matches frozen baseline", () => {
@@ -147,9 +152,12 @@ describe("buildArtifactsForPreset — extraction regression guard", () => {
     expect(summarize(artifacts)).toEqual(STANDARD_EXPECTED);
   });
 
-  test("teaching: returns exactly 20 artifacts", () => {
+  test("teaching: returns exactly 18 artifacts (slice 26 lean install)", () => {
+    // Slice-26: -PostToolUse, -UserPromptSubmit from standard; teaching no
+    // longer re-registers SessionStart (standard already includes it).
+    // 20 → 18.
     const artifacts = buildArtifactsForPreset("teaching");
-    expect(artifacts).toHaveLength(20);
+    expect(artifacts).toHaveLength(18);
   });
 
   test("teaching: artifact shape matches frozen baseline", () => {

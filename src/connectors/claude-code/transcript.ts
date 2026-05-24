@@ -66,6 +66,80 @@ export function userPromptHash(text: string): string {
 }
 
 /**
+ * Slice-26: scan events.jsonl once and return the dedup keys for every
+ * tool_result event already on disk for this session.
+ *
+ * Two parallel sets are returned so the scraper can dedup robustly across
+ * two real failure modes:
+ *
+ *   1. `toolUseIds` — primary key. Used when both sides carry a real
+ *      `toolu_*` id. Reliable for all events captured after the slice-26
+ *      redactor exception that exempts `toolu_*` from entropy redaction.
+ *
+ *   2. `fingerprints` — secondary key for LEGACY events written before the
+ *      redactor exception, where the tool_use_id was already shredded to
+ *      `[REDACTED:high-entropy]` and can never be recovered. Fingerprint =
+ *      `${tool_name}|${timestamp_truncated_to_second}`. The hook timestamp
+ *      and the transcript timestamp drift by ~10 ms; truncation to seconds
+ *      collapses them. Collisions require Claude to fire the same tool
+ *      twice in the same second of the same session — astronomically rare.
+ *
+ * Empty sets on missing / unreadable file. Same failure-safe contract as
+ * `loadExistingUserPromptHashes`.
+ */
+export async function loadExistingToolUseIds(
+  eventsJsonlPath: string,
+  sessionId: string,
+): Promise<{ toolUseIds: Set<string>; fingerprints: Set<string> }> {
+  const toolUseIds = new Set<string>();
+  const fingerprints = new Set<string>();
+  let content: string;
+  try {
+    content = await fs.promises.readFile(eventsJsonlPath, "utf8");
+  } catch {
+    return { toolUseIds, fingerprints };
+  }
+  for (const line of content.split("\n")) {
+    if (!line) continue;
+    if (!line.includes(`"tool_result"`)) continue;
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (parsed["kind"] !== "tool_result") continue;
+    if (parsed["sessionId"] !== sessionId) continue;
+    const payload = parsed["payload"] as Record<string, unknown> | undefined;
+    const raw = payload?.["raw"] as Record<string, unknown> | undefined;
+    const id = raw?.["tool_use_id"];
+    // Only treat the id as a real key when it's NOT the redactor placeholder.
+    // Otherwise the secondary fingerprint takes over.
+    if (typeof id === "string" && id && !id.startsWith("[REDACTED:")) {
+      toolUseIds.add(id);
+    }
+    const toolName =
+      typeof raw?.["tool_name"] === "string"
+        ? (raw["tool_name"] as string)
+        : "";
+    const ts = typeof parsed["timestamp"] === "string" ? (parsed["timestamp"] as string) : "";
+    if (toolName && ts) {
+      fingerprints.add(toolFingerprint(toolName, ts));
+    }
+  }
+  return { toolUseIds, fingerprints };
+}
+
+/** Slice-26: deterministic dedup fingerprint for tool_result events. */
+export function toolFingerprint(toolName: string, timestamp: string): string {
+  // Truncate to second. Wall-clock drift between PostToolUse hook (fires
+  // after tool completion) and the transcript tool_result write is ~10 ms;
+  // seconds is the right granularity.
+  const tsSec = timestamp.slice(0, 19); // "2026-05-24T03:26:00"
+  return `${toolName}|${tsSec}`;
+}
+
+/**
  * Slice-23: scan events.jsonl once and return the set of (sessionId-scoped)
  * user_prompt text hashes that have already been written by the
  * UserPromptSubmit hook. The scraper consults this set BEFORE synthesizing
@@ -659,6 +733,170 @@ function emitForCall(
 // ---------------------------------------------------------------------------
 
 /**
+ * Slice-26 backfill: pair tool_use blocks (assistant lines) with their
+ * matching tool_result blocks (user lines) using `tool_use_id` as the
+ * join key, and emit `tool_result` events whose shape matches what the
+ * PostToolUse hook produces. This lets the scraper RECOVER tool calls the
+ * hook missed (close-too-fast scenario) and ENABLES future hook-removal
+ * without losing tool detail.
+ *
+ * Event shape (matches PostToolUse exactly so downstream code is unchanged):
+ *   {
+ *     kind: "tool_result",
+ *     timestamp: <tool_result line timestamp>,
+ *     sessionId,
+ *     payload: {
+ *       raw: { tool_name, tool_input, tool_response, tool_use_id, agent_id?, is_error? }
+ *     }
+ *   }
+ *
+ * Options:
+ *   - `excludedToolUseIds`: dedup against tool_results already in events.jsonl
+ *     (the PostToolUse hook captured them live). Skip emission for any
+ *     `tool_use_id` in this set.
+ *   - `agentId`: when scraping a sub-agent transcript, stamp every emitted
+ *     event with `payload.raw.agent_id = agentId` so the slice 14/15/16
+ *     enrichment pipeline (which filters child tools by raw.agent_id) keeps
+ *     working without modification.
+ *
+ * PASSIVE per INV-1: pure transform over already-persisted transcript data.
+ */
+export function extractToolEvents(
+  lines: ClaudeTranscriptLine[],
+  sessionId: string,
+  options: {
+    excludedToolUseIds?: Set<string>;
+    /** Secondary fingerprint set (toolFingerprint values) — used to dedup
+     *  legacy events whose tool_use_id was shredded by the pre-slice-26
+     *  redactor. See `loadExistingToolUseIds` for the contract. */
+    excludedFingerprints?: Set<string>;
+    agentId?: string;
+  } = {},
+): EventInput[] {
+  // Stage 1: scan for tool_use blocks (assistant side) and remember the
+  //          name + input keyed by id. We can't emit tool_result yet — we
+  //          need the matching user-side tool_result block first.
+  type PendingCall = {
+    toolName: string;
+    toolInput: unknown;
+    callTimestamp?: string;
+  };
+  const pending = new Map<string, PendingCall>();
+
+  // Stage 2: walk lines linearly. Each tool_use opens a pending slot; each
+  // tool_result closes it (and emits). Skipped lines (meta / sidechain /
+  // non-message) don't interrupt the pairing because tool_use_id is a
+  // globally unique anchor across the whole transcript.
+  const out: EventInput[] = [];
+  const excluded = options.excludedToolUseIds;
+  const excludedFp = options.excludedFingerprints;
+  const stampAgentId = options.agentId;
+
+  for (const line of lines) {
+    if (line.isMeta === true) continue;
+    // Skip sidechain only for the MAIN transcript (caller decides). When
+    // we scrape sub-agent transcripts directly we pass their own lines,
+    // which are not flagged sidechain in the sub-agent's own file.
+    if (line.isSidechain === true && !stampAgentId) continue;
+
+    const content = line.message?.content;
+    if (!content || typeof content === "string" || !Array.isArray(content)) {
+      continue;
+    }
+
+    for (const block of content) {
+      // Assistant tool_use → cache the call so we can pair it later.
+      if (line.type === "assistant" && block.type === "tool_use") {
+        const blockRec = block as unknown as Record<string, unknown>;
+        const id = typeof blockRec["id"] === "string" ? (blockRec["id"] as string) : "";
+        if (!id) continue;
+        const name = typeof block.name === "string" ? block.name : "";
+        pending.set(id, {
+          toolName: name,
+          toolInput: block.input,
+          ...(typeof line.timestamp === "string" && { callTimestamp: line.timestamp }),
+        });
+        continue;
+      }
+
+      // User tool_result → emit if not already in dedup set.
+      if (line.type === "user" && block.type === "tool_result") {
+        const blockRec = block as unknown as Record<string, unknown>;
+        const toolUseId =
+          typeof blockRec["tool_use_id"] === "string"
+            ? (blockRec["tool_use_id"] as string)
+            : "";
+        if (!toolUseId) continue;
+        if (excluded?.has(toolUseId)) {
+          pending.delete(toolUseId);
+          continue;
+        }
+        const call = pending.get(toolUseId);
+        // Secondary dedup against the fingerprint set so legacy events
+        // whose tool_use_id was redacted (pre-slice-26 capture) still
+        // collide and we don't emit a duplicate.
+        if (excludedFp && call) {
+          const fp = toolFingerprint(call.toolName, line.timestamp ?? "");
+          if (excludedFp.has(fp)) {
+            pending.delete(toolUseId);
+            continue;
+          }
+        }
+        // Even if the call info is missing (e.g. tool_use was in a chunk
+        // before our cursor), we still emit so the event isn't lost —
+        // tool_name + input will be empty and the UI degrades gracefully.
+        const toolResponse =
+          (blockRec["content"] ?? null) as unknown;
+        const isError =
+          typeof blockRec["is_error"] === "boolean"
+            ? (blockRec["is_error"] as boolean)
+            : false;
+
+        const toolName = call?.toolName ?? "";
+        const raw: Record<string, unknown> = {
+          tool_name: toolName,
+          tool_input: call?.toolInput ?? null,
+          tool_response: toolResponse,
+          tool_use_id: toolUseId,
+        };
+        if (stampAgentId) raw["agent_id"] = stampAgentId;
+        if (isError) raw["is_error"] = true;
+
+        // Slice-26: mirror the PostToolUse hook's persisted shape — it puts
+        // `tool_name` and `tool_response` at the payload top-level in addition
+        // to inside `raw`. render-context.normalizeEvent reads top-level
+        // `tool_name` to derive `type = tool_result.<lowercased-name>`. If we
+        // omit it the type collapses to bare "tool_result" and downstream
+        // display (toolDisplayNameOf, summarizeToolInput) falls back to
+        // "tool" — exactly the bug observed on the first slice-26 dry run.
+        const payload: Record<string, unknown> = { raw };
+        if (toolName) {
+          payload["tool_name"] = toolName;
+        }
+        payload["tool_response"] = toolResponse;
+
+        const ev: EventInput = {
+          kind: "tool_result",
+          sessionId,
+          payload,
+          ...(typeof line.timestamp === "string" && { timestamp: line.timestamp }),
+          // Hook events also stamp these at top-level so meta lookups
+          // (e.g. event.meta.tool_name from downstream consumers) work.
+          meta: {
+            tool_name: toolName,
+            ...(toolUseId && { tool_use_id: toolUseId }),
+          },
+        };
+        out.push(ev);
+        pending.delete(toolUseId);
+      }
+    }
+  }
+
+  return out;
+}
+
+/**
  * Convert a transcript line to zero or more logbook EventInputs.
  *
  * Filtering rules (from design §C):
@@ -975,6 +1213,44 @@ export async function runTranscriptScraper(
     }
   }
 
+  // Slice-26: tool_use ↔ tool_result pairing from the main transcript with
+  // dedup against PostToolUse hook captures. Backfills tools the hook missed
+  // (close-too-fast scenarios) and lays the foundation for hook-removal.
+  try {
+    const existing = await loadExistingToolUseIds(paths.eventsJsonl, sessionId);
+    const toolEvents = extractToolEvents(lines, sessionId, {
+      excludedToolUseIds: existing.toolUseIds,
+      excludedFingerprints: existing.fingerprints,
+    });
+    for (const eventInput of toolEvents) {
+      try {
+        await appendEvent(paths, {
+          ...eventInput,
+          provider: "claude-code-transcript",
+        });
+        written++;
+        // Keep the dedup sets fresh within this batch.
+        const payload = eventInput.payload as Record<string, unknown> | undefined;
+        const raw = payload?.["raw"] as Record<string, unknown> | undefined;
+        const id = raw?.["tool_use_id"];
+        if (typeof id === "string" && id) existing.toolUseIds.add(id);
+        const toolName =
+          typeof raw?.["tool_name"] === "string" ? (raw["tool_name"] as string) : "";
+        const ts =
+          typeof eventInput.timestamp === "string" ? (eventInput.timestamp as string) : "";
+        if (toolName && ts) existing.fingerprints.add(toolFingerprint(toolName, ts));
+      } catch {
+        skipped++;
+      }
+    }
+  } catch (err) {
+    if (process.env["LOGBOOK_HOOK_DEBUG"] === "1") {
+      process.stderr.write(
+        `[logbook] transcript: tool synthesis failed: ${String(err)}\n`,
+      );
+    }
+  }
+
   // Update main cursor.
   cursors[sessionId] = newCursor;
 
@@ -1045,6 +1321,53 @@ export async function runTranscriptScraper(
               if (block.type === "tool_use") toolCallCount++;
             }
           }
+        }
+      }
+
+      // Slice-26: also synthesize tool_result events for the sub-agent's
+      // tool calls from its own transcript. Each event is stamped with
+      // `raw.agent_id = agentId` so the slice 14/15/16 enrichment that
+      // filters child tools by raw.agent_id continues to work.
+      try {
+        const subDedup = await loadExistingToolUseIds(paths.eventsJsonl, sessionId);
+        const subToolEvents = extractToolEvents(agentResult.lines, sessionId, {
+          excludedToolUseIds: subDedup.toolUseIds,
+          excludedFingerprints: subDedup.fingerprints,
+          agentId,
+        });
+        for (const eventInput of subToolEvents) {
+          try {
+            await appendEvent(paths, {
+              ...eventInput,
+              provider: "claude-code-transcript",
+              meta: {
+                ...(eventInput.meta ?? {}),
+                subagentId: agentId,
+                isSidechain: true,
+                ...(attributionAgent !== undefined && { attributionAgent }),
+              },
+            });
+            written++;
+            const payload = eventInput.payload as Record<string, unknown> | undefined;
+            const raw = payload?.["raw"] as Record<string, unknown> | undefined;
+            const id = raw?.["tool_use_id"];
+            if (typeof id === "string" && id) subDedup.toolUseIds.add(id);
+            const toolName =
+              typeof raw?.["tool_name"] === "string" ? (raw["tool_name"] as string) : "";
+            const ts =
+              typeof eventInput.timestamp === "string"
+                ? (eventInput.timestamp as string)
+                : "";
+            if (toolName && ts) subDedup.fingerprints.add(toolFingerprint(toolName, ts));
+          } catch {
+            skipped++;
+          }
+        }
+      } catch (err) {
+        if (process.env["LOGBOOK_HOOK_DEBUG"] === "1") {
+          process.stderr.write(
+            `[logbook] transcript: sub-agent ${agentId} tool synthesis failed: ${String(err)}\n`,
+          );
         }
       }
 
