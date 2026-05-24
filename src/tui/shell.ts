@@ -27,7 +27,6 @@ import {
   runUninstallAction,
   runBuildAction,
   runExportHtmlAction,
-  runExportInstructorPackAction,
   runDoctorAction,
   runToggleDisabledAction,
   runProviderTestAction,
@@ -64,7 +63,6 @@ export interface ShellHandlers {
   runUninstall?: (ctx: ActionContext) => Promise<void>;
   runBuild?: (ctx: ActionContext) => Promise<void>;
   runExportHtml?: (ctx: ActionContext) => Promise<void>;
-  runExportInstructorPack?: (ctx: ActionContext, opts?: { safe?: boolean }) => Promise<void>;
   runDoctor?: (ctx: ActionContext) => Promise<void>;
   runToggleDisabled?: (ctx: ActionContext, currentDisabled: boolean) => Promise<void>;
   runProviderTest?: (ctx: ActionContext, opts: { providerId: string }) => Promise<void>;
@@ -177,12 +175,6 @@ function resolveHandler(
 
   if (label.startsWith("Exporting HTML")) {
     const fn = handlers.runExportHtml ?? runExportHtmlAction;
-    void fn(ctx);
-    return;
-  }
-
-  if (label.startsWith("Exporting instructor")) {
-    const fn = handlers.runExportInstructorPack ?? runExportInstructorPackAction;
     void fn(ctx);
     return;
   }

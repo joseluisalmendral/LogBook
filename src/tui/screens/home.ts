@@ -48,7 +48,6 @@ const HOME_LABELS: Record<(typeof HOME_ACTIONS)[number], string> = {
   "review":                 "review           — review pending items",
   "summarize":              "summarize        — summarize milestone",
   "export-html":            "export-html      — export HTML report",
-  "export-instructor-pack": "export-instructor-pack — export instructor pack",
   "configure":              "configure        — settings and options",
   "doctor":                 "doctor           — run token budget check",
   "install":                "install/update   — install or update LogBook",

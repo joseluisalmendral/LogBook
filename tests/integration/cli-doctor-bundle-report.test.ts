@@ -100,10 +100,10 @@ describe("doctor command — bundle output", () => {
     expect(Array.isArray(json["bundles"])).toBe(true);
   });
 
-  it("doctor --json bundles array has 5 entries", () => {
+  it("doctor --json bundles array has 4 entries (slice 19 dropped the pdf bundle)", () => {
     const { stdout } = runCli(["doctor", "--json"], tmp);
     const json = JSON.parse(stdout) as { bundles: unknown[] };
-    expect(json.bundles).toHaveLength(5);
+    expect(json.bundles).toHaveLength(4);
   });
 
   it("doctor --json each bundle entry has required fields", () => {

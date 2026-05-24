@@ -25,9 +25,10 @@ import type { ReviewState } from "../types/review.js";
 // ---------------------------------------------------------------------------
 // Menu length constants
 //
-// HOME_ACTIONS (0-indexed):
-//   0=build, 1=review, 2=summarize, 3=export-html, 4=export-instructor-pack,
-//   5=configure, 6=doctor, 7=install, 8=uninstall, 9=quit
+// HOME_ACTIONS (0-indexed). Slice 19 dropped `export-instructor-pack` after
+// the legacy export shell was removed.
+//   0=build, 1=review, 2=summarize, 3=export-html, 4=configure,
+//   5=doctor, 6=install, 7=uninstall, 8=quit
 //
 // Cursor clamping policy (mirrors review/flows.ts Math.min/Math.max):
 //   - navigate +1 past last → CLAMP at last (no-op)
@@ -39,7 +40,6 @@ export const HOME_ACTIONS = [
   "review",
   "summarize",
   "export-html",
-  "export-instructor-pack",
   "configure",
   "doctor",
   "install",
@@ -271,17 +271,6 @@ export function reduce(state: ShellState, action: ShellAction): ShellState {
                 screen: {
                   kind: "doing",
                   label: "Exporting HTML...",
-                  promise: "pending",
-                  returnTo: "home",
-                },
-              };
-
-            case "export-instructor-pack":
-              return {
-                ...state,
-                screen: {
-                  kind: "doing",
-                  label: "Exporting instructor pack...",
                   promise: "pending",
                   returnTo: "home",
                 },

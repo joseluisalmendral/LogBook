@@ -7,7 +7,6 @@
  *   runUninstallAction — calls runUninstall
  *   runBuildAction — calls runAllGenerators
  *   runExportHtmlAction — calls the HTML export pipeline
- *   runExportInstructorPackAction — calls exportInstructorPack
  *   runDoctorAction — recomputes token breakdown + logs stats
  *   runToggleDisabledAction — writes state.disabled toggle
  *
@@ -208,24 +207,8 @@ export async function runExportHtmlAction(ctx: ActionContext): Promise<void> {
   }
 }
 
-/**
- * Export instructor pack (HTML bundle with all docs + ADRs + teaching scripts).
- */
-export async function runExportInstructorPackAction(
-  ctx: ActionContext,
-  opts?: { safe?: boolean },
-): Promise<void> {
-  ctx.dispatch({ type: "doing.start", label: "Exporting instructor pack...", returnTo: "home" });
-  try {
-    const { exportInstructorPack } = await import("../export/instructor-pack.js");
-    await exportInstructorPack({ paths: ctx.paths, safe: opts?.safe ?? false });
-    ctx.dispatch({ type: "doing.ok", message: "Instructor pack exported" });
-    const snap = await buildSnapshot(ctx.paths);
-    ctx.dispatch({ type: "snapshot.refresh", snapshot: snap });
-  } catch (err) {
-    ctx.dispatch({ type: "doing.err", message: errorMessage(err) });
-  }
-}
+// Slice 19: runExportInstructorPackAction removed along with the legacy
+// export shell. The TUI home menu (`HOME_ACTIONS`) dropped its entry too.
 
 /**
  * Run doctor: recompute token breakdown and report health.
