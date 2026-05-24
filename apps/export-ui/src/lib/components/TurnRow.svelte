@@ -21,6 +21,28 @@
     progress crosses the row's offset. Gated by motionAllowed; reduced-motion
     shows the row fully visible at all times.
 -->
+<script lang="ts" module>
+  /**
+   * Module-scope set: dedupe "unknown kind" warnings across all TurnRow
+   * instances in a session. R-86 / ADR-SN-D2 / NFR-4.
+   *
+   * Gated behind import.meta.env.DEV — production builds (the single-file
+   * HTML opened by students) MUST be silent. The set lives at module scope so
+   * the second TurnRow instance encountering the same unknown kind does not
+   * re-warn.
+   */
+  const warnedKinds = new Set<string>();
+
+  function warnOnceUnknownKind(k: string): void {
+    if (typeof window === "undefined") return; // SSR safety
+    if (!import.meta.env.DEV) return;
+    if (warnedKinds.has(k)) return;
+    warnedKinds.add(k);
+    // eslint-disable-next-line no-console
+    console.warn(`[narrative-rebuild] unknown event kind: ${k}`);
+  }
+</script>
+
 <script lang="ts">
   import type { RenderEvent } from "../types";
   import { inspector } from "../stores/inspector";
@@ -31,6 +53,8 @@
   import AgentQuestionCard from "./AgentQuestionCard.svelte";
   import SubAgentCard from "./SubAgentCard.svelte";
   import CommitRow from "./CommitRow.svelte";
+  import UserPromptRow from "./UserPromptRow.svelte";
+  import ClaudeMessageRow from "./ClaudeMessageRow.svelte";
   import MarkdownBlock from "./MarkdownBlock.svelte";
   import { payload } from "../stores/data";
 
@@ -43,9 +67,16 @@
   /**
    * Classification by event.type suffix or event.kind. Prefer kind when set
    * (new event shape from P2); fall back to type for legacy events.
+   *
+   * Slice-21 (ADR-SN-D2): explicit branches for `user_prompt` and
+   * `claude_message`. The legacy "generic" / "Untitled event" fallback is
+   * REMOVED — truly unknown kinds resolve to "unknown" and render NOTHING
+   * (with a dev-only warn-once console message).
    */
   const kind = $derived.by(() => {
     const k = (event as { kind?: string }).kind ?? event.type ?? "";
+    if (k === "user_prompt") return "user_prompt";
+    if (k === "claude_message") return "claude_message";
     if (k === "agent_question") return "agent_question";
     if (k.startsWith("subagent")) return "subagent";
     if (k.endsWith("decision")) return "decision";
@@ -55,7 +86,14 @@
     if (k.endsWith("milestone")) return "milestone";
     if (k.endsWith("resource")) return "resource";
     if (k === "commit") return "commit";
-    return "generic";
+    return "unknown";
+  });
+
+  $effect(() => {
+    if (kind === "unknown") {
+      const k = (event as { kind?: string }).kind ?? event.type ?? "<no-kind>";
+      warnOnceUnknownKind(k);
+    }
   });
 
   const body = $derived(payload.bodies[event.id]);
@@ -90,6 +128,10 @@
 <div class="turn-row" data-testid="turn-row" data-kind={kind} class:is-selected={selected}>
   {#if kind === "agent_question"}
     <AgentQuestionCard {event} />
+  {:else if kind === "user_prompt"}
+    <UserPromptRow {event} />
+  {:else if kind === "claude_message"}
+    <ClaudeMessageRow {event} />
   {:else if kind === "subagent"}
     <SubAgentCard {event} />
   {:else if kind === "decision"}
@@ -102,8 +144,8 @@
     <ResourceCard {event} />
   {:else if kind === "commit"}
     <CommitRow {event} />
-  {:else}
-    <!-- Lesson / fix / generic — minimal row with click-to-inspect. -->
+  {:else if kind === "lesson" || kind === "fix"}
+    <!-- Lesson / fix — minimal row with click-to-inspect. -->
     <button
       type="button"
       class="generic-row lb-snap-target"
@@ -112,12 +154,15 @@
       onclick={openInspectorWithSelection}
     >
       <span class="row-dot" aria-hidden="true"></span>
-      <span class="row-eyebrow">{kind === "lesson" ? "Lesson" : kind === "fix" ? "Fix" : "Event"}</span>
-      <span class="row-title">{event.title ?? "Untitled event"}</span>
+      <span class="row-eyebrow">{kind === "lesson" ? "Lesson" : "Fix"}</span>
+      <span class="row-title">{event.title ?? (kind === "lesson" ? "Lesson" : "Fix")}</span>
     </button>
   {/if}
+  <!-- Unknown kinds render nothing (R-86). The $effect above logs a dev-only
+       warn-once message so we surface drift during development without
+       polluting the production console. -->
 
-  {#if body && kind !== "agent_question" && kind !== "subagent"}
+  {#if body && kind !== "agent_question" && kind !== "subagent" && kind !== "user_prompt" && kind !== "claude_message" && kind !== "unknown"}
     <div class="body-slot">
       <MarkdownBlock {body} />
     </div>
