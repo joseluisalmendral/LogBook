@@ -75,12 +75,25 @@
   --font-body:     var(--p-font-sans);
   --font-mono:     var(--p-font-mono);
 
+  /*
+   * Slice 29 semantic type roles mapped to the DESIGN.md ladder:
+   *   caption    12px   timestamps, eyebrow labels
+   *   meta       14px   secondary line, badges
+   *   body       20px   primary read (editorial default)
+   *   lead       24px   subheadings
+   *   h3         24px   chapter section labels (alias)
+   *   h2         40px   chapter titles
+   *   h1         48px   page section titles
+   *   display    56px   hero
+   *   xl         64px   landing display (rare)
+   */
   --font-size-caption: var(--p-size-12);
   --font-size-meta:    var(--p-size-14);
-  --font-size-body:    var(--p-size-16);
-  --font-size-lead:    var(--p-size-20);
+  --font-size-body:    var(--p-size-20);
+  --font-size-lead:    var(--p-size-25);
   --font-size-h3:      var(--p-size-25);
   --font-size-h2:      var(--p-size-31);
   --font-size-h1:      var(--p-size-39);
   --font-size-display: var(--p-size-48);
+  --font-size-xl:      var(--p-size-display);
 }

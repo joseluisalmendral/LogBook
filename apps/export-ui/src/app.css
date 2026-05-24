@@ -29,6 +29,188 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ============================================================ */
+/* Slice 29 — Editorial blueprint surface treatment              */
+/* ============================================================ */
+
+/*
+ * Body becomes the "cream paper" canvas with a subtle dotted grid
+ * (radial-gradient repeated), evoking the digital blueprint feel
+ * from the Syllabus DESIGN.md ("digital blueprint on cream paper").
+ *
+ * Density: 1px dots @ 24px grid → unobtrusive but visible on close
+ * inspection. The dot color is the violet text at 7% so it reads
+ * as faint ink on cream.
+ *
+ * Toggleable via html[data-blueprint="off"] for users who find it
+ * distracting. Default ON.
+ */
+html {
+  background-color: var(--color-surface);
+}
+
+html:not([data-blueprint="off"]) body {
+  background-image:
+    radial-gradient(
+      circle at center,
+      color-mix(in srgb, var(--color-text-primary) 8%, transparent) 0.5px,
+      transparent 1.5px
+    );
+  background-size: 24px 24px;
+  background-position: 0 0;
+  background-attachment: fixed;
+}
+
+/* Reduced-motion or high-contrast: drop the grid entirely. */
+@media (prefers-contrast: more) {
+  html:not([data-blueprint="off"]) body {
+    background-image: none;
+  }
+}
+
+/*
+ * Body type defaults — DESIGN.md "body: 20px line-height 1.6". This
+ * sets the baseline for the entire app so individual components don't
+ * have to override unless they need a different role (caption, lead,
+ * heading).
+ */
+body {
+  font-family: var(--font-body);
+  font-size: var(--font-size-body);
+  line-height: 1.6;
+  color: var(--color-text-primary);
+  letter-spacing: 0;
+}
+
+/*
+ * Editorial heading rhythm. The Syllabus look uses tightly-tracked
+ * heavy weight, generous leading on display sizes.
+ */
+h1, h2, h3, h4 {
+  font-family: var(--font-headline);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+}
+
+/* ============================================================ */
+/* Slice 29 — Ghost Waitlist button pattern (DESIGN.md component) */
+/* ============================================================ */
+
+/*
+ * `.lb-ghost-btn` — the primary editorial action button. Adopted by
+ * Show activity, Inspector icon, Zen toggle, back-to-top, etc. The
+ * 4px radius is the DESIGN.md sanctioned exception ("waitlistButton").
+ *
+ * Variants via data-attribute:
+ *   default      → glow yellow fill, inkwell border
+ *   data-tone="ghost"  → no fill, inkwell border only
+ *   data-tone="ink"    → inkwell fill, cream text (used in zen + CTAs)
+ */
+.lb-ghost-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border: 1px solid var(--color-text-primary);
+  background: var(--p-glow-yellow);
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-meta);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-radius: var(--p-radius-accent);
+  cursor: pointer;
+  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 180ms ease-out;
+  text-decoration: none;
+}
+
+.lb-ghost-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 4px 4px 0 0 var(--color-text-primary);
+}
+
+.lb-ghost-btn:active {
+  transform: translateY(0);
+  box-shadow: 1px 1px 0 0 var(--color-text-primary);
+}
+
+.lb-ghost-btn:focus-visible {
+  outline: 2px solid var(--color-accent-primary);
+  outline-offset: 4px;
+}
+
+.lb-ghost-btn[data-tone="ghost"] {
+  background: transparent;
+}
+
+.lb-ghost-btn[data-tone="ink"] {
+  background: var(--color-text-primary);
+  color: var(--p-cream-50);
+  border-color: var(--color-text-primary);
+}
+
+.lb-ghost-btn[data-tone="ink"]:hover {
+  box-shadow: 4px 4px 0 0 var(--color-accent-primary);
+}
+
+html[data-motion="reduced"] .lb-ghost-btn {
+  transition: none;
+}
+
+/* ============================================================ */
+/* Slice 29 — Section Title (Teal Basin block per DESIGN.md)    */
+/* ============================================================ */
+
+/*
+ * `.lb-section-title` — block heading on Teal Basin background,
+ * white text, heavy Roobert weight 700. DESIGN.md custom-shape
+ * pattern is rendered as a skewed pseudo-element tail to break
+ * the perfect rectangle and feel editorial.
+ */
+.lb-section-title {
+  position: relative;
+  background: var(--p-teal-basin);
+  color: var(--p-cream-25);
+  font-family: var(--font-headline);
+  font-size: var(--font-size-h1);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1.1;
+  padding: 32px 40px;
+  display: inline-block;
+}
+
+.lb-section-title::after {
+  content: "";
+  position: absolute;
+  right: -32px;
+  top: 0;
+  bottom: 0;
+  width: 56px;
+  background: var(--p-teal-basin);
+  clip-path: polygon(0 0, 60% 0, 100% 50%, 60% 100%, 0 100%);
+}
+
+/* ============================================================ */
+/* Slice 29 — Margin annotation utility                           */
+/* ============================================================ */
+
+/*
+ * `.lb-margin-note` — small monospace counter that floats in the
+ * left gutter of editorial content, evoking ruled-paper margins
+ * or footnote labels. Used on numbered TOC entries.
+ */
+.lb-margin-note {
+  font-family: var(--font-mono);
+  font-size: var(--font-size-caption);
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.1em;
+  font-variant-numeric: tabular-nums;
+}
+
 @layer base {
   /* Editorial baseline. Tokens drive every color so [data-theme] swap is total. */
   html {

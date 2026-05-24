@@ -324,12 +324,20 @@
   {#if chapter}
     <div class="player-doc">
       <div class="chapter-toolbar">
-        <button type="button" class="back-btn" onclick={back} data-testid="chapter-back">
-          <span aria-hidden="true">←</span> Back to course
+        <!--
+          Slice 29: editorial ghost-style toolbar. Back uses the inkwell
+          ink variant (filled), zen uses the default glow yellow ghost.
+        -->
+        <button type="button" class="lb-ghost-btn" data-tone="ghost" onclick={back} data-testid="chapter-back">
+          <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <polyline points="11 3 5 8 11 13" />
+          </svg>
+          Back to course
         </button>
         <button
           type="button"
-          class="zen-btn"
+          class="lb-ghost-btn"
+          data-tone={zen ? "ink" : "default"}
           onclick={toggleZen}
           aria-pressed={zen}
           aria-label={zen ? "Exit zen mode" : "Enter zen mode"}
@@ -351,7 +359,7 @@
               <polyline points="13 9 13 13 9 13" />
             {/if}
           </svg>
-          <span class="zen-btn-label">{zen ? "Exit zen" : "Zen mode"}</span>
+          {zen ? "Exit zen" : "Zen mode"}
         </button>
       </div>
 
@@ -425,7 +433,7 @@
     {/if}
   {:else}
     <div class="not-found">
-      <button type="button" class="back-btn" onclick={back}>
+      <button type="button" class="lb-ghost-btn" data-tone="ghost" onclick={back}>
         <span aria-hidden="true">←</span> Back to course
       </button>
       <EmptyState

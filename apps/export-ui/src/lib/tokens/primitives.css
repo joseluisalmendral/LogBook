@@ -102,16 +102,31 @@
     Menlo, Consolas, monospace;
 
   /* -----------------------------------------------------------------------
-   * Type scale — modular 1.25 ratio (design §1.4)
+   * Type scale — Slice 29 Syllabus DESIGN.md exact ladder.
+   *
+   * Body sits at 20px (not 16) — this is the editorial paper feel where
+   * text demands reading attention. Captions still at 12-14px for meta
+   * labels. Headlines follow DESIGN.md exactly: 40/48/56/64.
+   *
+   *   12  caption           — uppercase eyebrow labels, timestamps
+   *   14  meta              — secondary text
+   *   16  body-sm           — chip text, dense tables
+   *   20  BODY              — primary read (DESIGN.md default)
+   *   24  subheading        — section subtitles
+   *   40  heading-sm        — chapter titles
+   *   48  heading           — page section titles
+   *   56  heading-lg        — major heroes
+   *   64  display           — landing hero
    * --------------------------------------------------------------------- */
   --p-size-12: 12px;
   --p-size-14: 14px;
   --p-size-16: 16px;
   --p-size-20: 20px;
-  --p-size-25: 25px;
-  --p-size-31: 31px;
-  --p-size-39: 39px;
-  --p-size-48: 48px;
+  --p-size-25: 24px;     /* DESIGN.md subheading */
+  --p-size-31: 40px;     /* DESIGN.md heading-sm */
+  --p-size-39: 48px;     /* DESIGN.md heading */
+  --p-size-48: 56px;     /* DESIGN.md heading-lg */
+  --p-size-display: 64px;
 
   /* -----------------------------------------------------------------------
    * Spacing — 4px base, --p-space-{1..10} (design §1.5)
