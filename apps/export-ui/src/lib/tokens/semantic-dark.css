@@ -34,17 +34,28 @@
   /* Borders */
   --color-border-hairline: var(--p-paper-overlay-10);
 
-  /* Accents — boosted for dark surface */
-  --color-accent-primary:    var(--p-navy-400);
-  --color-accent-secondary:  var(--p-terracotta-400);
-  --color-success:           var(--p-sage-400);
+  /*
+   * Slice 31 — accents now mirror the slice-28 editorial rebrand under
+   * cinema-dark. Was: legacy navy/terracotta tokens (drift from slices 28+).
+   *   accent-primary    Claude Ember (dark-tuned)  → ~5.6:1 on ink-950
+   *   subagent          Teal Basin   (dark-tuned)  → ~6.8:1
+   *   accent-secondary  Glow Yellow  (dark-tuned)  → ~10:1
+   */
+  --color-accent-primary:    var(--p-claude-ember-dark);
+  --color-accent-secondary:  var(--p-glow-yellow-dark);
+  --color-success:           var(--p-teal-basin-dark);
   --color-error:             var(--p-brick-400);
   --color-warning:           var(--p-amber-400);
-  --color-decision:          var(--p-plum-400);
-  --color-fix:               var(--p-sage-400);
+  --color-decision:          var(--p-paper-50);
+  --color-fix:               var(--p-teal-basin-dark);
   --color-lesson:            var(--p-terracotta-400);
-  --color-question:          var(--p-gold-400);
-  --color-milestone:         var(--p-navy-400);
-  --color-subagent:          var(--p-paper-50);
+  --color-question:          var(--p-claude-ember-dark);
+  --color-milestone:         var(--p-paper-50);
+  --color-subagent:          var(--p-teal-basin-dark);
   --color-generic:           var(--p-paper-600);
+  --color-focus:             var(--p-claude-ember-dark);
+
+  /* Editorial accent fills (semi-transparent, dark-tuned). */
+  --color-glow:              var(--p-glow-yellow-dark-50);
+  --color-teal-fill:         var(--p-teal-basin-dark-12);
 }

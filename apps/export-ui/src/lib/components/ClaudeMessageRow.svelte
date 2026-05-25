@@ -410,15 +410,18 @@
   .bubble {
     background: var(--color-surface-raised);
     border: 1px solid color-mix(in srgb, var(--color-text-primary) 16%, transparent);
-    border-left: 3px solid var(--color-accent-primary);
-    border-radius: 0;
+    border-left: 4px solid var(--color-accent-primary);
+    border-radius: var(--p-radius-accent);
     padding: var(--p-space-4) var(--p-space-5);
     max-width: 760px;
     width: fit-content;
+    transition: box-shadow 280ms cubic-bezier(0.22, 1, 0.36, 1),
+                transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .claude-message-row[data-expanded="true"] .bubble {
     box-shadow: 4px 4px 0 0 color-mix(in srgb, var(--color-text-primary) 14%, transparent);
+    transform: translateY(-1px);
   }
 
   .eyebrow {
@@ -585,18 +588,41 @@
 
   /* Collapsible region — ADR-SC-B1 idiom: grid-template-rows 0fr → 1fr.
      Hidden by default; revealed when [data-expanded="true"]. */
+  /* Slice 31: fluid editorial expand (matches SubAgentCard). 420ms ease,
+     panel cap min(48vh, 520px) with thin scrollbar, content fade-in. */
   .expand-grid {
     display: grid;
     grid-template-rows: 0fr;
-    transition: grid-template-rows 250ms cubic-bezier(0.77, 0, 0.175, 1);
+    transition: grid-template-rows 420ms cubic-bezier(0.22, 1, 0.36, 1);
     margin-top: var(--p-space-3);
   }
   .claude-message-row[data-expanded="true"] .expand-grid {
     grid-template-rows: 1fr;
   }
+  /*
+   * Slice 31.1: panel grows freely; only the per-tool .tool-output
+   * (which is already capped at 16rem) scrolls. Keeps the activity
+   * list compact when collapsed, but doesn't trap the user inside a
+   * mini-scrollbox when expanded.
+   */
   .expand-inner {
     overflow: hidden;
     min-height: 0;
+  }
+  .meta-strips {
+    opacity: 0;
+    transform: translateY(6px);
+    transition: opacity 360ms cubic-bezier(0.22, 1, 0.36, 1) 60ms,
+                transform 420ms cubic-bezier(0.22, 1, 0.36, 1) 40ms;
+  }
+  .claude-message-row[data-expanded="true"] .meta-strips {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  :global(html[data-motion="reduced"]) .meta-strips {
+    transition: none;
+    opacity: 1;
+    transform: none;
   }
 
   /* Reduced-motion: instant expand. */

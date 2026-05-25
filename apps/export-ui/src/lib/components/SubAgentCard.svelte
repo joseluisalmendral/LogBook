@@ -302,20 +302,30 @@
    *   - 1px hairline violet border + 4px Teal Basin border-left.
    *   - Hard 4px drop shadow at 14% violet when expanded.
    */
+  /*
+   * Slice 31.1 — bigger card on expand, scroll lives inside the prompt
+   * + response boxes (not the panel), and a creative "page unfold"
+   * entrance with 3D perspective + child stagger.
+   */
   .card-wrap {
     display: block;
     margin: var(--p-space-4) 0;
     background: var(--color-surface-raised);
     border: 1px solid color-mix(in srgb, var(--color-text-primary) 16%, transparent);
     border-left: 4px solid var(--color-subagent);
-    border-radius: 0;
+    border-radius: var(--p-radius-accent);
     interpolate-size: allow-keywords;
     overflow: hidden;
     position: relative;
+    perspective: 1400px;
+    transition: box-shadow 360ms cubic-bezier(0.22, 1, 0.36, 1),
+                transform 360ms cubic-bezier(0.22, 1, 0.36, 1),
+                max-width 360ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .card-wrap[data-expanded="true"] {
-    box-shadow: 4px 4px 0 0 color-mix(in srgb, var(--color-subagent) 30%, transparent);
+    box-shadow: 6px 6px 0 0 color-mix(in srgb, var(--color-subagent) 32%, transparent);
+    transform: translateY(-2px);
   }
 
   /* ---- MOMENT 1: sub-agent deploy entrance --------------------------- */
@@ -482,12 +492,31 @@
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
-    transition: background 160ms ease-out, color 160ms ease-out, border-color 160ms ease-out;
+    transition: background 220ms cubic-bezier(0.22, 1, 0.36, 1),
+                color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+                border-color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+                transform 480ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  /* Slice 31.2 — chevron rotates with an editorial overshoot to seal the
+   * brush-sweep with a tactile click. Counter-rotates the inner svg so
+   * the icon glyph itself uses the affordance.css aria-expanded rotation
+   * (which targets `.lb-chevron > svg`). The button-level transform here
+   * does a subtle scale "stamp" instead of fighting the icon rotation. */
+  .card-wrap[data-expanded="true"] .card-chevron {
+    transform: scale(1.08);
+    background: color-mix(in srgb, var(--color-subagent) 18%, var(--color-surface-sunken));
+    color: var(--color-subagent);
+    border-color: color-mix(in srgb, var(--color-subagent) 48%, var(--color-border-hairline));
   }
 
   .card-chevron :global(svg) {
     width: 14px;
     height: 14px;
+    transition: transform 480ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .card-wrap[data-expanded="true"] .card-chevron :global(svg) {
+    transform: rotate(90deg);
   }
 
   .card-wrap:hover .card-chevron,
@@ -512,11 +541,31 @@
   .back-section-wide .back-pre {
     max-width: none;
   }
+  /*
+   * Slice 31.1 — scroll lives HERE (was on .expand-inner). The Full
+   * prompt and Response synthesis boxes cap at min(46vh, 440px) and
+   * scroll internally so long markdown doesn't push every other
+   * section off-screen. Thin themed scrollbar matches the editorial
+   * register.
+   */
   .back-md {
     background: var(--color-surface-sunken);
     border-radius: var(--radius-sm);
     padding: var(--p-space-3) var(--p-space-4);
     border: 1px solid var(--color-border-hairline);
+    max-height: min(46vh, 440px);
+    overflow-y: auto;
+    overflow-x: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--color-text-primary) 24%, transparent) transparent;
+  }
+  .back-md::-webkit-scrollbar { width: 8px; }
+  .back-md::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--color-text-primary) 22%, transparent);
+    border-radius: 999px;
+  }
+  .back-md::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in srgb, var(--color-accent-primary) 40%, transparent);
   }
   .back-md :global(p:first-child) {
     margin-top: 0;
@@ -525,11 +574,25 @@
     margin-bottom: 0;
   }
 
-  /* ---- EXPAND GRID — ADR-SC-B1 --------------------------------------- */
+  /* ---- EXPAND GRID — ADR-SC-B1 ---------------------------------------
+   *
+   * Slice 31 — fluid editorial expand.
+   *   - Grid rows 0fr → 1fr animated at 420ms with the editorial ease
+   *     (cubic-bezier(0.22, 1, 0.36, 1)) for a softer settle than the
+   *     prior 250ms back-out.
+   *   - Inner content fades + lifts (opacity 0 → 1, translateY 6 → 0)
+   *     so the reveal feels layered, not a hard clip wipe.
+   *   - Inner pane caps at min(58vh, 560px) and scrolls — was unbounded
+   *     and ate the whole viewport on long prompts/responses.
+   */
+  /* Slice 31.4 — sober editorial fade, slower for presence.
+   * Grid 720ms, content opacity 640ms (120ms delay) + travel 760ms
+   * (90ms delay). translateY 14px gives the lift more body than the
+   * previous 6px snap. */
   .expand-grid {
     display: grid;
     grid-template-rows: 0fr;
-    transition: grid-template-rows 250ms cubic-bezier(0.77, 0, 0.175, 1);
+    transition: grid-template-rows 720ms cubic-bezier(0.22, 1, 0.36, 1);
   }
 
   .card-wrap[data-expanded="true"] .expand-grid {
@@ -541,29 +604,39 @@
     min-height: 0;
   }
 
-  /* Kowalski clip-path reveal on inner content. */
   .expand-content {
     padding: 0 var(--card-padding) var(--card-padding);
     display: grid;
     gap: var(--p-space-4);
-    clip-path: inset(0 0 100% 0);
-    transition: clip-path 250ms cubic-bezier(0.77, 0, 0.175, 1);
+    opacity: 0;
+    transform: translateY(14px);
+    transition: opacity 640ms cubic-bezier(0.22, 1, 0.36, 1) 120ms,
+                transform 760ms cubic-bezier(0.22, 1, 0.36, 1) 90ms;
     border-top: var(--card-border);
     margin-top: 0;
   }
 
   .card-wrap[data-expanded="true"] .expand-content {
-    clip-path: inset(0 0 0 0);
+    opacity: 1;
+    transform: translateY(0);
     padding-top: var(--card-padding);
+  }
+
+  :global(html[data-motion="reduced"]) .expand-content {
+    transition: none;
+    opacity: 1;
+    transform: none;
   }
 
   /* Reduced-motion: instant expand, no clip-path animation. */
   :global(html[data-motion="reduced"]) .expand-grid,
-  :global(html[data-motion="reduced"]) .expand-content {
+  :global(html[data-motion="reduced"]) .expand-content,
+  :global(html[data-motion="reduced"]) .card-wrap {
     transition: none;
   }
   :global(html[data-motion="reduced"]) .card-wrap[data-expanded="true"] .expand-content {
-    clip-path: inset(0 0 0 0);
+    opacity: 1;
+    transform: none;
   }
 
   /* ---- EXPANDED CONTENT CHROME (carried from slice 10 back-face) ---- */
@@ -586,8 +659,16 @@
     white-space: pre-wrap;
     word-break: break-word;
     color: var(--color-text-primary);
-    max-height: 220px;
+    /* Slice 31.1: scroll lives on the inner content boxes (was panel). */
+    max-height: min(46vh, 440px);
     overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--color-text-primary) 24%, transparent) transparent;
+  }
+  .back-pre::-webkit-scrollbar { width: 8px; }
+  .back-pre::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--color-text-primary) 22%, transparent);
+    border-radius: 999px;
   }
 
   .chip-row {

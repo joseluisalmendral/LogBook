@@ -248,6 +248,166 @@
   });
 
   /*
+   * Slice 31.6 — "Editorial guillotine" entrance.
+   *
+   * The chapter mounts behind two solid cream curtains (left half +
+   * right half of the viewport). On mount we animate the curtains apart
+   * — left slides off-screen left, right slides off-screen right —
+   * revealing the chapter beneath. At the moment of the split, a 2px
+   * Teal Basin "blade-edge" line at x=50vw pulses (scaleY 0 → 1 → 0)
+   * with a brief glow: the cut is visible for one beat, then gone.
+   *
+   * Under the curtains, the chapter itself does a subtle scale-up
+   * 0.96 → 1 + opacity 0.7 → 1, so when the curtains part the content
+   * feels like it's stepping into focus, not just exposed.
+   *
+   * Why this is the gesture:
+   *   - Geometric + decisive (Pentagram editorial register).
+   *   - Reuses Paper Brutalism tokens (cream surface + Teal Basin blade).
+   *   - Reads as opening a folio: cover splits, content underneath.
+   *   - GPU-only (transform + opacity), no layout reflow.
+   *
+   * The curtains are injected into <body> (not into .chapter-player)
+   * so they cover the ENTIRE viewport including the sidebar and
+   * scrubber chrome — the cut feels global, not local. They are
+   * removed from the DOM at animation end.
+   */
+  onMount(() => {
+    const motionState = getMotionState();
+    if (!motionState.motionAllowed) return;
+
+    const root = document.querySelector<HTMLElement>(".chapter-player");
+    if (!root) return;
+
+    // Resolve token values at runtime (light/dark themes flip them).
+    const cs = getComputedStyle(document.documentElement);
+    const cream = cs.getPropertyValue("--color-surface").trim() || "#fffcf7";
+    // Slice 31.7 — blade switched from Teal Basin to Inkwell Violet (primary
+    // ink). The green read as out-of-palette during the cut; ink-on-paper
+    // is the cleaner editorial signal.
+    const ink = cs.getPropertyValue("--color-text-primary").trim() || "#0d0129";
+    const ember = cs.getPropertyValue("--color-accent-primary").trim() || "#d77a4a";
+
+    // Build the curtain layer.
+    const layer = document.createElement("div");
+    layer.setAttribute("data-curtain-layer", "true");
+    layer.style.cssText = [
+      "position:fixed",
+      "inset:0",
+      "z-index:9999",
+      "pointer-events:none",
+      "overflow:hidden",
+    ].join(";");
+
+    const sharedCurtain = [
+      "position:absolute",
+      "top:0",
+      "bottom:0",
+      "width:52vw",
+      `background:${cream}`,
+      // subtle dot-grid texture matches the Paper Brutalism canvas
+      `background-image:radial-gradient(circle at center, ${ink}14 0.5px, transparent 1.5px)`,
+      "background-size:24px 24px",
+      "will-change:transform",
+    ].join(";");
+
+    const left = document.createElement("div");
+    left.style.cssText =
+      sharedCurtain +
+      ";left:0;border-right:1px solid " + ink + "33;" +
+      "box-shadow: 6px 0 24px " + ink + "1a";
+    layer.appendChild(left);
+
+    const right = document.createElement("div");
+    right.style.cssText =
+      sharedCurtain +
+      ";right:0;border-left:1px solid " + ink + "33;" +
+      "box-shadow: -6px 0 24px " + ink + "1a";
+    layer.appendChild(right);
+
+    // The blade-edge — a single 2px vertical line at x=50vw that pulses
+    // bright during the split. Uses Teal Basin tinted with a Claude
+    // Ember glow at the peak frame.
+    const blade = document.createElement("div");
+    blade.style.cssText = [
+      "position:absolute",
+      "top:0",
+      "bottom:0",
+      "left:50%",
+      "width:2px",
+      "margin-left:-1px",
+      `background:${ink}`,
+      `box-shadow:0 0 18px ${ember}aa, 0 0 6px ${ink}`,
+      "transform:scaleY(0)",
+      "transform-origin:center",
+      "will-change:transform,opacity",
+      "opacity:0",
+    ].join(";");
+    layer.appendChild(blade);
+
+    document.body.appendChild(layer);
+
+    // Seed the chapter pre-state (sits under curtains).
+    root.style.transform = "scale(0.96)";
+    root.style.opacity = "0.65";
+    root.style.transformOrigin = "center top";
+    root.style.willChange = "transform, opacity";
+
+    const raf = requestAnimationFrame(() => {
+      // 1. Blade flashes first (0–280ms): scaleY 0 → 1, opacity 0 → 1 → 0.
+      animate(
+        blade,
+        {
+          transform: ["scaleY(0)", "scaleY(1)", "scaleY(1)", "scaleY(1.04)"],
+          opacity: [0, 1, 1, 0],
+          offset: [0, 0.18, 0.55, 1],
+        },
+        { duration: 0.62, ease: [0.22, 1, 0.36, 1] },
+      );
+
+      // 2. Curtains part (60ms delay so the blade is seen first, then
+      //    the cut "opens").
+      animate(
+        left,
+        { transform: ["translateX(0)", "translateX(-104%)"] },
+        { duration: 0.72, delay: 0.06, ease: [0.65, 0, 0.32, 1] },
+      );
+      animate(
+        right,
+        { transform: ["translateX(0)", "translateX(104%)"] },
+        { duration: 0.72, delay: 0.06, ease: [0.65, 0, 0.32, 1] },
+      );
+
+      // 3. Chapter steps into focus underneath (slight scale + opacity).
+      animate(
+        root,
+        {
+          transform: ["scale(0.96)", "scale(1)"],
+          opacity: [0.65, 1],
+        },
+        { duration: 0.78, delay: 0.18, ease: [0.22, 1, 0.36, 1] },
+      ).finished.then(() => {
+        root.style.willChange = "";
+        root.style.transform = "";
+        root.style.opacity = "";
+        root.style.transformOrigin = "";
+        if (layer.parentNode) layer.parentNode.removeChild(layer);
+      }).catch(() => {
+        if (layer.parentNode) layer.parentNode.removeChild(layer);
+      });
+    });
+
+    return () => {
+      cancelAnimationFrame(raf);
+      if (layer.parentNode) layer.parentNode.removeChild(layer);
+      root.style.willChange = "";
+      root.style.transform = "";
+      root.style.opacity = "";
+      root.style.transformOrigin = "";
+    };
+  });
+
+  /*
    * Slice 28 — WOW entrance for the events stream via Motion One.
    *
    * On mount, animate the first ~20 visible event-anchor rows with a

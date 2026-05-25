@@ -16,6 +16,7 @@
   session totals, but per-session counts need to be derived locally).
 -->
 <script lang="ts">
+  import { tick } from "svelte";
   import type { Chapter } from "../types";
   import { router } from "../stores/router";
 
@@ -53,13 +54,19 @@
 
   function navigate(): void {
     // View Transitions API: animate from this tile to the chapter header.
-    // Gated by @supports + motion store (the global app.css rule kills
-    // animations when data-motion="reduced").
+    //
+    // Slice 31.3 fix: the callback MUST be async + await tick() so Svelte's
+    // microtask-batched DOM commit lands BEFORE the API captures the "new"
+    // snapshot. Without the await, the snapshot was identical to the old
+    // (router.navigate is synchronous but the reactive view update is not),
+    // so the browser had nothing to animate and the press-snap was invisible.
     if (typeof document !== "undefined" && "startViewTransition" in document) {
-      (document as Document & { startViewTransition: (cb: () => void) => unknown })
-        .startViewTransition(() => {
-          router.navigate({ name: "chapter", chapterId: chapter.sessionId, eventId: null });
-        });
+      (document as Document & {
+        startViewTransition: (cb: () => Promise<void> | void) => unknown;
+      }).startViewTransition(async () => {
+        router.navigate({ name: "chapter", chapterId: chapter.sessionId, eventId: null });
+        await tick();
+      });
     } else {
       router.navigate({ name: "chapter", chapterId: chapter.sessionId, eventId: null });
     }

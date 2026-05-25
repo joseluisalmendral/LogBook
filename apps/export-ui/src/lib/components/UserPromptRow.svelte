@@ -101,14 +101,44 @@
    *  - 1px hairline violet on top/bottom/left at 16%.
    *  - No soft shadow; no transition on borders (static feel).
    */
+  /*
+   * Slice 31 — user bubble re-tinted.
+   *
+   *   - Background: soft "lavender ink" wash (Inkwell Violet at 7% over
+   *     raised paper). Distinct from Claude's white bubble and from
+   *     Glow Yellow (now reserved for highlights / ghost buttons).
+   *   - 4px Inkwell Violet border-right mirror of Claude's ember-left.
+   *   - Glow Yellow 2px inner accent strip on the right edge so the
+   *     highlighter feel survives without flooding the surface.
+   *   - 6px radius (DESIGN.md exception widened in slice 31).
+   */
   .bubble {
-    background: color-mix(in srgb, var(--p-glow-yellow) 28%, var(--color-surface-raised));
-    border: 1px solid color-mix(in srgb, var(--color-text-primary) 16%, transparent);
-    border-right: 3px solid var(--color-text-primary);
-    border-radius: 0;
+    position: relative;
+    background: color-mix(in srgb, var(--color-text-primary) 14%, var(--color-surface-raised));
+    border: 1px solid color-mix(in srgb, var(--color-text-primary) 22%, transparent);
+    border-right: 4px solid var(--color-text-primary);
+    border-radius: var(--p-radius-accent);
     padding: var(--p-space-4) var(--p-space-5);
     max-width: 760px;
     width: fit-content;
+    box-shadow: 3px 3px 0 0 color-mix(in srgb, var(--color-text-primary) 10%, transparent);
+  }
+
+  .bubble::after {
+    content: "";
+    position: absolute;
+    top: 8%;
+    bottom: 8%;
+    right: -4px;
+    width: 2px;
+    background: var(--p-glow-yellow);
+    border-radius: 999px;
+    pointer-events: none;
+    opacity: 0.85;
+  }
+
+  :global([data-theme="dark"]) .bubble::after {
+    background: var(--p-glow-yellow-dark);
   }
 
   .user-prompt-row:focus-visible {
@@ -127,12 +157,16 @@
     margin-bottom: var(--p-space-2);
   }
 
+  /* Slice 31.7 — "You" eyebrow now uses Inkwell Violet (primary text)
+   * for AAA contrast on the new darker lavender bubble bg. The previous
+   * --color-accent-secondary mapped to Glow Yellow (#fae59b), which sat
+   * at ~1.4:1 against the bubble — basically unreadable. */
   .who {
     font-size: var(--font-size-caption);
-    color: var(--color-accent-secondary, var(--color-text-secondary));
+    color: var(--color-text-primary);
     text-transform: uppercase;
-    letter-spacing: 0.1em;
-    font-weight: 600;
+    letter-spacing: 0.12em;
+    font-weight: 700;
   }
 
   .time {

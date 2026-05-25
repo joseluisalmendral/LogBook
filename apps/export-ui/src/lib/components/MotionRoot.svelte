@@ -32,8 +32,49 @@
   const { children } = $props<{ children?: unknown }>();
 
   onMount(() => {
-    // Returns the cleanup function; Svelte calls it on unmount.
-    return initMotionStore();
+    const cleanupMotion = initMotionStore();
+
+    // Slice 31 — ambient cursor spotlight tracker.
+    //
+    // Sets `--lb-mx` / `--lb-my` on <html> so the body::before radial
+    // gradient (in app.css) can follow the pointer. rAF-throttled to one
+    // write per frame; passive listener. Skipped when motion is reduced
+    // OR when the device has no hover (touch).
+    const supportsHover =
+      typeof window !== "undefined" &&
+      window.matchMedia?.("(hover: hover)").matches === true;
+    const root = document.documentElement;
+
+    let rafId: number | null = null;
+    let nextX = window.innerWidth / 2;
+    let nextY = window.innerHeight / 3;
+
+    function flush(): void {
+      rafId = null;
+      root.style.setProperty("--lb-mx", `${nextX}px`);
+      root.style.setProperty("--lb-my", `${nextY}px`);
+    }
+
+    function onPointer(e: PointerEvent): void {
+      // Respect the reduced-motion gate at runtime — motion store mirrors
+      // the same media query onto data-motion on <html>.
+      if (root.dataset.motion === "reduced") return;
+      nextX = e.clientX;
+      nextY = e.clientY;
+      if (rafId === null) rafId = requestAnimationFrame(flush);
+    }
+
+    if (supportsHover) {
+      // Seed initial position so the spotlight isn't pinned at 0,0 on first paint.
+      flush();
+      window.addEventListener("pointermove", onPointer, { passive: true });
+    }
+
+    return () => {
+      if (supportsHover) window.removeEventListener("pointermove", onPointer);
+      if (rafId !== null) cancelAnimationFrame(rafId);
+      cleanupMotion?.();
+    };
   });
 </script>
 

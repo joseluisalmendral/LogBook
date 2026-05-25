@@ -292,21 +292,104 @@ html[data-motion="reduced"] .lb-ghost-btn {
  * — gives a "developing" feel like a polaroid resolving. Filter blur is
  * GPU-friendly on modern engines.
  */
+/*
+ * Slice 31.3 — DISRUPTIVE editorial view transition.
+ *
+ * Replaces the polite scale-fade with a "press print snap" — the TOC
+ * crumples up and away (scale + rotate + slide + blur), then the
+ * chapter LANDS like a freshly-stamped page: starts blown up + heavily
+ * chromatic (ember/teal split via stacked drop-shadows), overshoots
+ * past 1:1 at the midpoint with a brightness + saturation pulse (the
+ * "stamp flash"), then settles crisp.
+ *
+ * The shared-element morph (SessionTile → ChapterHeader, both carry
+ * view-transition-name: chapter-<id>) plays in front of this :root
+ * choreography, so the user sees the tile fly into the header while
+ * the rest of the page does the press-snap underneath.
+ *
+ * GPU-resident: transform + filter + opacity only. No layout reflow.
+ * Reduced-motion: animation: none below.
+ */
 @supports (view-transition-name: root) {
   ::view-transition-old(root) {
-    animation: vt-old 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: vt-old-press 540ms cubic-bezier(0.55, 0, 0.6, 0.2) both;
+    transform-origin: 50% 30%;
   }
   ::view-transition-new(root) {
-    animation: vt-new 640ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation: vt-new-press 820ms cubic-bezier(0.16, 1.08, 0.32, 1) both;
+    transform-origin: 50% 30%;
   }
-  @keyframes vt-old {
-    from { opacity: 1; transform: scale(1) translateY(0); filter: blur(0); }
-    to   { opacity: 0; transform: scale(0.94) translateY(-24px); filter: blur(6px); }
+
+  /* Outgoing: TOC crumples up and away. Rotation flips sign halfway
+   * through (–1.5° → +2°) so the page feels TORN, not just slid. */
+  @keyframes vt-old-press {
+    0% {
+      opacity: 1;
+      transform: scale(1) rotate(0) translateY(0);
+      filter: blur(0) contrast(1) saturate(1);
+    }
+    35% {
+      opacity: 0.85;
+      transform: scale(1.04) rotate(-1.5deg) translateY(6px);
+      filter: blur(2px) contrast(1.15) saturate(0.85);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(0.82) rotate(2deg) translateY(-56px);
+      filter: blur(16px) contrast(1.25) saturate(0.55);
+    }
   }
-  @keyframes vt-new {
-    from { opacity: 0; transform: scale(1.06); filter: blur(8px); }
-    50%  { opacity: 1; }
-    to   { opacity: 1; transform: scale(1); filter: blur(0); }
+
+  /* Incoming: chapter LANDS like a stamp.
+   *
+   *   0%   — blown up, rotated, deeply blurred, low-saturation,
+   *          chromatically split (ember LEFT, teal RIGHT via stacked
+   *          drop-shadows). Reads as a print plate just hitting the
+   *          paper.
+   *   38%  — scale 1.04 overshoot, blur 4, near full opacity, chroma
+   *          tightening — the ink is finding its register.
+   *   58%  — STAMP FLASH: scale 0.992 (under by a hair), brightness
+   *          1.08 + saturate 1.45, blur 0.4. A single-frame pop that
+   *          the eye reads as a press landing.
+   *   100% — settled, crisp, normal filters.
+   */
+  @keyframes vt-new-press {
+    0% {
+      opacity: 0;
+      transform: scale(1.22) rotate(1.5deg) translateY(48px);
+      filter:
+        blur(26px) saturate(0.4) brightness(1.18)
+        drop-shadow(-8px 0 0 color-mix(in srgb, var(--color-accent-primary) 55%, transparent))
+        drop-shadow(8px 0 0 color-mix(in srgb, var(--color-subagent) 55%, transparent));
+    }
+    38% {
+      opacity: 1;
+      transform: scale(1.04) rotate(0.4deg) translateY(6px);
+      filter:
+        blur(4px) saturate(1.05) brightness(1.06)
+        drop-shadow(-3px 0 0 color-mix(in srgb, var(--color-accent-primary) 30%, transparent))
+        drop-shadow(3px 0 0 color-mix(in srgb, var(--color-subagent) 30%, transparent));
+    }
+    58% {
+      opacity: 1;
+      transform: scale(0.992) rotate(-0.2deg) translateY(0);
+      filter:
+        blur(0.4px) saturate(1.45) brightness(1.08)
+        drop-shadow(0 0 0 transparent)
+        drop-shadow(0 0 12px color-mix(in srgb, var(--p-glow-yellow) 60%, transparent));
+    }
+    100% {
+      opacity: 1;
+      transform: scale(1) rotate(0) translateY(0);
+      filter: blur(0) saturate(1) brightness(1);
+    }
+  }
+
+  /* Shared-element morph (chapter tile → header) gets a longer, more
+   * cinematic settle so it doesn't race the root snap. */
+  ::view-transition-group(*) {
+    animation-duration: 760ms;
+    animation-timing-function: cubic-bezier(0.16, 1.08, 0.32, 1);
   }
 }
 
@@ -506,4 +589,172 @@ html[data-show-thinking="true"] [data-thinking="true"] .bubble::before {
   letter-spacing: 0.1em;
   color: var(--color-text-tertiary);
   margin-bottom: var(--p-space-2);
+}
+
+/* ============================================================ */
+/* Slice 31 — Custom editorial cursor + ambient spotlight        */
+/* ============================================================ */
+
+/*
+ * Default cursor: a small ink-nib glyph (12x12 hotspot at the tip). Pairs
+ * with the Paper Brutalism register — feels like a fountain pen hovering
+ * over cream paper. Falls back to `auto` on unsupported clients.
+ *
+ * Interactive cursor: a slightly larger filled nib in Claude Ember to
+ * signal affordance. Applied on links, buttons, and [data-interactive]
+ * (which most clickable rows opt into).
+ */
+/*
+ * Slice 31.1 — cursor refined. Was: ink-nib pen (paper-fold triangle).
+ * Felt cluttered. Now: clean editorial dot — 7px filled Inkwell Violet
+ * dot inside a 16px hairline ring. Hotspot at the geometric center
+ * (offset 9,9). Interactive variant fills the dot with Claude Ember and
+ * widens the ring slightly for affordance. Dark mode swaps colors.
+ */
+html {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'><circle cx='10' cy='10' r='7.5' fill='none' stroke='%230d0129' stroke-opacity='0.55' stroke-width='1'/><circle cx='10' cy='10' r='2.4' fill='%230d0129'/></svg>") 10 10, default;
+}
+
+a, button, [role="button"], [data-interactive], summary, label[for], select, .lb-ghost-btn {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'><circle cx='11' cy='11' r='8.5' fill='none' stroke='%230d0129' stroke-width='1.2'/><circle cx='11' cy='11' r='3.2' fill='%23d77a4a'/></svg>") 11 11, pointer;
+}
+
+input[type="text"], input[type="search"], textarea, [contenteditable="true"] {
+  cursor: text;
+}
+
+[data-theme="dark"] {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 20 20'><circle cx='10' cy='10' r='7.5' fill='none' stroke='%23f0ede6' stroke-opacity='0.65' stroke-width='1'/><circle cx='10' cy='10' r='2.4' fill='%23f0ede6'/></svg>") 10 10, default;
+}
+
+[data-theme="dark"] a,
+[data-theme="dark"] button,
+[data-theme="dark"] [role="button"],
+[data-theme="dark"] [data-interactive],
+[data-theme="dark"] summary,
+[data-theme="dark"] .lb-ghost-btn {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='22' height='22' viewBox='0 0 22 22'><circle cx='11' cy='11' r='8.5' fill='none' stroke='%23f0ede6' stroke-width='1.2'/><circle cx='11' cy='11' r='3.2' fill='%23ef9466'/></svg>") 11 11, pointer;
+}
+
+/*
+ * Ambient cursor spotlight — a soft warm glow that follows the pointer
+ * across the page. Mirrors the CourseTOC hero spotlight but global and
+ * lower intensity, so it never competes with content. Uses CSS vars
+ * --lb-mx / --lb-my (px), set by MotionRoot's pointer listener.
+ *
+ * Rendered as a position: fixed pseudo-element so it survives scroll
+ * and lives behind everything (z-index: 0 / pointer-events: none).
+ * Disabled under reduced-motion + on touch (no hover).
+ */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+  background:
+    radial-gradient(
+      280px circle at var(--lb-mx, 50vw) var(--lb-my, 30vh),
+      color-mix(in srgb, var(--color-accent-primary) 14%, transparent) 0%,
+      color-mix(in srgb, var(--color-accent-primary) 6%, transparent) 40%,
+      transparent 70%
+    );
+  opacity: 0.85;
+  transition: opacity 240ms ease-out;
+  mix-blend-mode: multiply;
+}
+
+[data-theme="dark"] body::before {
+  mix-blend-mode: screen;
+  opacity: 0.55;
+}
+
+/* Reduce-motion / no-hover (touch) / high-contrast: kill the spotlight. */
+@media (hover: none), (prefers-contrast: more) {
+  body::before { display: none; }
+}
+html[data-motion="reduced"] body::before {
+  display: none;
+}
+
+/* Ensure app surfaces sit above the spotlight layer. */
+body > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ============================================================ */
+/* Slice 31.1 — Universal fluid open / smooth scroll             */
+/* ============================================================ */
+
+/*
+ * Smooth scroll for in-page anchor jumps + programmatic scrollIntoView.
+ * scroll-snap-type stays proximity (set earlier), this only changes the
+ * easing the browser uses when scrolling — no snap fight.
+ */
+html {
+  scroll-behavior: smooth;
+}
+
+/* Internal scrollable panels inherit the smooth behavior. */
+.expand-inner,
+.back-md,
+.back-pre,
+.tool-output {
+  scroll-behavior: smooth;
+}
+
+/*
+ * Native <details> open is instant by default — feels brusque next to
+ * the editorial expand grids. We animate the OPEN state by targeting
+ * everything after the <summary> with a fade + lift + height tween.
+ *
+ * Caveat: closing remains instant (the browser removes [open] and the
+ * children disappear before any reverse animation can play). That is
+ * an HTML spec limitation; the open feel is what users noticed.
+ *
+ * Scope: tool detail rows in ClaudeMessageRow + any future <details>
+ * we add. Reduced-motion drops the keyframes.
+ */
+@keyframes lb-details-open {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+    filter: blur(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+details[open] > *:not(summary) {
+  animation: lb-details-open 320ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  transform-origin: top;
+}
+
+details > summary {
+  transition: background 200ms cubic-bezier(0.22, 1, 0.36, 1),
+              color 200ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html[data-motion="reduced"] details[open] > *:not(summary) {
+  animation: none;
+}
+
+/*
+ * Universal "open" easing for any element that flips an aria-expanded
+ * state — chevrons, badges, hint counters. Components that already set
+ * their own transition keep theirs; this is the fallback.
+ */
+[aria-expanded] {
+  transition: background 220ms cubic-bezier(0.22, 1, 0.36, 1),
+              color 220ms cubic-bezier(0.22, 1, 0.36, 1),
+              border-color 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+html[data-motion="reduced"] [aria-expanded],
+html[data-motion="reduced"] details > summary {
+  transition: none;
 }

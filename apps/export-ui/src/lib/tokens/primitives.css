@@ -73,8 +73,8 @@
   --p-ink-900: #1a1b22;          /* raised cards */
   --p-ink-1000: #070809;         /* sunken */
   --p-paper-50: #f0ede6;         /* warm-paper text on dark */
-  --p-paper-400: #a8a4a0;
-  --p-paper-600: #6e6b68;
+  --p-paper-400: #b8b3ac;        /* slice 31: lifted from #a8a4a0 → ~9:1 on ink-950 */
+  --p-paper-600: #8e8a85;        /* slice 31: lifted from #6e6b68 → ~5.4:1 AA Normal */
   --p-paper-overlay-10: rgba(240, 237, 230, 0.10);
 
   --p-navy-400: #5b8fd9;         /* boosted navy for dark */
@@ -84,6 +84,13 @@
   --p-amber-400: #e6b055;
   --p-plum-400: #a580e0;
   --p-gold-400: #d9a85c;
+
+  /* Slice 31 — dark-tuned editorial accents (rebranded palette parity). */
+  --p-claude-ember-dark:   #ef9466;  /* ember lifted for dark surface (~5.6:1 on ink-950) */
+  --p-teal-basin-dark:     #4fbfb0;  /* teal lifted for dark surface (~6.8:1) */
+  --p-glow-yellow-dark:    #f3d77a;  /* glow yellow tuned for dark (~10:1) */
+  --p-glow-yellow-dark-50: rgba(243, 215, 122, 0.50);
+  --p-teal-basin-dark-12:  rgba(79, 191, 176, 0.14);
 
   /* -----------------------------------------------------------------------
    * Type stacks — system fonts ONLY (design §1.4 + ADR-7).
@@ -159,11 +166,16 @@
    * toward the editorial zero. Pills (chips, toggles) override with 999
    * locally where roundness IS the right pattern.
    */
-  --p-radius-xs: 0px;
-  --p-radius-sm: 0px;
-  --p-radius-md: 0px;
-  --p-radius-lg: 0px;
-  --p-radius-xl: 0px;
+  /* Slice 31: editorial paper still favors hard corners, but user pushed for
+   * a touch of warmth on bubbles + cards. We extend the DESIGN.md "Waitlist"
+   * 4px exception to a 6px softening on raised surfaces (cards, bubbles,
+   * chips). Anything ≤6px stays inside the brutalist register; we still
+   * reject the 12/16/24 rounded-rect grid. */
+  --p-radius-xs: 4px;
+  --p-radius-sm: 6px;
+  --p-radius-md: 6px;
+  --p-radius-lg: 8px;
+  --p-radius-xl: 10px;
   --p-radius-pill: 999px;       /* opt-in for chips / toggles */
-  --p-radius-accent: 4px;       /* DESIGN.md's "Waitlist" exception */
+  --p-radius-accent: 6px;       /* widened from 4px — bubble + card register */
 }
