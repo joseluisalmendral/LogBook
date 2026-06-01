@@ -66,6 +66,12 @@ export default defineCommand({
       description:
         "Install in the current directory even when no .git / package.json / .claude marker is found (skips the walk-up to find the project root)",
     },
+    "display-only": {
+      type: "boolean",
+      default: false,
+      description:
+        "Zero-footprint: install nothing (no .logbook/, no manifest, no state, no shared-file edits). Confirms build/export will work standalone.",
+    },
   },
   async run({ args }) {
     const useCwdAsFallback = args["here"] as boolean;
@@ -77,6 +83,29 @@ export default defineCommand({
         `error: ${err instanceof Error ? err.message : String(err)}\n`,
       );
       process.exit(1);
+    }
+
+    const displayOnly = args["display-only"] as boolean;
+    if (displayOnly) {
+      // Warn that --preset is ignored when --display-only is set (Req A-4).
+      // citty fills `args.preset` with its default ("standard") even when the
+      // user did not pass --preset, so detect an EXPLICIT --preset from argv to
+      // avoid a spurious warning on the plain `init --display-only` path.
+      const presetExplicit = process.argv.some(
+        (a) => a === "--preset" || a.startsWith("--preset="),
+      );
+      if (presetExplicit) {
+        const presetArg = args["preset"] as string;
+        process.stderr.write(
+          `warning: --preset ${presetArg} is ignored when --display-only is set; no artifacts are installed.\n`,
+        );
+      }
+      // Zero-footprint: return BEFORE makePaths/bootstrap/build/install/state.
+      process.stdout.write(
+        "Display-only: no artifacts installed, repository untouched.\n" +
+          "Run `logbook build` to generate docs or `logbook export html` to produce the standalone deck.\n",
+      );
+      return;
     }
 
     const paths = makePaths(root);
