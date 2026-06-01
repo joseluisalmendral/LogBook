@@ -23,6 +23,7 @@
   import { palette } from "../stores/palette";
   import { editorPref, EDITOR_OPTIONS, type EditorScheme } from "../stores/editor-pref";
   import { teachingPrefs } from "../stores/teaching-prefs";
+  import { annotations } from "../stores/annotations";
 
   // Slice-18: editor URI picker — small select bound to the editorPref store
   // so the file-open chips (FileChangeStrip, linkified tool inputs) route to
@@ -54,6 +55,22 @@
     });
     return () => unsub();
   });
+
+  // display-annotations: live count for the clear-all control + a two-step
+  // confirm (no browser confirm() — file:// + a11y friendly).
+  let annotationCount = $state(Object.keys(annotations.get()).length);
+  let confirmingClear = $state(false);
+  $effect(() => {
+    const unsub = annotations.subscribe((map) => {
+      annotationCount = Object.keys(map).length;
+      if (annotationCount === 0) confirmingClear = false;
+    });
+    return () => unsub();
+  });
+  function clearAllAnnotations(): void {
+    annotations.clearAll();
+    confirmingClear = false;
+  }
 
   interface Props {
     open: boolean;
@@ -186,6 +203,46 @@
         <span class="pref-hint">Render thinking blocks as muted cards</span>
       </span>
     </label>
+  </section>
+
+  <!-- display-annotations: clear-all home with a two-step confirm. Removes the
+       `lb.annotations` localStorage key entirely (zero residue, spec B-5). -->
+  <section class="annotations-block" aria-label="Annotations">
+    <p class="annotations-title">Annotations</p>
+    <p class="annotations-count">{annotationCount} marked</p>
+    {#if confirmingClear}
+      <div class="confirm-row" data-testid="annotations-confirm">
+        <span class="confirm-text">Confirm clear?</span>
+        <button
+          type="button"
+          class="lb-ghost-btn"
+          data-tone="ink"
+          onclick={clearAllAnnotations}
+          data-testid="annotations-clear-yes"
+        >
+          Yes
+        </button>
+        <button
+          type="button"
+          class="lb-ghost-btn"
+          data-tone="ghost"
+          onclick={() => (confirmingClear = false)}
+        >
+          Cancel
+        </button>
+      </div>
+    {:else}
+      <button
+        type="button"
+        class="lb-ghost-btn"
+        data-tone="ghost"
+        disabled={annotationCount === 0}
+        onclick={() => (confirmingClear = true)}
+        data-testid="annotations-clear-all"
+      >
+        Clear all annotations
+      </button>
+    {/if}
   </section>
 
   <!-- Slice-18: editor picker — small, low-emphasis. Sits above the
@@ -451,6 +508,43 @@
     gap: var(--p-space-2);
     border-top: 1px dashed var(--color-border-hairline);
     padding-top: var(--p-space-3);
+  }
+
+  /* display-annotations: clear-all block, styled to match teaching-prefs. */
+  .annotations-block {
+    display: flex;
+    flex-direction: column;
+    gap: var(--p-space-2);
+    border-top: 1px dashed var(--color-border-hairline);
+    padding-top: var(--p-space-3);
+    align-items: flex-start;
+  }
+
+  .annotations-title {
+    font-size: var(--font-size-caption);
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 600;
+    margin: 0;
+  }
+
+  .annotations-count {
+    font-size: var(--font-size-meta);
+    color: var(--color-text-tertiary);
+    margin: 0 0 var(--p-space-1) 0;
+  }
+
+  .confirm-row {
+    display: flex;
+    align-items: center;
+    gap: var(--p-space-2);
+    flex-wrap: wrap;
+  }
+
+  .confirm-text {
+    font-size: var(--font-size-meta);
+    color: var(--color-text-primary);
   }
 
   .teaching-prefs-title {

@@ -21,6 +21,7 @@
   import { subscribeMotion } from "../stores/motion";
   import { onMount } from "svelte";
   import LegendKey from "./LegendKey.svelte";
+  import BriefLegend from "./BriefLegend.svelte";
   import PlaybackController from "./PlaybackController.svelte";
 
   interface Props {
@@ -28,6 +29,10 @@
   }
 
   const { events }: Props = $props();
+
+  // display-annotations: Full/Brief switch (ADR-DA-7). Default Full, NOT
+  // persisted (ADR-DA-8).
+  let legendView = $state<"full" | "brief">("full");
 
   let reduced = $state(false);
   onMount(() =>
@@ -94,8 +99,35 @@
 </script>
 
 <nav class="mobile-timeline" aria-label="Chapter timeline" data-testid="mobile-timeline">
-  <!-- Slice 12 P1 R-51: legend parity at the top of the mobile timeline. -->
-  <LegendKey variant="mobile" />
+  <!-- Slice 12 P1 R-51: legend parity at the top of the mobile timeline.
+       display-annotations: Full/Brief switch (ADR-DA-7). -->
+  <div class="legend-views" role="group" aria-label="Legend view">
+    <button
+      type="button"
+      class="legend-view-btn"
+      class:is-active={legendView === "full"}
+      aria-pressed={legendView === "full"}
+      onclick={() => (legendView = "full")}
+      data-testid="mobile-legend-view-full"
+    >
+      Full
+    </button>
+    <button
+      type="button"
+      class="legend-view-btn"
+      class:is-active={legendView === "brief"}
+      aria-pressed={legendView === "brief"}
+      onclick={() => (legendView = "brief")}
+      data-testid="mobile-legend-view-brief"
+    >
+      Brief
+    </button>
+  </div>
+  {#if legendView === "full"}
+    <LegendKey variant="mobile" />
+  {:else}
+    <BriefLegend variant="mobile" />
+  {/if}
 
   <!-- Slice 12 P6 R-72: compact playback controls (single cycle speed button). -->
   <div class="mobile-playback">
@@ -130,6 +162,43 @@
     background: var(--color-surface-raised);
     padding: var(--p-space-4);
     margin: var(--p-space-5) 0;
+  }
+
+  /* display-annotations: Full/Brief segmented toggle (mirrors scrubber). */
+  .legend-views {
+    display: inline-flex;
+    border: 1px solid var(--color-border-hairline);
+    border-radius: 0;
+    margin-bottom: var(--p-space-2);
+  }
+
+  .legend-view-btn {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    border-right: 1px solid var(--color-border-hairline);
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 4px 12px;
+    cursor: pointer;
+  }
+
+  .legend-view-btn:last-child {
+    border-right: 0;
+  }
+
+  .legend-view-btn.is-active {
+    color: var(--color-text-primary);
+    background: var(--color-surface-sunken);
+    font-weight: 700;
+  }
+
+  .legend-view-btn:focus-visible {
+    outline: 2px solid var(--color-accent-primary);
+    outline-offset: -2px;
   }
 
   .mobile-playback {

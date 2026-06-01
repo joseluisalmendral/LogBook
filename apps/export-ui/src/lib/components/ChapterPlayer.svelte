@@ -29,6 +29,19 @@
   import MobileTimeline from "./MobileTimeline.svelte";
   import PhaseAct from "./PhaseAct.svelte";
   import EmptyState from "./EmptyState.svelte";
+  import AnnotationControl from "./AnnotationControl.svelte";
+  import { annotations } from "../stores/annotations";
+
+  // display-annotations: a Set of annotated event ids drives the `data-annotated`
+  // ring. Hydrated from the shared annotations store; re-derived on every change
+  // (add / edit / remove / clear all) through one subscription.
+  let annotatedIds = $state<Set<string>>(new Set(Object.keys(annotations.get())));
+  $effect(() => {
+    const unsub = annotations.subscribe((map) => {
+      annotatedIds = new Set(Object.keys(map));
+    });
+    return () => unsub();
+  });
 
   // Subscribe to the motion store so we can swap the desktop scrubber for
   // the mobile anchor list (design D3: horizontal-swipe scrubber conflicts
@@ -555,7 +568,9 @@
                   class="event-anchor"
                   class:is-active={activeEventId === ev.id && playMode === "play"}
                   data-event-id={ev.id}
+                  data-annotated={annotatedIds.has(ev.id) ? "true" : undefined}
                 >
+                  <AnnotationControl eventId={ev.id} />
                   <TurnRow event={ev} />
                 </div>
               {/each}
@@ -798,12 +813,28 @@
   }
 
   .event-anchor {
+    position: relative; /* anchor the absolutely-positioned annotation trigger */
     scroll-margin-top: var(--p-space-6);
     /* Scroll-driven reveal motion #2. opacity 0 → 1 + translateY 8px → 0 as
        the event approaches the viewport center. */
     opacity: 1;
     transform: translateY(0);
     transition: opacity 250ms ease-out, transform 250ms ease-out;
+  }
+
+  /* display-annotations: reveal the per-event annotation trigger on
+     hover/focus of the anchor, matching the inspector-icon-btn reveal idiom. */
+  .event-anchor:hover :global(.annotation-trigger),
+  .event-anchor:focus-within :global(.annotation-trigger) {
+    opacity: 1;
+  }
+
+  /* Annotated events get a single left accent (border-left > border-radius,
+     Paper Brutalism rule 9). Per-annotation color lives in the BriefLegend to
+     keep the event stream calm; the ring stays one accent for scannability. */
+  .event-anchor[data-annotated="true"] {
+    border-left: 3px solid var(--color-accent-primary);
+    padding-left: var(--p-space-3);
   }
 
   /* Reduced-motion: always full opacity, no transform. The global rule in
