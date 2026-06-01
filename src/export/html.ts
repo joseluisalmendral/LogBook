@@ -51,6 +51,15 @@ export interface ExportOptions {
    * automatically if the final HTML exceeds `BUDGET_GATE_MAX_BYTES`.
    */
   noTranscripts?: boolean;
+  /**
+   * When true, never emit the oversize `<name>.events.jsonl` sidecar even if
+   * the payload trips the 5 MB cap. Used by `logbook present`, whose contract
+   * is a single self-contained `index.html` in the output folder — the raw
+   * transcript sidecar is unwanted there (the HTML already carries the full
+   * narrative). The normal `export html` path leaves this unset, preserving
+   * its sidecar behavior for callers that rely on it.
+   */
+  noSidecar?: boolean;
 }
 
 /**
@@ -164,8 +173,11 @@ export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
   await attachMermaidSvgs(payload);
 
   // 4. Sidecar emission for oversize payloads (R-14, INV-12, S-12).
+  // `noSidecar` (used by `logbook present`) suppresses the sidecar entirely so
+  // the output folder holds only the single index.html — the raw transcripts
+  // are intentionally discarded there.
   let sidecarPath: string | null = null;
-  if (oversize) {
+  if (oversize && opts.noSidecar !== true) {
     sidecarPath = outFile.replace(/\.html$/, ".events.jsonl");
     const jsonl = ctx.all.map((e) => JSON.stringify(e)).join("\n");
     await mkdir(dirname(sidecarPath), { recursive: true });

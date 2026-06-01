@@ -193,12 +193,26 @@ export default defineCommand({
       // 2-3. Build the self-contained HTML straight to the output folder.
       //      exportHtml reads events via readContext(paths) — i.e. from the
       //      ephemeral events.jsonl — and writes ONLY to outFile.
+      //
+      // `present`'s contract is a single self-contained index.html in the
+      // output folder — nothing else. Two settings enforce that:
+      //   - noTranscripts: true — never embed raw transcripts, so the payload
+      //     never carries the ~100 MB of raw conversation that trips the 5 MB
+      //     budget gate. This is the SAME HTML the oversize fallback already
+      //     produced (it stripped transcripts too), just reached up front.
+      //   - noSidecar: true — even if a large project still trips the cap on
+      //     bodies/chapters alone, never write the `<name>.events.jsonl`
+      //     sidecar next to the HTML. The folder must contain only index.html.
+      // The `--no-transcripts` flag is now redundant for output (transcripts
+      // are always off here) but kept for backward-compat / explicitness.
+      void noTranscripts;
       const { exportHtml } = loadExportModule();
       const report = await exportHtml({
         paths,
         outFile,
         safe,
-        ...(noTranscripts && { noTranscripts }),
+        noTranscripts: true,
+        noSidecar: true,
       });
 
       const absOut = path.resolve(report.outFile);
