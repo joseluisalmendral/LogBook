@@ -26,6 +26,7 @@
   import { scrub } from "../stores/scrub";
   import { playhead } from "../stores/playhead";
   import LegendKey from "./LegendKey.svelte";
+  import BriefLegend from "./BriefLegend.svelte";
   import PlaybackController from "./PlaybackController.svelte";
 
   interface Props {
@@ -35,6 +36,10 @@
   }
 
   const { events, scrollContainer = null }: Props = $props();
+
+  // display-annotations: Full (8-kind legend, current behavior) vs Brief
+  // (annotated points only). Default Full, NOT persisted (ADR-DA-8).
+  let legendView = $state<"full" | "brief">("full");
 
   let progress = $state(0);
   let rafId: number | null = null;
@@ -150,8 +155,37 @@
   aria-label="Chapter timeline"
   data-play-mode={playMode}
 >
-  <!-- Slice 12 P1 R-51: collapsible legend mounted above the dock. -->
-  <LegendKey variant="inline" />
+  <!-- Slice 12 P1 R-51: collapsible legend mounted above the dock.
+       display-annotations: Full/Brief switch (ADR-DA-7). -->
+  <div class="legend-host">
+    <div class="legend-views" role="group" aria-label="Legend view">
+      <button
+        type="button"
+        class="legend-view-btn"
+        class:is-active={legendView === "full"}
+        aria-pressed={legendView === "full"}
+        onclick={() => (legendView = "full")}
+        data-testid="legend-view-full"
+      >
+        Full
+      </button>
+      <button
+        type="button"
+        class="legend-view-btn"
+        class:is-active={legendView === "brief"}
+        aria-pressed={legendView === "brief"}
+        onclick={() => (legendView = "brief")}
+        data-testid="legend-view-brief"
+      >
+        Brief
+      </button>
+    </div>
+    {#if legendView === "full"}
+      <LegendKey variant="inline" />
+    {:else}
+      <BriefLegend variant="inline" />
+    {/if}
+  </div>
 
   <!-- Slice 12 P6 R-72: playback controls live in the dock alongside the scrubber. -->
   <div class="dock-row">
@@ -178,6 +212,61 @@
 </div>
 
 <style>
+  /* display-annotations: Full/Brief legend host + segmented toggle. */
+  .legend-host {
+    display: flex;
+    align-items: center;
+    gap: var(--p-space-3);
+    flex-wrap: wrap;
+  }
+
+  .legend-views {
+    display: inline-flex;
+    border: 1px solid var(--color-border-hairline);
+    border-radius: 0;
+    flex-shrink: 0;
+  }
+
+  .legend-view-btn {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    border-right: 1px solid var(--color-border-hairline);
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: color 150ms ease-out, background 150ms ease-out;
+  }
+
+  .legend-view-btn:last-child {
+    border-right: 0;
+  }
+
+  .legend-view-btn:hover,
+  .legend-view-btn:focus-visible {
+    color: var(--color-text-primary);
+    background: var(--color-surface-sunken);
+  }
+
+  .legend-view-btn.is-active {
+    color: var(--color-text-primary);
+    background: var(--color-surface-sunken);
+    font-weight: 700;
+  }
+
+  .legend-view-btn:focus-visible {
+    outline: 2px solid var(--color-accent-primary);
+    outline-offset: -2px;
+  }
+
+  :global(html[data-motion="reduced"]) .legend-view-btn {
+    transition: none;
+  }
+
   .scrubber {
     position: sticky;
     bottom: 0;

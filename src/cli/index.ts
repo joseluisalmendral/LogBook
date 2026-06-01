@@ -33,6 +33,7 @@ import lesson from "./commands/lesson.js";
 import resource from "./commands/resource.js";
 import milestone from "./commands/milestone.js";
 import build from "./commands/build.js";
+import present from "./commands/present.js";
 import exportCmd from "./commands/export.js";
 import providers from "./commands/providers.js";
 import summarize from "./commands/summarize.js";
@@ -71,6 +72,7 @@ const main = defineCommand({
     resource,
     milestone,
     build,
+    present,
     export: exportCmd,
     providers,
     summarize,
