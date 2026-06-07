@@ -154,6 +154,30 @@ describe("redact — negative cases (benign values must pass through)", () => {
     expect(result.redacted).toBe(input);
     expect(result.hits).toHaveLength(0);
   });
+
+  it("does NOT redact MCP tool names (mcp-tool-rendering regression guard)", () => {
+    // The entropy regex includes `_` and the `mcp__server__tool` convention
+    // produces long underscore-dense tokens that score >= 3.5 entropy. Before
+    // the `mcp__` prefix exemption, every MCP tool name EXCEPT
+    // `mcp__plugin_engram_engram__mem_save` (whose entropy is 3.4857, just
+    // under threshold) was shredded to `[REDACTED:high-entropy]`, so the HTML
+    // export could only render `engram · mem_save` chips and dropped the names
+    // of mem_search, mem_get_observation, context7, magic, etc.
+    const names = [
+      "mcp__plugin_engram_engram__mem_save",
+      "mcp__plugin_engram_engram__mem_search",
+      "mcp__plugin_engram_engram__mem_get_observation",
+      "mcp__plugin_engram_engram__mem_session_summary",
+      "mcp__context7__query-docs",
+      "mcp__context7__resolve-library-id",
+      "mcp__magic__21st_magic_component_builder",
+    ];
+    for (const name of names) {
+      const result = redact(name);
+      expect(result.redacted).toBe(name);
+      expect(result.redacted).not.toContain("[REDACTED");
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
