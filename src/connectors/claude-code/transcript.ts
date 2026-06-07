@@ -30,8 +30,26 @@ import { redact } from "../../redact/redactor.js";
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Hard cap on delta bytes read per Stop hook fire. Protects p95 < 200ms. */
-const MAX_DELTA_BYTES = 5_000_000; // 5 MB
+/**
+ * Hard cap on delta bytes read per Stop hook fire. Protects p95 < 200ms during
+ * LIVE capture — large transcripts are skipped at hook time so the Stop hook
+ * never blocks the editor.
+ *
+ * Offline, no-latency-budget commands (`logbook present`, `logbook build`) set
+ * `LOGBOOK_MAX_DELTA_BYTES` to a much higher value so big sessions (6–12 MB
+ * transcripts) are fully parsed — without this, their `/rename` titles, user
+ * prompts, and messages are never read. Resolved per-call so a process can
+ * raise the cap mid-run.
+ */
+const DEFAULT_MAX_DELTA_BYTES = 5_000_000; // 5 MB
+function resolveMaxDeltaBytes(): number {
+  const raw = process.env["LOGBOOK_MAX_DELTA_BYTES"];
+  if (typeof raw === "string" && raw.trim()) {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return DEFAULT_MAX_DELTA_BYTES;
+}
 
 /**
  * Slice-23 backfill: textual content prefixes that Claude Code emits as
@@ -63,6 +81,22 @@ export function isLikelyRealUserPrompt(text: string): boolean {
 /** Slice-23: stable hash of a user-prompt body, used for hook↔scraper dedup. */
 export function userPromptHash(text: string): string {
   return crypto.createHash("sha256").update(text.trim()).digest("hex").slice(0, 16);
+}
+
+/**
+ * Normalize a Claude Code `/rename` custom title for display.
+ *
+ * Claude Code often persists the value wrapped in a single layer of literal
+ * double quotes (e.g. `"\"l16-fase6\""` → `l16-fase6`), but some renames are
+ * stored unquoted (e.g. `prueba-skill-audit`). Strip ONE matched layer of
+ * surrounding double quotes and trim; never touch interior quotes.
+ */
+export function normalizeCustomTitle(raw: string): string {
+  let t = raw.trim();
+  if (t.length >= 2 && t.startsWith('"') && t.endsWith('"')) {
+    t = t.slice(1, -1).trim();
+  }
+  return t;
 }
 
 /**
@@ -189,6 +223,48 @@ export async function loadExistingUserPromptHashes(
   return out;
 }
 
+/**
+ * Scan events.jsonl once and return the set of normalized custom titles
+ * already persisted as `session_rename` events for this session.
+ *
+ * Claude Code re-emits the `custom-title` transcript line on every flush, so a
+ * single `/rename` appears dozens of times. This loader lets the scraper write
+ * ONE `session_rename` event per distinct title and skip the rest across runs.
+ *
+ * Failure-safe: missing/unreadable file → empty set.
+ */
+export async function loadExistingRenameTitles(
+  eventsJsonlPath: string,
+  sessionId: string,
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  let content: string;
+  try {
+    content = await fs.promises.readFile(eventsJsonlPath, "utf8");
+  } catch {
+    return out;
+  }
+  for (const line of content.split("\n")) {
+    if (!line) continue;
+    if (!line.includes(`"session_rename"`)) continue; // fast prefilter
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (parsed["sessionId"] !== sessionId) continue;
+    const payload = parsed["payload"] as Record<string, unknown> | undefined;
+    if (payload?.["entryType"] !== "session_rename") continue;
+    const title =
+      typeof payload?.["customTitle"] === "string"
+        ? (payload["customTitle"] as string)
+        : "";
+    if (title) out.add(title);
+  }
+  return out;
+}
+
 /** Maximum number of cursor entries in transcriptCursors before LRU prune. */
 const MAX_CURSOR_ENTRIES = 500;
 
@@ -217,8 +293,11 @@ export interface ClaudeTranscriptLine {
     | "last-prompt"
     | "permission-mode"
     | "file-history-snapshot"
+    | "custom-title"
     | string; // forward-compat
   uuid?: string;
+  /** Set on `type: "custom-title"` lines — the session's `/rename` value. */
+  customTitle?: string;
   parentUuid?: string | null;
   timestamp?: string;
   sessionId?: string;
@@ -329,11 +408,14 @@ export async function readTranscriptNewLines(
 
   const deltaBytes = fileSize - cursorByteOffset;
 
-  // ADR-8: 5MB cap — advance cursor without parsing to protect latency.
-  if (deltaBytes > MAX_DELTA_BYTES) {
+  // ADR-8: delta cap — advance cursor without parsing to protect latency.
+  // Default 5 MB (hook budget); offline commands raise it via env so large
+  // sessions are parsed in full.
+  const maxDeltaBytes = resolveMaxDeltaBytes();
+  if (deltaBytes > maxDeltaBytes) {
     if (process.env["LOGBOOK_HOOK_DEBUG"] === "1") {
       process.stderr.write(
-        `[logbook] transcript delta too large (${deltaBytes} bytes > ${MAX_DELTA_BYTES}), skipping parse\n`,
+        `[logbook] transcript delta too large (${deltaBytes} bytes > ${maxDeltaBytes}), skipping parse\n`,
       );
     }
     return { lines: [], newCursor: fileSize, filePresent: true };
@@ -918,10 +1000,35 @@ export function transcriptLineToEvents(
   line: ClaudeTranscriptLine,
   sessionId: string,
   existingUserPromptHashes?: Set<string>,
+  existingRenameTitles?: Set<string>,
 ): EventInput[] {
   // Skip meta / sidechain lines.
   if (line.isMeta === true) return [];
   if (line.isSidechain === true) return [];
+
+  // Claude Code `/rename` marker — persist the custom session title once.
+  // The transcript re-emits this line on every flush, so dedup against titles
+  // already written for this session (in-batch + cross-run via the loader).
+  if (line.type === "custom-title") {
+    const titleRaw =
+      typeof line.customTitle === "string" ? normalizeCustomTitle(line.customTitle) : "";
+    if (!titleRaw) return [];
+    if (existingRenameTitles !== undefined && existingRenameTitles.has(titleRaw)) {
+      return [];
+    }
+    return [
+      {
+        kind: "system",
+        sessionId,
+        payload: {
+          entryType: "session_rename",
+          customTitle: titleRaw,
+          text: titleRaw,
+        },
+        ...(line.timestamp !== undefined && { timestamp: line.timestamp }),
+      },
+    ];
+  }
 
   // Skip known non-content line types.
   if (
@@ -1170,9 +1277,23 @@ export async function runTranscriptScraper(
     // empty set already — safe default
   }
 
+  // Load custom-title (/rename) values already persisted for this session so a
+  // re-emitted custom-title line never writes a duplicate session_rename event.
+  let existingRenameTitles = new Set<string>();
+  try {
+    existingRenameTitles = await loadExistingRenameTitles(paths.eventsJsonl, sessionId);
+  } catch {
+    // empty set already — safe default
+  }
+
   // 3. Map lines → events → persist.
   for (const line of lines) {
-    const events = transcriptLineToEvents(line, sessionId, existingUserPromptHashes);
+    const events = transcriptLineToEvents(
+      line,
+      sessionId,
+      existingUserPromptHashes,
+      existingRenameTitles,
+    );
     for (const eventInput of events) {
       try {
         await appendEvent(paths, {
@@ -1188,6 +1309,16 @@ export async function runTranscriptScraper(
           const payload = eventInput.payload as Record<string, unknown> | undefined;
           const text = typeof payload?.["text"] === "string" ? (payload["text"] as string) : "";
           if (text) existingUserPromptHashes.add(userPromptHash(text));
+        }
+        if (eventInput.kind === "system") {
+          const payload = eventInput.payload as Record<string, unknown> | undefined;
+          if (payload?.["entryType"] === "session_rename") {
+            const title =
+              typeof payload?.["customTitle"] === "string"
+                ? (payload["customTitle"] as string)
+                : "";
+            if (title) existingRenameTitles.add(title);
+          }
         }
       } catch {
         skipped++;
