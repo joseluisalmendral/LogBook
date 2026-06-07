@@ -80,8 +80,10 @@ export default defineCommand({
   args: {
     name: {
       type: "positional",
-      required: true,
-      description: "Identifier for the output folder (produces <out>/<name>/index.html)",
+      required: false,
+      description:
+        "Identifier for the output folder (produces <out>/<name>/index.html). " +
+        "Defaults to the source directory name.",
     },
     out: {
       type: "string",
@@ -110,9 +112,13 @@ export default defineCommand({
       process.exit(1);
     }
 
-    const name = typeof args["name"] === "string" ? args["name"].trim() : "";
+    // <name> is OPTIONAL — default to the source directory's basename so the
+    // output folder + presentation title are immediately recognizable
+    // (e.g. "tendr-landing"). The path-traversal guard below still applies.
+    const explicitName = typeof args["name"] === "string" ? args["name"].trim() : "";
+    const name = explicitName || path.basename(realRoot);
     if (!name) {
-      process.stderr.write("error: <name> is required\n");
+      process.stderr.write("error: could not derive a presentation name\n");
       process.exit(1);
     }
     // Guard against path traversal / nested folders in the name argument.
@@ -135,6 +141,15 @@ export default defineCommand({
 
     const safe = args["safe"] === true;
     const noTranscripts = args["no-transcripts"] === true;
+
+    // `present` is an offline, one-shot command with NO latency budget (unlike
+    // the Stop hook). Raise the transcript delta cap so large sessions (6-12 MB
+    // transcripts) are parsed in full — otherwise their `/rename` titles, user
+    // prompts, and messages are silently skipped by the hook-time 5 MB guard.
+    // Honor an explicit caller override if one is already set.
+    if (!process.env["LOGBOOK_MAX_DELTA_BYTES"]) {
+      process.env["LOGBOOK_MAX_DELTA_BYTES"] = String(256 * 1024 * 1024);
+    }
 
     // Ephemeral workspace under os.tmpdir() — deleted in finally.
     const workspace = await fs.mkdtemp(join(os.tmpdir(), "logbook-present-"));
@@ -213,6 +228,9 @@ export default defineCommand({
         safe,
         noTranscripts: true,
         noSidecar: true,
+        // Make the hero <h1> + tab title match the folder the user named
+        // (default = source directory basename).
+        projectNameOverride: name,
       });
 
       const absOut = path.resolve(report.outFile);
