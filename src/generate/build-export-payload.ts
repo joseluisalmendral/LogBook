@@ -522,7 +522,13 @@ function deriveSummary(prompt: string | undefined, maxChars = 200): string | und
  */
 function summarizeToolForSubagent(
   event: RenderEvent,
-): { name: string; input: string } | null {
+): {
+  name: string;
+  input: string;
+  displayName?: string;
+  isMcp?: boolean;
+  mcpServer?: string;
+} | null {
   if (typeof event.type !== "string" || !event.type.startsWith("tool_result.")) {
     return null;
   }
@@ -533,15 +539,24 @@ function summarizeToolForSubagent(
       : "tool";
   const raw = rec["raw"] as Record<string, unknown> | undefined;
   const ti = raw?.["tool_input"] as Record<string, unknown> | undefined;
+  const meta = prettifyToolName(toolName);
   // Pick the most identifying field per tool kind. Falls back to a JSON
   // summary capped at 80 chars so the UI never renders a wall of text.
-  const candidate =
-    ti?.["file_path"] ??
-    ti?.["command"] ??
-    ti?.["pattern"] ??
-    ti?.["url"] ??
-    ti?.["query"] ??
-    ti?.["prompt"];
+  // For MCP tools surface the meaningful field (engram: query/id/title/
+  // topic_key) instead of raw JSON — see summarizeToolInput rules.
+  const candidate = meta.isMcp
+    ? (ti?.["query"] ??
+      ti?.["id"] ??
+      ti?.["title"] ??
+      ti?.["topic_key"] ??
+      ti?.["prompt"] ??
+      ti?.["name"])
+    : (ti?.["file_path"] ??
+      ti?.["command"] ??
+      ti?.["pattern"] ??
+      ti?.["url"] ??
+      ti?.["query"] ??
+      ti?.["prompt"]);
   let input: string;
   if (typeof candidate === "string") {
     input = candidate.length > 80 ? `${candidate.slice(0, 77)}...` : candidate;
@@ -551,7 +566,19 @@ function summarizeToolForSubagent(
   } else {
     input = "";
   }
-  return { name: toolName, input };
+  const out: {
+    name: string;
+    input: string;
+    displayName?: string;
+    isMcp?: boolean;
+    mcpServer?: string;
+  } = { name: toolName, input };
+  if (meta.displayName !== toolName) out.displayName = meta.displayName;
+  if (meta.isMcp) {
+    out.isMcp = true;
+    if (meta.mcpServer) out.mcpServer = meta.mcpServer;
+  }
+  return out;
 }
 
 /**
@@ -757,6 +784,16 @@ function resolveSessionTitle(
  */
 interface ToolStripEntry {
   name: string;
+  /**
+   * Legible label for the chip face. For native tools this equals `name`;
+   * for MCP tools it is `<server> · <tool>` (e.g. "engram · mem_search").
+   * The raw `name` is retained for the tooltip/title attribute.
+   */
+  displayName?: string;
+  /** True when `name` is an `mcp__server__tool` identifier. */
+  isMcp?: boolean;
+  /** Cleaned MCP server label (e.g. "engram"); present only for MCP tools. */
+  mcpServer?: string;
   file_path?: string;
   toolUseId?: string;
   /**
@@ -909,6 +946,51 @@ function toolDisplayNameOf(ev: RenderEvent): string {
 }
 
 /**
+ * MCP-tool render metadata.
+ *
+ * Raw MCP tool names arrive as `mcp__<server>__<tool>` where the server
+ * segment can be compound (e.g. `plugin_engram_engram`). Native tools (Bash,
+ * Read, …) carry no `mcp__` prefix and pass through unchanged.
+ */
+interface ToolNameMeta {
+  /** Human-legible label, e.g. "engram · mem_search" or "Bash". */
+  displayName: string;
+  /** True when the raw name is an `mcp__server__tool` identifier. */
+  isMcp: boolean;
+  /** Cleaned server label (e.g. "engram"), present only for MCP tools. */
+  mcpServer?: string;
+}
+
+/**
+ * Parse a raw tool name into render metadata.
+ *
+ *   `mcp__plugin_engram_engram__mem_search` → { displayName: "engram · mem_search",
+ *                                               isMcp: true, mcpServer: "engram" }
+ *   `mcp__some_server__do_thing`            → { displayName: "some_server · do_thing",
+ *                                               isMcp: true, mcpServer: "some_server" }
+ *   `Bash`                                  → { displayName: "Bash", isMcp: false }
+ *
+ * Rule: split on `__`; the LAST segment is the tool, the middle segment(s)
+ * are the server. Engram's compound server variants collapse to just "engram".
+ */
+function prettifyToolName(raw: string): ToolNameMeta {
+  if (!raw.startsWith("mcp__")) {
+    return { displayName: raw, isMcp: false };
+  }
+  const parts = raw.split("__").filter((p) => p.length > 0);
+  // parts[0] === "mcp"; last === tool; middle (joined) === server.
+  const tool = parts.length >= 2 ? parts[parts.length - 1]! : raw;
+  const serverRaw = parts.slice(1, -1).join("_");
+  // Collapse known engram variants (e.g. plugin_engram_engram) to "engram".
+  const server = /engram/i.test(serverRaw) ? "engram" : serverRaw || "mcp";
+  return {
+    displayName: `${server} · ${tool}`,
+    isMcp: true,
+    mcpServer: server,
+  };
+}
+
+/**
  * Slice-21 toolStrip + filesTouched rollup walker (R-82, R-83, R-86,
  * ADR-SN-B1).
  *
@@ -995,14 +1077,21 @@ function rollupClaudeMessageTools(
           : typeof toolInput?.["notebook_path"] === "string"
             ? (toolInput["notebook_path"] as string)
             : "";
-    const entry: ToolStripEntry = { name: toolDisplayNameOf(ev) };
+    const rawName = toolDisplayNameOf(ev);
+    const meta = prettifyToolName(rawName);
+    const entry: ToolStripEntry = { name: rawName };
+    if (meta.displayName !== rawName) entry.displayName = meta.displayName;
+    if (meta.isMcp) {
+      entry.isMcp = true;
+      if (meta.mcpServer) entry.mcpServer = meta.mcpServer;
+    }
     if (filePath) entry.file_path = filePath;
     if (toolUseId) entry.toolUseId = toolUseId;
     // Slice-24: 1-line summary of the tool's input + truncated output so the
     // UI can render a rich chip ("Bash · eza -la ...") without exploding the
     // payload. Both fields are best-effort — when raw is missing they stay
     // undefined and the UI degrades to name-only.
-    const inputSummary = summarizeToolInput(toolDisplayNameOf(ev), toolInput);
+    const inputSummary = summarizeToolInput(rawName, toolInput);
     if (inputSummary) entry.input = inputSummary;
     const outputPreview = summarizeToolOutput(raw);
     if (outputPreview) entry.outputPreview = outputPreview;
@@ -1127,6 +1216,32 @@ function summarizeToolInput(
   if (lower === "websearch") return truncate(get("query") ?? "", 600);
   if (lower === "task") return truncate(get("description") ?? get("subagent_type") ?? "", 600);
   if (lower === "todowrite" || lower === "askuserquestion") return "";
+  // MCP tools (mcp__server__tool): surface the single most meaningful field
+  // instead of raw JSON. Engram: mem_search/mem_get_observation → query/id;
+  // mem_save/mem_session_summary → title (fallback topic_key). Generic MCP
+  // fallback: first of query, prompt, title, id, name.
+  if (displayName.startsWith("mcp__")) {
+    const tool = displayName.slice(displayName.lastIndexOf("__") + 2).toLowerCase();
+    const isEngramSearch =
+      tool === "mem_search" || tool === "mem_get_observation";
+    const isEngramSave =
+      tool === "mem_save" || tool === "mem_session_summary";
+    let field: string | undefined;
+    if (isEngramSearch) {
+      field = get("query") ?? get("id");
+    } else if (isEngramSave) {
+      field = get("title") ?? get("topic_key");
+    }
+    field =
+      field ??
+      get("query") ??
+      get("prompt") ??
+      get("title") ??
+      get("id") ??
+      get("name");
+    if (field) return truncate(field, 800);
+    // No recognizable field — fall through to compact JSON.
+  }
   // MCP and unknown tools: JSON-stringify the input compactly. Truncated
   // generously — MCP calls often carry meaningful payload context.
   try {
@@ -1429,7 +1544,7 @@ export async function buildExportPayload(
       // sorts ascending), so the UI reads the same order the sub-agent ran.
       const tools = children
         .map(summarizeToolForSubagent)
-        .filter((t): t is { name: string; input: string } => t !== null);
+        .filter((t): t is NonNullable<ReturnType<typeof summarizeToolForSubagent>> => t !== null);
       // Aggregate skillsLoaded — skill_invoked events synthesized by the
       // transcript scraper when a sub-agent Reads a SKILL.md. Deduped.
       const skillsLoaded = [

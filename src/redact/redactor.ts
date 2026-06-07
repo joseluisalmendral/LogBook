@@ -212,6 +212,25 @@ export function redact(input: string, opts: RedactOptions = {}): RedactionResult
   // years.
   const TOOL_USE_ID_RE = /^toolu_[A-Za-z0-9]{8,}$/;
 
+  // MCP tool names are public identifiers, not secrets — they follow the
+  // `mcp__<server>__<tool>` convention (e.g.
+  // `mcp__plugin_engram_engram__mem_search`). The `_`-joined form is long and
+  // underscore-dense, so the generic entropy pass scores most of them >= 3.5
+  // and shreds the name to `[REDACTED:high-entropy]`. That is a false positive:
+  // the call's identity (server + tool) is lost and the export UI can no longer
+  // render the MCP chip (brain icon + "engram · mem_search" label).
+  //
+  // Why `mem_save` historically survived while every other engram/context7 tool
+  // did not: its Shannon entropy (3.4857) happens to fall just under the 3.5
+  // threshold. Pure coincidence — not a deliberate exemption. Anchoring on the
+  // `mcp__` prefix makes the exemption explicit and uniform.
+  //
+  // The match is a prefix check (not `^...$`) because the entropy regex excludes
+  // `-`, so hyphenated tools like `mcp__context7__query-docs` are tokenized as
+  // `mcp__context7__query` (the `-docs` tail is a separate, short token). A
+  // prefix anchor on `mcp__` still exempts that leading token.
+  const MCP_TOOL_NAME_RE = /^mcp__/;
+
   ENTROPY_TOKEN_RE.lastIndex = 0;
   let m: RegExpExecArray | null;
   while ((m = ENTROPY_TOKEN_RE.exec(input)) !== null) {
@@ -238,6 +257,10 @@ export function redact(input: string, opts: RedactOptions = {}): RedactionResult
     // Slice-26: skip Anthropic tool_use_id tokens — they are JOIN keys, not
     // secrets. See the comment on TOOL_USE_ID_RE above.
     if (TOOL_USE_ID_RE.test(token)) continue;
+
+    // Skip MCP tool-name tokens (`mcp__server__tool`) — public identifiers, not
+    // secrets. See the comment on MCP_TOOL_NAME_RE above.
+    if (MCP_TOOL_NAME_RE.test(token)) continue;
 
     if (shannonEntropy(token) >= entropyThreshold) {
       entropyHits.push({
