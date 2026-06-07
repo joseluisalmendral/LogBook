@@ -648,6 +648,103 @@ function projectNameFrom(root: string): string {
   return parts[parts.length - 1] ?? "project";
 }
 
+/**
+ * Noise prefixes that mark a `user_prompt` body as machine-generated rather
+ * than a real human turn (Claude Code wraps slash commands, caveats, and
+ * reminders in these). Used to find the FIRST real user prompt for a session
+ * title fallback. Mirrors the scraper's NON_REAL_USER_PROMPT_PREFIXES.
+ */
+const NON_HUMAN_PROMPT_PREFIXES = [
+  "<command-name>",
+  "<command-message>",
+  "<command-args>",
+  "<local-command-",
+  "<attachment>",
+  "<user-attachment>",
+  "<session-end>",
+  "<system-reminder>",
+] as const;
+
+const FIRST_PROMPT_TITLE_MAX = 60;
+
+/**
+ * Derive a readable session title from the first REAL user prompt in a
+ * session's events. Skips machine noise (anything starting with `<`, plus the
+ * known command/caveat wrappers), takes the first human-looking line, collapses
+ * whitespace, and truncates to ~60 chars. Returns "" when no usable prompt.
+ */
+function firstUserPromptTitle(events: RenderEvent[]): string {
+  for (const ev of events) {
+    if (ev.type !== "user_prompt") continue;
+    const text = typeof ev["text"] === "string" ? (ev["text"] as string) : "";
+    const trimmed = text.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith("<")) continue;
+    if (NON_HUMAN_PROMPT_PREFIXES.some((p) => trimmed.startsWith(p))) continue;
+    // First non-empty human line, whitespace-collapsed.
+    const firstLine =
+      trimmed.split("\n").map((l) => l.trim()).find((l) => l.length > 0) ?? "";
+    const collapsed = firstLine.replace(/\s+/g, " ").trim();
+    if (!collapsed) continue;
+    return collapsed.length > FIRST_PROMPT_TITLE_MAX
+      ? `${collapsed.slice(0, FIRST_PROMPT_TITLE_MAX).trimEnd()}…`
+      : collapsed;
+  }
+  return "";
+}
+
+/**
+ * Latest Claude Code `/rename` custom title for a session, read from the
+ * `manual.session_rename` events the transcript scraper emits. The scraper
+ * already strips a single layer of surrounding quotes; we re-strip defensively
+ * for any legacy/raw records. Returns "" when the session was never renamed.
+ */
+function customRenameTitle(events: RenderEvent[]): string {
+  let title = "";
+  for (const ev of events) {
+    if (ev.type !== "manual.session_rename") continue;
+    const raw =
+      typeof ev["customTitle"] === "string"
+        ? (ev["customTitle"] as string)
+        : typeof ev["text"] === "string"
+        ? (ev["text"] as string)
+        : "";
+    let t = raw.trim();
+    if (t.length >= 2 && t.startsWith('"') && t.endsWith('"')) t = t.slice(1, -1).trim();
+    if (t) title = t; // keep the LAST one encountered (events are ts-ascending)
+  }
+  return title;
+}
+
+/**
+ * Resolve a session's DISPLAY title with the priority chain:
+ *   1. `/rename` customTitle (highest)
+ *   2. existing `logbook start --label` / synthesized title (`existingLabel`)
+ *   3. first REAL user prompt
+ *   4. `Session <id8>` (last resort)
+ *
+ * `existingLabel` is whatever the session record already carries
+ * (`s.title` || `s.label`); a synthetic placeholder of the form
+ * `Session <id8>` is treated as "no real label" so the prompt fallback wins.
+ */
+function resolveSessionTitle(
+  id: string,
+  existingLabel: string,
+  sessionEvents: RenderEvent[],
+): string {
+  const custom = customRenameTitle(sessionEvents);
+  if (custom) return custom;
+
+  const id8 = id.slice(0, 8);
+  const placeholder = `Session ${id8}`;
+  if (existingLabel && existingLabel !== placeholder) return existingLabel;
+
+  const fromPrompt = firstUserPromptTitle(sessionEvents);
+  if (fromPrompt) return fromPrompt;
+
+  return existingLabel || (id ? placeholder : "session");
+}
+
 // ---------------------------------------------------------------------------
 // Slice-21: narrative filter + toolStrip rollup
 // ---------------------------------------------------------------------------
@@ -1162,6 +1259,13 @@ export async function buildExportPayload(
      * transcript files in `~/.claude/projects/` are NOT, hence this gate.
      */
     safe?: boolean;
+    /**
+     * Override for `project.name` (the export hero `<h1>` and tab title). Used
+     * by `logbook present <name>` so the presentation title reflects exactly
+     * what the user named the output (default = source directory basename).
+     * When unset, falls back to the directory basename of `paths.root`.
+     */
+    projectNameOverride?: string;
   } = {},
 ): Promise<BuildExportPayloadResult> {
   const safeMode = opts.safe === true;
@@ -1231,9 +1335,14 @@ export async function buildExportPayload(
         : typeof s["label"] === "string"
         ? (s["label"] as string)
         : "";
+    const resolvedLabel = resolveSessionTitle(
+      id,
+      labelRaw,
+      eventsBySession.get(id) ?? [],
+    );
     const summary: SessionSummary = {
       id,
-      label: labelRaw || id || "session",
+      label: resolvedLabel || id || "session",
       ts: s.ts,
     };
     if (typeof s["endTs"] === "string") summary.endTs = s["endTs"] as string;
@@ -1251,6 +1360,7 @@ export async function buildExportPayload(
         ? (s["label"] as string)
         : "";
     const chapterEvents = eventsBySession.get(id) ?? [];
+    const resolvedLabel = resolveSessionTitle(id, labelRaw, chapterEvents);
 
     // Phase boundaries (best-effort — phases are filtered into ctx.phases, we
     // pick the ones whose sessionId matches this chapter).
@@ -1422,7 +1532,7 @@ export async function buildExportPayload(
 
     const chapter: Chapter = {
       sessionId: id,
-      label: labelRaw || id || "session",
+      label: resolvedLabel || id || "session",
       ts: s.ts,
       phases,
       events: slimEvents,
@@ -1667,7 +1777,10 @@ export async function buildExportPayload(
     version: 2,
     exportedAt: opts.exportedAt ?? new Date().toISOString(),
     project: {
-      name: projectNameFrom(paths.root),
+      name:
+        typeof opts.projectNameOverride === "string" && opts.projectNameOverride.trim()
+          ? opts.projectNameOverride.trim()
+          : projectNameFrom(paths.root),
       root: paths.root,
       sha: opts.gitSha ?? "",
     },

@@ -60,6 +60,12 @@ export interface ExportOptions {
    * its sidecar behavior for callers that rely on it.
    */
   noSidecar?: boolean;
+  /**
+   * Override for `project.name` (export hero `<h1>` + browser tab title).
+   * Used by `logbook present <name>` so the presentation title matches the
+   * folder name the user chose. When unset, the directory basename is used.
+   */
+  projectNameOverride?: string;
 }
 
 /**
@@ -165,6 +171,9 @@ export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
     safe: opts.safe === true,
   };
   if (remoteUrl !== undefined) buildOpts.remoteUrl = remoteUrl;
+  if (opts.projectNameOverride !== undefined) {
+    buildOpts.projectNameOverride = opts.projectNameOverride;
+  }
   let buildResult = await buildExportPayload(ctx, paths, buildOpts);
   let payload = buildResult.payload;
   const oversize = buildResult.oversize;
@@ -221,6 +230,9 @@ export async function exportHtml(opts: ExportOptions): Promise<ExportReport> {
       safe: opts.safe === true,
     };
     if (remoteUrl !== undefined) rebuildOpts.remoteUrl = remoteUrl;
+    if (opts.projectNameOverride !== undefined) {
+      rebuildOpts.projectNameOverride = opts.projectNameOverride;
+    }
     buildResult = await buildExportPayload(ctx, paths, rebuildOpts);
     payload = buildResult.payload;
     jsonPayload = escapeJsonForScriptTag(JSON.stringify(payload));

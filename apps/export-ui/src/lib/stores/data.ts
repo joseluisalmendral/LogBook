@@ -65,3 +65,10 @@ export const payload: ExportPayloadV2 = readPayloadFromDom();
 if (typeof window !== "undefined" && payload.project?.root) {
   setProjectRoot(payload.project.root);
 }
+
+// Reflect the project name in the browser tab title so renamed presentations
+// are recognizable (e.g. "tendr-landing" instead of the static "LogBook
+// Export"). SSR / file:// safe — guard on `document`.
+if (typeof document !== "undefined") {
+  document.title = payload.project?.name || "LogBook Export";
+}
