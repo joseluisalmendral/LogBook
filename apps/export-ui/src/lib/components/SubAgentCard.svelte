@@ -82,7 +82,13 @@
   const skillsLoaded = $derived(Array.isArray(payload.skillsLoaded) ? (payload.skillsLoaded as string[]) : []);
   const tools = $derived(
     Array.isArray(payload.tools)
-      ? (payload.tools as Array<{ name?: string; input?: string }>)
+      ? (payload.tools as Array<{
+          name?: string;
+          input?: string;
+          displayName?: string;
+          isMcp?: boolean;
+          mcpServer?: string;
+        }>)
       : [],
   );
   /**
@@ -232,7 +238,12 @@
             <ul class="tool-list">
               {#each tools as t}
                 <li class="tool-row">
-                  <code class="tool-name">{t.name ?? "tool"}</code>
+                  {#if t.isMcp}{@render brainIcon(t.mcpServer ?? "mcp")}{/if}
+                  <code
+                    class="tool-name"
+                    class:tool-name-mcp={t.isMcp}
+                    title={t.isMcp ? `MCP · ${t.mcpServer ?? "mcp"} · ${t.name ?? "tool"}` : (t.name ?? "tool")}
+                  >{t.displayName ?? t.name ?? "tool"}</code>
                   {#if t.input}
                     <!-- Slice-12 P3 (R-63): wrap detected file paths inside
                          tool-input prose in vscode://file/ anchors. linkifyText
@@ -286,6 +297,30 @@
     </div>
   </div>
 </article>
+
+<!--
+  Brain glyph marking MCP / engram tool calls in the sub-agent tool list.
+  Inline SVG, currentColor-driven so it tracks the accent of `.tool-name-mcp`.
+-->
+{#snippet brainIcon(server: string)}
+  <svg
+    class="tool-mcp-icon"
+    viewBox="0 0 24 24"
+    width="13"
+    height="13"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    role="img"
+    aria-label={`MCP · ${server}`}
+  >
+    <path d="M9 3a2.5 2.5 0 0 0-2.5 2.5 2.5 2.5 0 0 0-1 4.8A2.5 2.5 0 0 0 6 15a2.5 2.5 0 0 0 3 2.5V3Z" />
+    <path d="M15 3a2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 1 1 4.8A2.5 2.5 0 0 1 18 15a2.5 2.5 0 0 1-3 2.5V3Z" />
+    <path d="M9 9h1.5M15 9h-1.5M9 13h1M15 13h-1" />
+  </svg>
+{/snippet}
 
 <style>
   /*
@@ -712,6 +747,30 @@
     padding: 1px 6px;
     font-family: var(--font-mono);
     font-size: var(--font-size-caption);
+  }
+
+  .tool-name-mcp {
+    font-style: normal;
+  }
+
+  /* Brain glyph for MCP / engram tool calls. Accent-tinted, baseline-aligned
+     with the tool row. 150ms transition per LogBook motion budget. */
+  .tool-mcp-icon {
+    flex-shrink: 0;
+    color: var(--color-accent-primary);
+    opacity: 0.85;
+    align-self: center;
+    transition: opacity 150ms ease;
+  }
+
+  .tool-row:hover .tool-mcp-icon {
+    opacity: 1;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tool-mcp-icon {
+      transition: none;
+    }
   }
 
   .tool-input {

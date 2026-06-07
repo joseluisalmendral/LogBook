@@ -40,6 +40,12 @@
 
   interface ToolStripEntry {
     name: string;
+    /** Legible label: native tools = name, MCP tools = "server · tool". */
+    displayName?: string;
+    /** True when `name` is an `mcp__server__tool` identifier. */
+    isMcp?: boolean;
+    /** Cleaned MCP server label (e.g. "engram"); MCP tools only. */
+    mcpServer?: string;
     file_path?: string;
     toolUseId?: string;
     /** Slice-24: 1-line summary (command / file / pattern / url / etc.) */
@@ -332,11 +338,14 @@
                   {#each toolStrip as t}
                     {@const displayLabel = t.file_path ? basename(t.file_path) : (t.input ?? "")}
                     {@const hasDetail = (t.outputPreview ?? "").length > 0 || (t.input ?? "").length > 0}
+                    {@const toolLabel = t.displayName ?? t.name}
+                    {@const mcpTitle = t.isMcp ? `MCP · ${t.mcpServer ?? "mcp"} · ${t.name}` : t.name}
                     {#if hasDetail}
                       <li class="tool-chip">
                         <details class="tool-details">
-                          <summary class="tool-summary" title={t.file_path ? `${t.name} · ${t.file_path}` : t.name}>
-                            <code class="tool-name">{t.name}</code>
+                          <summary class="tool-summary" title={t.file_path ? `${mcpTitle} · ${t.file_path}` : mcpTitle}>
+                            {#if t.isMcp}{@render brainIcon(t.mcpServer ?? "mcp")}{/if}
+                            <code class="tool-name" class:tool-name-mcp={t.isMcp}>{toolLabel}</code>
                             {#if displayLabel}
                               <!--
                                 Slice-25: paths in the chip face are wrapped
@@ -364,8 +373,9 @@
                         </details>
                       </li>
                     {:else}
-                      <li class="tool-chip tool-chip-static" title={t.name}>
-                        <code class="tool-name">{t.name}</code>
+                      <li class="tool-chip tool-chip-static" title={mcpTitle}>
+                        {#if t.isMcp}{@render brainIcon(t.mcpServer ?? "mcp")}{/if}
+                        <code class="tool-name" class:tool-name-mcp={t.isMcp}>{toolLabel}</code>
                       </li>
                     {/if}
                   {/each}
@@ -391,6 +401,31 @@
   </div>
 </div>
 {/if}
+
+<!--
+  Brain glyph marking MCP / engram tool calls. Inline SVG keeps the Paper
+  Brutalism look crisp at any zoom. currentColor inherits the accent so it
+  matches `.tool-name-mcp`. aria-label gives screen readers the MCP context.
+-->
+{#snippet brainIcon(server: string)}
+  <svg
+    class="tool-mcp-icon"
+    viewBox="0 0 24 24"
+    width="13"
+    height="13"
+    fill="none"
+    stroke="currentColor"
+    stroke-width="1.6"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+    role="img"
+    aria-label={`MCP · ${server}`}
+  >
+    <path d="M9 3a2.5 2.5 0 0 0-2.5 2.5 2.5 2.5 0 0 0-1 4.8A2.5 2.5 0 0 0 6 15a2.5 2.5 0 0 0 3 2.5V3Z" />
+    <path d="M15 3a2.5 2.5 0 0 1 2.5 2.5 2.5 2.5 0 0 1 1 4.8A2.5 2.5 0 0 1 18 15a2.5 2.5 0 0 1-3 2.5V3Z" />
+    <path d="M9 9h1.5M15 9h-1.5M9 13h1M15 13h-1" />
+  </svg>
+{/snippet}
 
 <style>
   /*
@@ -672,6 +707,9 @@
   }
 
   .tool-chip-static {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
     padding: 0.35rem 0.6rem;
   }
 
@@ -704,6 +742,34 @@
     background: transparent;
     padding: 0;
     flex-shrink: 0;
+  }
+
+  /* MCP tool label: keep accent but distinguish the legible "server · tool"
+     form. Brain icon sits flush before it (see .tool-mcp-icon). */
+  .tool-name-mcp {
+    font-style: normal;
+  }
+
+  /* Brain glyph for MCP / engram calls. Subtle accent tint, aligned with the
+     caption baseline. 150ms transition per LogBook motion budget; honors
+     prefers-reduced-motion. */
+  .tool-mcp-icon {
+    flex-shrink: 0;
+    color: var(--color-accent-primary);
+    opacity: 0.85;
+    vertical-align: text-bottom;
+    transition: opacity 150ms ease, transform 150ms ease;
+  }
+
+  .tool-summary:hover .tool-mcp-icon,
+  .tool-chip-static:hover .tool-mcp-icon {
+    opacity: 1;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tool-mcp-icon {
+      transition: none;
+    }
   }
 
   .tool-input {
