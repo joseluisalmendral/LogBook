@@ -178,6 +178,10 @@ function normalizeEvent(raw: Record<string, unknown>): RenderEvent {
       } else if (kind === "agent_question") {
         // export-replan P2: AskUserQuestion fork moment synthesized at READ path.
         merged["type"] = "agent_question";
+      } else if (kind === "session_context") {
+        // teaching-faithful: SessionStart hook injection (engram protocol,
+        // LogBook memory, …) synthesized at READ path from attachment lines.
+        merged["type"] = "session_context";
       } else if (kind !== "") {
         // Unknown kind — synthesize "unknown" rather than dropping the event.
         merged["type"] = "unknown";

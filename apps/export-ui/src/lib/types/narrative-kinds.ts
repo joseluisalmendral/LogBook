@@ -20,6 +20,7 @@ export const NARRATIVE_KINDS = [
   "subagent_complete",
   "agent_question",
   "skill_invoked",
+  "session_context",
   "commit",
   "manual.commit",
 ] as const;

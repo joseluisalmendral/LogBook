@@ -265,6 +265,40 @@ export async function loadExistingRenameTitles(
   return out;
 }
 
+/**
+ * teaching-faithful: true when a `session_context` event already exists for
+ * this session in events.jsonl. The SessionStart attachments live at the head
+ * of the transcript, so they normally arrive in the first delta — but on a
+ * re-scrape (or a compact-injected second SessionStart) we must not emit a
+ * duplicate. One session_context per session.
+ *
+ * Failure-safe: missing/unreadable file → false (emit).
+ */
+export async function sessionHasContextEvent(
+  eventsJsonlPath: string,
+  sessionId: string,
+): Promise<boolean> {
+  let content: string;
+  try {
+    content = await fs.promises.readFile(eventsJsonlPath, "utf8");
+  } catch {
+    return false;
+  }
+  for (const line of content.split("\n")) {
+    if (!line) continue;
+    if (!line.includes(`"session_context"`)) continue; // fast prefilter
+    let parsed: Record<string, unknown>;
+    try {
+      parsed = JSON.parse(line) as Record<string, unknown>;
+    } catch {
+      continue;
+    }
+    if (parsed["sessionId"] !== sessionId) continue;
+    if (parsed["kind"] === "session_context") return true;
+  }
+  return false;
+}
+
 /** Maximum number of cursor entries in transcriptCursors before LRU prune. */
 const MAX_CURSOR_ENTRIES = 500;
 
@@ -811,6 +845,107 @@ function emitForCall(
 }
 
 // ---------------------------------------------------------------------------
+// SessionStart hook injection (session_context)
+// ---------------------------------------------------------------------------
+
+/** Max bytes of injected text we keep on a session_context event. */
+const SESSION_CONTEXT_TEXT_CAP = 4000;
+
+/** Heuristic markers used to summarize which hooks injected context. */
+function summarizeInjectedHooks(text: string): string {
+  const parts: string[] = [];
+  if (/engram\b/i.test(text) && /persistent memory|active protocol/i.test(text)) {
+    parts.push("engram protocol");
+  } else if (/engram\b/i.test(text)) {
+    parts.push("engram");
+  }
+  if (/logbook/i.test(text)) parts.push("LogBook memory");
+  if (/vercel/i.test(text) && /session context/i.test(text)) parts.push("Vercel context");
+  if (parts.length === 0) return "startup context injected at session start";
+  return `injected at startup: ${parts.join(" + ")}`;
+}
+
+/**
+ * teaching-faithful: scan the transcript delta for SessionStart hook
+ * injections and emit AT MOST ONE `session_context` event per session.
+ *
+ * Claude Code records each hook's output as a `type: "attachment"` line whose
+ * `attachment.type === "hook_success"` and `attachment.hookEvent ===
+ * "SessionStart"` (the `hookName` is e.g. "SessionStart:startup" /
+ * "SessionStart:compact"). The injected text lives in `attachment.content`
+ * (preferred) or `attachment.stdout`. Several SessionStart attachments fire per
+ * session (engram protocol, LogBook memory, Vercel context, a "<persisted-
+ * output>Output too large" placeholder). We concatenate the non-empty ones,
+ * dedup identical bodies, cap the total at SESSION_CONTEXT_TEXT_CAP bytes, and
+ * note when a placeholder was seen.
+ *
+ * Returns `[]` when no SessionStart injection appears in the delta. PASSIVE per
+ * INV-1 — synthesis at the READ path only, no hook-semantics change.
+ */
+export function extractSessionContextEvents(
+  lines: ClaudeTranscriptLine[],
+  sessionId: string,
+): EventInput[] {
+  const seenBodies = new Set<string>();
+  const collected: string[] = [];
+  let sawPlaceholder = false;
+  let firstTs: string | undefined;
+  let total = 0;
+
+  for (const line of lines) {
+    if (line.type !== "attachment") continue;
+    const a = line.attachment;
+    if (!a || a.type !== "hook_success" || a.hookEvent !== "SessionStart") continue;
+
+    const content = typeof a["content"] === "string" ? (a["content"] as string) : "";
+    const stdout = typeof a["stdout"] === "string" ? (a["stdout"] as string) : "";
+    const text = (content || stdout).trim();
+    if (!text) continue;
+
+    if (/<persisted-output>|output too large/i.test(text)) {
+      sawPlaceholder = true;
+      // Keep going — a sibling attachment may carry the real body.
+    }
+    const key = text.slice(0, 200);
+    if (seenBodies.has(key)) continue;
+    seenBodies.add(key);
+
+    if (!firstTs && typeof line.timestamp === "string") firstTs = line.timestamp;
+
+    if (total < SESSION_CONTEXT_TEXT_CAP) {
+      collected.push(text);
+      total += text.length;
+    }
+  }
+
+  if (collected.length === 0) return [];
+
+  let body = collected.join("\n\n---\n\n");
+  let truncated = false;
+  if (body.length > SESSION_CONTEXT_TEXT_CAP) {
+    body = body.slice(0, SESSION_CONTEXT_TEXT_CAP);
+    truncated = true;
+  }
+
+  const summary = summarizeInjectedHooks(body);
+  const payload: Record<string, unknown> = {
+    summary,
+    text: body,
+    truncated,
+    placeholder: sawPlaceholder,
+  };
+
+  return [
+    {
+      kind: "session_context",
+      sessionId,
+      payload,
+      ...(firstTs && { timestamp: firstTs }),
+    },
+  ];
+}
+
+// ---------------------------------------------------------------------------
 // Line → EventInput mapping
 // ---------------------------------------------------------------------------
 
@@ -1349,6 +1484,36 @@ export async function runTranscriptScraper(
     if (process.env["LOGBOOK_HOOK_DEBUG"] === "1") {
       process.stderr.write(
         `[logbook] transcript: agent_question synthesis failed: ${String(err)}\n`,
+      );
+    }
+  }
+
+  // teaching-faithful: synthesize ONE session_context event from the
+  // SessionStart hook injections (engram protocol, LogBook memory, …). Dedup
+  // across re-scrapes via sessionHasContextEvent. PASSIVE per INV-1.
+  try {
+    const alreadyHasContext = await sessionHasContextEvent(
+      paths.eventsJsonl,
+      sessionId,
+    );
+    if (!alreadyHasContext) {
+      const sessionContextEvents = extractSessionContextEvents(lines, sessionId);
+      for (const eventInput of sessionContextEvents) {
+        try {
+          await appendEvent(paths, {
+            ...eventInput,
+            provider: "claude-code-transcript",
+          });
+          written++;
+        } catch {
+          skipped++;
+        }
+      }
+    }
+  } catch (err) {
+    if (process.env["LOGBOOK_HOOK_DEBUG"] === "1") {
+      process.stderr.write(
+        `[logbook] transcript: session_context synthesis failed: ${String(err)}\n`,
       );
     }
   }
