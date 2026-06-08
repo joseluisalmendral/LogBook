@@ -164,7 +164,7 @@
   >
     <!-- COMPACT ROW: monogram + meta + badges + chevron. R-57 / R-59 -->
     <div class="compact-row">
-      <span class="agent-monogram" aria-hidden="true">⟳</span>
+      <span class="agent-monogram" aria-hidden="true">🤖</span>
       <div class="agent-meta">
         <p class="agent-eyebrow">Sub-agent</p>
         <p class="agent-name">{agent}</p>
@@ -345,12 +345,22 @@
    * + response boxes (not the panel), and a creative "page unfold"
    * entrance with 3D perspective + child stagger.
    */
+  /*
+   * Slice 32 — sub-agent cards must read INSTANTLY as "a delegated agent ran
+   * here", distinct from a Claude message row (which uses the same surface +
+   * an ember left-border). Differentiators:
+   *   - Teal Basin tinted background wash (not the plain raised cream).
+   *   - 6px teal left accent (vs 4px ember on Claude rows).
+   *   - Teal hairline all around (vs neutral ink hairline).
+   *   - 🤖 monogram in a teal-tinted chip.
+   * Stays on-brand Paper Brutalism (square corners, hard offset shadow).
+   */
   .card-wrap {
     display: block;
     margin: var(--p-space-4) 0;
-    background: var(--color-surface-raised);
-    border: 1px solid color-mix(in srgb, var(--color-text-primary) 16%, transparent);
-    border-left: 4px solid var(--color-subagent);
+    background: color-mix(in srgb, var(--color-subagent) 7%, var(--color-surface-raised));
+    border: 1px solid color-mix(in srgb, var(--color-subagent) 34%, transparent);
+    border-left: 6px solid var(--color-subagent);
     border-radius: var(--p-radius-accent);
     interpolate-size: allow-keywords;
     overflow: hidden;
@@ -392,7 +402,7 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
-    background: linear-gradient(90deg, rgba(var(--brand-rgb), 0.08), transparent 40%);
+    background: linear-gradient(90deg, color-mix(in srgb, var(--color-subagent) 12%, transparent), transparent 40%);
     opacity: 0;
     animation: lb-color-bleed 350ms ease-out 50ms 1 both;
   }
@@ -436,17 +446,20 @@
   }
 
   .agent-monogram {
-    width: 28px;
-    height: 28px;
+    width: 30px;
+    height: 30px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 50%;
-    background: var(--color-surface-sunken);
+    border-radius: 6px;
+    background: color-mix(in srgb, var(--color-subagent) 16%, var(--color-surface-raised));
+    border: 1px solid color-mix(in srgb, var(--color-subagent) 40%, transparent);
     color: var(--color-subagent);
     font-size: 16px;
     line-height: 1;
     flex-shrink: 0;
+    font-family:
+      "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
   }
 
   .agent-meta {
@@ -459,9 +472,10 @@
 
   .agent-eyebrow {
     font-size: var(--font-size-caption);
-    color: var(--color-text-secondary);
+    color: var(--color-subagent);
     text-transform: uppercase;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.12em;
+    font-weight: 700;
     margin: 0;
   }
 

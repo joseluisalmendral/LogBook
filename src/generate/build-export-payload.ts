@@ -1030,6 +1030,7 @@ const NATIVE_TOOL_EMOJI: Record<string, string> = {
   Grep: "🔎",
   Glob: "🔎",
   Task: "🤖",
+  Agent: "🤖",
   ToolSearch: "🔍",
   Skill: "🧩",
   WebFetch: "🌐",

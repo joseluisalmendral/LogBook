@@ -29,6 +29,7 @@
   import MobileTimeline from "./MobileTimeline.svelte";
   import PhaseAct from "./PhaseAct.svelte";
   import EmptyState from "./EmptyState.svelte";
+  import SubAgentIndex from "./SubAgentIndex.svelte";
   import AnnotationControl from "./AnnotationControl.svelte";
   import { annotations } from "../stores/annotations";
 
@@ -552,6 +553,11 @@
           </p>
         </aside>
       {/if}
+
+      <!-- Slice 32: per-session bird's-eye index of delegated sub-agents.
+           Renders only when the session fanned out to 1+ sub-agents; clicking
+           a row jumps to that agent's card in the stream below. -->
+      <SubAgentIndex events={chapter.events} />
 
       <div class="phases">
         {#each groups as group, gi}
