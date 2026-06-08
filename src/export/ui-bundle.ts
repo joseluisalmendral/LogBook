@@ -1,7 +1,7 @@
 // GENERATED FILE — DO NOT EDIT BY HAND.
 // Source: apps/export-ui/dist/index.html
 // Regenerate via: pnpm sync:export-ui
-// Generated at: 2026-06-08T13:04:55.309Z
+// Generated at: 2026-06-08T13:09:26.588Z
 // SHA-256: db5df9115d59db539963b3b0d95db6b01ad682e5f26f25001ede4d5d2d24952b
 //
 // Spec: R-5, R-42, R-46, AG-12, S-14.
