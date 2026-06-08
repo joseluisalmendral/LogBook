@@ -55,12 +55,26 @@
   let activeEventId = $state<string | null>(null);
   let playMode = $state<"scroll" | "play">("scroll");
 
-  // Slice-22: back-to-top button visibility (>400px scrolled).
-  let showBackToTop = $state(false);
-
   function scrollToTop(): void {
     const motion = getMotionState();
     window.scrollTo({ top: 0, behavior: motion.motionAllowed ? "smooth" : "auto" });
+  }
+
+  /**
+   * Relocate a node to <body> so its `position: fixed` resolves against the
+   * viewport. The entrance animation leaves a committed `transform` on
+   * `.chapter-player`, which would otherwise turn that element into the
+   * containing block for fixed descendants — pinning the button to the bottom
+   * of the (very tall) chapter instead of the viewport. Same pattern as
+   * ZenLegendPanel.
+   */
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        if (node.parentNode) node.parentNode.removeChild(node);
+      },
+    };
   }
 
   // Slice-25 zen mode. We subscribe to the prefs store so the button reflects
@@ -250,16 +264,6 @@
       unsub();
       clearPreviousPulse();
     };
-  });
-
-  // Slice-22: scroll listener for back-to-top button visibility.
-  onMount(() => {
-    const onScroll = (): void => {
-      showBackToTop = (window.scrollY || document.documentElement.scrollTop) > 400;
-    };
-    onScroll(); // initial state
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
   });
 
   /*
@@ -604,23 +608,24 @@
     {/if}
 
     <!-- Slice-22: back-to-top floating button. Long chapters (177-1492 rows)
-         make scrolling back to the chapter header tedious. Button fades in
-         after 400px of scroll. Click → smooth scroll to top (or auto under
-         reduced-motion). -->
-    {#if showBackToTop}
-      <button
-        type="button"
-        class="back-to-top"
-        data-testid="back-to-top"
-        aria-label="Back to top of chapter"
-        onclick={scrollToTop}
-      >
-        <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <polyline points="4 10 8 6 12 10" />
-        </svg>
-        <span class="back-to-top-label">Top</span>
-      </button>
-    {/if}
+         make scrolling back to the chapter header tedious. Always present but
+         translucent at rest, fully opaque on hover/focus. Click → smooth
+         scroll to top (or auto under reduced-motion). Portaled to <body> so its
+         fixed position resolves against the viewport, not the transformed
+         .chapter-player ancestor. -->
+    <button
+      use:portal
+      type="button"
+      class="back-to-top"
+      data-testid="back-to-top"
+      aria-label="Back to top of chapter"
+      onclick={scrollToTop}
+    >
+      <svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <polyline points="4 10 8 6 12 10" />
+      </svg>
+      <span class="back-to-top-label">Top</span>
+    </button>
   {:else}
     <div class="not-found">
       <button type="button" class="lb-ghost-btn" data-tone="ghost" onclick={back}>
@@ -728,9 +733,15 @@
   }
 
   /* Slice-22: back-to-top floating button. Bottom-right anchored, above the
-     TimelineScrubber. Visible only when scrolled past 400px (toggled by the
-     JS scroll listener). Smooth-scroll to top on click (auto under
-     reduced-motion). */
+     TimelineScrubber. Always rendered; translucent at rest, fully opaque on
+     hover/focus. Smooth-scroll to top on click (auto under reduced-motion).
+
+     The right offset hugs the viewport gutter. The .player-doc is 920px wide
+     and centered INSIDE the main-pane (which is itself inset by the ~280px
+     sidebar), so its right edge — and therefore the right-aligned YOU bubbles —
+     sit well left of the viewport's right gutter on a wide screen. A small
+     gutter margin keeps the button clear of those bubbles at 1440px while
+     staying reachable on narrow viewports where the doc fills the width. */
   .back-to-top {
     position: fixed;
     right: var(--p-space-5);
@@ -749,15 +760,15 @@
     font-weight: 600;
     cursor: pointer;
     box-shadow: 0 2px 12px rgba(0, 0, 0, 0.18);
-    transition: transform 200ms cubic-bezier(0.16, 1, 0.3, 1), background 160ms ease-out, border-color 160ms ease-out;
-    opacity: 0;
-    animation: btt-fade-in 200ms ease-out forwards;
+    opacity: 0.2;
+    transition: opacity 160ms ease-out, background 160ms ease-out, border-color 160ms ease-out;
   }
 
-  .back-to-top:hover {
+  .back-to-top:hover,
+  .back-to-top:focus-visible {
+    opacity: 1;
     background: color-mix(in srgb, var(--color-accent-primary) 8%, var(--color-surface-raised));
     border-color: color-mix(in srgb, var(--color-accent-primary) 40%, var(--color-border-hairline));
-    transform: translateY(-2px);
   }
 
   .back-to-top:focus-visible {
@@ -768,18 +779,8 @@
   .back-to-top svg { color: var(--color-accent-primary); }
   .back-to-top-label { line-height: 1; }
 
-  @keyframes btt-fade-in {
-    from { opacity: 0; transform: translateY(6px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-
   :global(html[data-motion="reduced"]) .back-to-top {
-    animation: none !important;
-    opacity: 1;
     transition: none !important;
-  }
-  :global(html[data-motion="reduced"]) .back-to-top:hover {
-    transform: none;
   }
 
   /* Mobile: anchor to bottom corner above any mobile timeline strip. */

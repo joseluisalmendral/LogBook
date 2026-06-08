@@ -34,6 +34,26 @@
   // Collapse the whole panel down to a single chip.
   let collapsed = $state(false);
 
+  // Bound to the expanded panel <section> so the window click handler can tell
+  // an inside-click (keep open) from an outside-click (collapse).
+  let panelEl = $state<HTMLElement | undefined>(undefined);
+
+  /**
+   * Click-anywhere-outside collapses the panel back to the chip. The panel is
+   * portaled to <body>, so inside-clicks do NOT bubble through Svelte ancestors
+   * — a window-level listener is the only reliable place to catch this.
+   *
+   * The chip's own onclick calls stopPropagation, so the click that OPENS the
+   * panel never reaches this handler and cannot immediately re-collapse it.
+   */
+  function handleWindowClick(event: MouseEvent): void {
+    if (collapsed || !panelEl) return;
+    const target = event.target as Node | null;
+    if (target && !panelEl.contains(target)) {
+      collapsed = true;
+    }
+  }
+
   /**
    * Relocate the node to <body> so `position: fixed` resolves against the
    * viewport, not an ancestor with a `transform` (Zen mode transforms
@@ -49,6 +69,8 @@
   }
 </script>
 
+<svelte:window onclick={handleWindowClick} />
+
 <div class="zen-legend-portal" use:portal>
   {#if collapsed}
   <button
@@ -57,7 +79,10 @@
     data-testid="zen-legend-chip"
     aria-label="Show legend panel"
     title="Show legend"
-    onclick={() => (collapsed = false)}
+    onclick={(e) => {
+      e.stopPropagation();
+      collapsed = false;
+    }}
   >
     <svg
       viewBox="0 0 16 16"
@@ -78,6 +103,7 @@
   </button>
 {:else}
   <section
+    bind:this={panelEl}
     class="zen-legend-panel"
     data-testid="zen-legend-panel"
     aria-label="Legend and marked points"

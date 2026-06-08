@@ -159,3 +159,38 @@ export const annotations = {
     notify();
   },
 };
+
+/**
+ * activeLegendId — the eventId of the last BriefLegend row the instructor
+ * clicked, so the row stays highlighted after the scroll-to jump.
+ *
+ * BriefLegend is mounted in TWO surfaces at once (the normal-mode
+ * TimelineScrubber and the Zen-mode ZenLegendPanel). A shared module-level
+ * store keeps BOTH instances in sync from a single subscription, mirroring the
+ * plain-store pattern used by `annotations` above. In-memory only: highlighting
+ * the last jump target is a transient affordance and does NOT need to survive a
+ * reload (spec parity with the not-persisted scrubber legend view).
+ */
+type LegendIdListener = (id: string | null) => void;
+let activeId: string | null = null;
+const legendIdListeners = new Set<LegendIdListener>();
+
+export const activeLegendId = {
+  /** Read the current active id synchronously. */
+  get(): string | null {
+    return activeId;
+  },
+  /** Subscribe to changes; fires immediately with the current id. Returns unsubscribe. */
+  subscribe(fn: LegendIdListener): () => void {
+    legendIdListeners.add(fn);
+    fn(activeId);
+    return () => {
+      legendIdListeners.delete(fn);
+    };
+  },
+  /** Set the active id and notify all subscribers. */
+  set(id: string | null): void {
+    activeId = id;
+    for (const fn of legendIdListeners) fn(activeId);
+  },
+};
