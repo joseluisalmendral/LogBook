@@ -26,6 +26,7 @@
   import ChapterHeader from "./ChapterHeader.svelte";
   import TurnRow from "./TurnRow.svelte";
   import TimelineScrubber from "./TimelineScrubber.svelte";
+  import ZenLegendPanel from "./ZenLegendPanel.svelte";
   import MobileTimeline from "./MobileTimeline.svelte";
   import PhaseAct from "./PhaseAct.svelte";
   import EmptyState from "./EmptyState.svelte";
@@ -592,6 +593,14 @@
 
     {#if !isMobile}
       <TimelineScrubber events={chapter.events} />
+    {/if}
+
+    <!-- Zen mode hides the scrubber/sidebar (and with them the Full/Brief
+         legend + marked-points list). This floating panel restores both while
+         Zen is active so the instructor keeps the legend and can jump to their
+         marked annotation points during a class. -->
+    {#if zen}
+      <ZenLegendPanel />
     {/if}
 
     <!-- Slice-22: back-to-top floating button. Long chapters (177-1492 rows)
