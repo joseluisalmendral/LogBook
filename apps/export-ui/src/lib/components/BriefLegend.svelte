@@ -11,7 +11,7 @@
   annotation is added, edited, removed, or cleared.
 -->
 <script lang="ts">
-  import { annotations, TAG_META, type Annotation } from "../stores/annotations";
+  import { annotations, activeLegendId, TAG_META, type Annotation } from "../stores/annotations";
   import { getMotionState } from "../stores/motion";
 
   interface Props {
@@ -29,7 +29,18 @@
     return () => unsub();
   });
 
+  // Last-clicked row, shared across BOTH BriefLegend instances (scrubber + Zen
+  // panel) so the highlight stays in sync wherever the row was clicked.
+  let activeId = $state<string | null>(activeLegendId.get());
+  $effect(() => {
+    const unsub = activeLegendId.subscribe((id) => {
+      activeId = id;
+    });
+    return () => unsub();
+  });
+
   function scrollTo(eventId: string): void {
+    activeLegendId.set(eventId);
     const el = document.getElementById(`event-${eventId}`);
     if (!el) return;
     const motionAllowed = getMotionState().motionAllowed;
@@ -49,6 +60,7 @@
           <button
             type="button"
             class="brief-row"
+            class:is-active={activeId === item.eventId}
             onclick={() => scrollTo(item.eventId)}
             data-testid="brief-entry"
           >
@@ -120,6 +132,15 @@
   .brief-row:focus-visible {
     color: var(--color-text-primary);
     background: var(--color-surface-sunken);
+  }
+
+  /* Last-clicked marked point stays highlighted (Paper Brutalism: sunken
+     surface + bold label + hard left accent border, no soft shadow). */
+  .brief-row.is-active {
+    color: var(--color-text-primary);
+    background: var(--color-surface-sunken);
+    box-shadow: inset 2px 0 0 0 var(--color-accent-primary);
+    font-weight: 700;
   }
 
   .brief-row:focus-visible {

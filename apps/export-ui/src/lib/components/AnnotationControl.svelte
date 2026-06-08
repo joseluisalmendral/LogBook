@@ -118,6 +118,12 @@
         class="field-input"
         placeholder="e.g. key decision"
         data-testid="annotation-label"
+        onkeydown={(e) => {
+          if (e.key === "Enter") {
+            e.preventDefault();
+            save();
+          }
+        }}
       />
     </label>
 
