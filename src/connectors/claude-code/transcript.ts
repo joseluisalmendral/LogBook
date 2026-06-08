@@ -1686,11 +1686,20 @@ export async function runTranscriptScraper(
             ? new Date(agentEndTs).getTime() - new Date(agentStartTs).getTime()
             : 0;
 
+        // Stamp with the sub-agent's launch time (first timestamp in its own
+        // transcript), NOT the scrape time. The conversation chapter orders
+        // events by timestamp; using the launch time lands each sub-agent
+        // card chronologically next to the Agent tool call that spawned it,
+        // in launch order, instead of clustering them all at the end.
+        // Fall back to agentEndTs, then to appendEvent's now() default.
+        const subagentTimestamp = agentStartTs ?? agentEndTs;
+
         try {
           await appendEvent(paths, {
             kind: "subagent_complete",
             sessionId,
             provider: "claude-code-transcript",
+            ...(subagentTimestamp !== undefined && { timestamp: subagentTimestamp }),
             payload: {
               agentId,
               toolCallCount,
