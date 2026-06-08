@@ -14,6 +14,13 @@
   collapsed it renders only a small chip; clicking the chip restores the panel.
 
   Mounted by ChapterPlayer inside `{#if zen}` so it only exists in Zen mode.
+
+  Positioning note: the panel is `position: fixed`, but Zen mode applies a
+  `transform` to an ancestor (`.chapter-player`), which would make that ancestor
+  the containing block for fixed descendants and pin the panel to the (very
+  tall) chapter element instead of the viewport. To stay viewport-anchored, the
+  outer wrapper is portaled to `<body>` via the `portal` action so no ancestor
+  transform can capture it.
 -->
 <script lang="ts">
   import LegendKey from "./LegendKey.svelte";
@@ -26,9 +33,24 @@
 
   // Collapse the whole panel down to a single chip.
   let collapsed = $state(false);
+
+  /**
+   * Relocate the node to <body> so `position: fixed` resolves against the
+   * viewport, not an ancestor with a `transform` (Zen mode transforms
+   * `.chapter-player`, which otherwise becomes the containing block).
+   */
+  function portal(node: HTMLElement) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        if (node.parentNode) node.parentNode.removeChild(node);
+      },
+    };
+  }
 </script>
 
-{#if collapsed}
+<div class="zen-legend-portal" use:portal>
+  {#if collapsed}
   <button
     type="button"
     class="zen-legend-chip"
@@ -115,7 +137,8 @@
       {/if}
     </div>
   </section>
-{/if}
+  {/if}
+</div>
 
 <style>
   .zen-legend-panel {
