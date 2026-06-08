@@ -46,6 +46,8 @@
     isMcp?: boolean;
     /** Cleaned MCP server label (e.g. "engram"); MCP tools only. */
     mcpServer?: string;
+    /** Single glyph for the chip face (engram → 🧠, Bash → ⌨️, …). */
+    emoji?: string;
     file_path?: string;
     toolUseId?: string;
     /** Slice-24: 1-line summary (command / file / pattern / url / etc.) */
@@ -344,7 +346,7 @@
                       <li class="tool-chip">
                         <details class="tool-details">
                           <summary class="tool-summary" title={t.file_path ? `${mcpTitle} · ${t.file_path}` : mcpTitle}>
-                            {#if t.isMcp}{@render brainIcon(t.mcpServer ?? "mcp")}{/if}
+                            {@render toolMarker(t)}
                             <code class="tool-name" class:tool-name-mcp={t.isMcp}>{toolLabel}</code>
                             {#if displayLabel}
                               <!--
@@ -374,7 +376,7 @@
                       </li>
                     {:else}
                       <li class="tool-chip tool-chip-static" title={mcpTitle}>
-                        {#if t.isMcp}{@render brainIcon(t.mcpServer ?? "mcp")}{/if}
+                        {@render toolMarker(t)}
                         <code class="tool-name" class:tool-name-mcp={t.isMcp}>{toolLabel}</code>
                       </li>
                     {/if}
@@ -403,16 +405,30 @@
 {/if}
 
 <!--
-  Brain glyph marking MCP / engram tool calls. Inline SVG keeps the Paper
-  Brutalism look crisp at any zoom. currentColor inherits the accent so it
-  matches `.tool-name-mcp`. aria-label gives screen readers the MCP context.
+  Tool marker: a per-tool emoji glyph rendered next to the chip label
+  (engram → 🧠, context7 → 📚, Bash → ⌨️, …). The emoji is the unified visible
+  marker for BOTH native and MCP tools — it replaces the old 13px inline brain
+  SVG, which now only renders as a FALLBACK for MCP tools that have no mapped
+  emoji (so the "this is an MCP call" signal is never lost).
+-->
+{#snippet toolMarker(t: ToolStripEntry)}
+  {#if t.emoji}
+    <span class="tool-emoji" role="img" aria-label={t.isMcp ? `MCP · ${t.mcpServer ?? "mcp"}` : (t.name ?? "tool")}>{t.emoji}</span>
+  {:else if t.isMcp}
+    {@render brainIcon(t.mcpServer ?? "mcp")}
+  {/if}
+{/snippet}
+
+<!--
+  Brain glyph fallback for MCP calls without a mapped emoji. Inline SVG keeps
+  the Paper Brutalism look crisp at any zoom; currentColor inherits the accent.
 -->
 {#snippet brainIcon(server: string)}
   <svg
     class="tool-mcp-icon"
     viewBox="0 0 24 24"
-    width="13"
-    height="13"
+    width="15"
+    height="15"
     fill="none"
     stroke="currentColor"
     stroke-width="1.6"
@@ -748,6 +764,23 @@
      form. Brain icon sits flush before it (see .tool-mcp-icon). */
   .tool-name-mcp {
     font-style: normal;
+  }
+
+  /* Per-tool emoji marker. Rendered a touch LARGER than the caption text so
+     the glyph stays crisp and legible, vertically centered with the chip
+     label, with a small right gap. The chip's `gap` already spaces it; we add
+     a hair more so the emoji breathes. emoji-presentation forces the color
+     glyph (not the monochrome text fallback) where the platform honors it. */
+  .tool-emoji {
+    flex-shrink: 0;
+    font-size: 1.2em;
+    line-height: 1;
+    margin-right: 0.1rem;
+    font-family:
+      "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+    font-variant-emoji: emoji;
+    display: inline-flex;
+    align-items: center;
   }
 
   /* Brain glyph for MCP / engram calls. Subtle accent tint, aligned with the

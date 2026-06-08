@@ -88,6 +88,7 @@
           displayName?: string;
           isMcp?: boolean;
           mcpServer?: string;
+          emoji?: string;
         }>)
       : [],
   );
@@ -238,7 +239,9 @@
             <ul class="tool-list">
               {#each tools as t}
                 <li class="tool-row">
-                  {#if t.isMcp}{@render brainIcon(t.mcpServer ?? "mcp")}{/if}
+                  {#if t.emoji}
+                    <span class="tool-emoji" role="img" aria-label={t.isMcp ? `MCP · ${t.mcpServer ?? "mcp"}` : (t.name ?? "tool")}>{t.emoji}</span>
+                  {:else if t.isMcp}{@render brainIcon(t.mcpServer ?? "mcp")}{/if}
                   <code
                     class="tool-name"
                     class:tool-name-mcp={t.isMcp}
@@ -306,8 +309,8 @@
   <svg
     class="tool-mcp-icon"
     viewBox="0 0 24 24"
-    width="13"
-    height="13"
+    width="15"
+    height="15"
     fill="none"
     stroke="currentColor"
     stroke-width="1.6"
@@ -751,6 +754,19 @@
 
   .tool-name-mcp {
     font-style: normal;
+  }
+
+  /* Per-tool emoji marker (engram → 🧠, Bash → ⌨️, …). Slightly larger than the
+     row text and center-aligned (the row is baseline-aligned, which would sink
+     the glyph). Forces the color-emoji glyph where the platform honors it. */
+  .tool-emoji {
+    flex-shrink: 0;
+    font-size: 1.2em;
+    line-height: 1;
+    align-self: center;
+    font-family:
+      "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif;
+    font-variant-emoji: emoji;
   }
 
   /* Brain glyph for MCP / engram tool calls. Accent-tinted, baseline-aligned
