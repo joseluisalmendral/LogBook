@@ -19,6 +19,13 @@ interface TeachingPrefs {
   pathBlur: boolean;
   zen: boolean;
   showThinking: boolean;
+  /**
+   * scrollSnap: magnetic scroll-snap on chapter rows (the view "settles" onto a
+   * message when the scroll velocity drops). Default true = current behaviour.
+   * Some instructors find the settle distracting during a live class and want
+   * to turn it off without changing anything else.
+   */
+  scrollSnap: boolean;
 }
 
 const STORAGE_KEY = "lb.prefs.teaching";
@@ -27,6 +34,7 @@ const DEFAULTS: TeachingPrefs = {
   pathBlur: false,
   zen: false,
   showThinking: false,
+  scrollSnap: true,
 };
 
 function readPrefs(): TeachingPrefs {
@@ -40,6 +48,11 @@ function readPrefs(): TeachingPrefs {
       zen: typeof parsed.zen === "boolean" ? parsed.zen : DEFAULTS.zen,
       showThinking:
         typeof parsed.showThinking === "boolean" ? parsed.showThinking : DEFAULTS.showThinking,
+      // Missing-field migration: older stored prefs predate scrollSnap, so fall
+      // back to the default (true = current snapping behaviour) rather than
+      // leaving it undefined.
+      scrollSnap:
+        typeof parsed.scrollSnap === "boolean" ? parsed.scrollSnap : DEFAULTS.scrollSnap,
     };
   } catch {
     return { ...DEFAULTS };
@@ -79,6 +92,10 @@ function applyDom(snap: TeachingPrefs): void {
   root.setAttribute("data-zen", snap.zen ? "true" : "false");
   root.setAttribute("data-path-blur", snap.pathBlur ? "true" : "false");
   root.setAttribute("data-show-thinking", snap.showThinking ? "true" : "false");
+  // data-snap drives the global scroll-snap override in app.css. We emit "on" /
+  // "off" (not the boolean strings used above) so the CSS selector reads
+  // naturally: html[data-snap="off"] { scroll-snap-type: none }.
+  root.setAttribute("data-snap", snap.scrollSnap ? "on" : "off");
 }
 
 // Hydrate DOM attributes immediately so the first paint already reflects
@@ -122,6 +139,12 @@ export const teachingPrefs = {
   },
   setShowThinking(value: boolean): void {
     update({ showThinking: value });
+  },
+  toggleScrollSnap(): void {
+    update({ scrollSnap: !snapshot.scrollSnap });
+  },
+  setScrollSnap(value: boolean): void {
+    update({ scrollSnap: value });
   },
 };
 

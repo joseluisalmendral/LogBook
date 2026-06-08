@@ -417,6 +417,14 @@ html {
 html[data-motion="reduced"] {
   scroll-snap-type: none;
 }
+/*
+ * Teaching pref: instructors can disable the magnetic settle without changing
+ * any other display. data-snap="off" is set by teaching-prefs.applyDom(); when
+ * absent or "on" the snap above stays active (default behaviour preserved).
+ */
+html[data-snap="off"] {
+  scroll-snap-type: none;
+}
 .lb-snap-target {
   scroll-snap-align: start;
   scroll-snap-stop: normal;

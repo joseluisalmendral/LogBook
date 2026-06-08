@@ -47,11 +47,13 @@
   let pathBlur = $state(teachingPrefs.get().pathBlur);
   let zen = $state(teachingPrefs.get().zen);
   let showThinking = $state(teachingPrefs.get().showThinking);
+  let scrollSnap = $state(teachingPrefs.get().scrollSnap);
   $effect(() => {
     const unsub = teachingPrefs.subscribe((s) => {
       pathBlur = s.pathBlur;
       zen = s.zen;
       showThinking = s.showThinking;
+      scrollSnap = s.scrollSnap;
     });
     return () => unsub();
   });
@@ -201,6 +203,18 @@
       <span class="pref-label">
         <span class="pref-title">Show Claude's thinking</span>
         <span class="pref-hint">Render thinking blocks as muted cards</span>
+      </span>
+    </label>
+    <label class="pref-row" data-interactive>
+      <input
+        type="checkbox"
+        checked={scrollSnap}
+        onchange={() => teachingPrefs.toggleScrollSnap()}
+        data-testid="toggle-scroll-snap"
+      />
+      <span class="pref-label">
+        <span class="pref-title">Scroll snap</span>
+        <span class="pref-hint">Ajusta la vista al mensaje al soltar el scroll</span>
       </span>
     </label>
   </section>
