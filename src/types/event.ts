@@ -15,7 +15,8 @@ export type EventKind =
   | "skill_invoked"       // Skill SKILL.md read detected in transcript scraper (B3)
   | "visual_direction"    // Visual direction decision logged via CLI (B4)
   | "qa_finding"          // QA finding logged via MCP tool (B5)
-  | "agent_question";     // AskUserQuestion fork moment synthesized at READ path (export-replan P2, R-6)
+  | "agent_question"      // AskUserQuestion fork moment synthesized at READ path (export-replan P2, R-6)
+  | "session_context";    // SessionStart hook injection (engram protocol, LogBook memory) synthesized at READ path (teaching-faithful)
 
 export interface EventTokens {
   in?: number;             // prompt tokens (best-effort, heuristic in iter1)

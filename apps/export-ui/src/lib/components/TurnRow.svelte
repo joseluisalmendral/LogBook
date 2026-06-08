@@ -55,6 +55,7 @@
   import CommitRow from "./CommitRow.svelte";
   import UserPromptRow from "./UserPromptRow.svelte";
   import ClaudeMessageRow from "./ClaudeMessageRow.svelte";
+  import SessionContextRow from "./SessionContextRow.svelte";
   import MarkdownBlock from "./MarkdownBlock.svelte";
   import { payload } from "../stores/data";
 
@@ -77,6 +78,7 @@
     const k = (event as { kind?: string }).kind ?? event.type ?? "";
     if (k === "user_prompt") return "user_prompt";
     if (k === "claude_message") return "claude_message";
+    if (k === "session_context") return "session_context";
     if (k === "agent_question") return "agent_question";
     if (k.startsWith("subagent")) return "subagent";
     if (k.endsWith("decision")) return "decision";
@@ -132,6 +134,8 @@
     <UserPromptRow {event} />
   {:else if kind === "claude_message"}
     <ClaudeMessageRow {event} />
+  {:else if kind === "session_context"}
+    <SessionContextRow {event} />
   {:else if kind === "subagent"}
     <SubAgentCard {event} />
   {:else if kind === "decision"}
@@ -162,7 +166,7 @@
        warn-once message so we surface drift during development without
        polluting the production console. -->
 
-  {#if body && kind !== "agent_question" && kind !== "subagent" && kind !== "user_prompt" && kind !== "claude_message" && kind !== "unknown"}
+  {#if body && kind !== "agent_question" && kind !== "subagent" && kind !== "user_prompt" && kind !== "claude_message" && kind !== "session_context" && kind !== "unknown"}
     <div class="body-slot">
       <MarkdownBlock {body} />
     </div>

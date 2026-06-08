@@ -528,6 +528,7 @@ function summarizeToolForSubagent(
   displayName?: string;
   isMcp?: boolean;
   mcpServer?: string;
+  emoji?: string;
 } | null {
   if (typeof event.type !== "string" || !event.type.startsWith("tool_result.")) {
     return null;
@@ -572,12 +573,14 @@ function summarizeToolForSubagent(
     displayName?: string;
     isMcp?: boolean;
     mcpServer?: string;
+    emoji?: string;
   } = { name: toolName, input };
   if (meta.displayName !== toolName) out.displayName = meta.displayName;
   if (meta.isMcp) {
     out.isMcp = true;
     if (meta.mcpServer) out.mcpServer = meta.mcpServer;
   }
+  if (meta.emoji) out.emoji = meta.emoji;
   return out;
 }
 
@@ -794,6 +797,11 @@ interface ToolStripEntry {
   isMcp?: boolean;
   /** Cleaned MCP server label (e.g. "engram"); present only for MCP tools. */
   mcpServer?: string;
+  /**
+   * Single glyph for the chip face (engram → 🧠, Bash → ⌨️, …). Absent when
+   * the tool has no mapped glyph. See MCP_SERVER_EMOJI / NATIVE_TOOL_EMOJI.
+   */
+  emoji?: string;
   file_path?: string;
   toolUseId?: string;
   /**
@@ -913,6 +921,32 @@ function repackAgentQuestionPayload(events: RenderEvent[]): RenderEvent[] {
 }
 
 /**
+ * teaching-faithful: re-nest `session_context` flattened fields back into
+ * `payload`. Same reason as `repackAgentQuestionPayload` — normalizeEvent
+ * flattens the synthesized payload (summary/text/truncated/placeholder) to
+ * top-level, and slimEventForChapter only keeps the whitelisted keys (which
+ * do NOT include these). Without re-nesting, SessionContextRow reads an empty
+ * `event.payload` and renders no injected text.
+ *
+ * Pure function. Other event types pass through unchanged.
+ */
+function repackSessionContextPayload(events: RenderEvent[]): RenderEvent[] {
+  return events.map((ev) => {
+    if (ev.type !== "session_context") return ev;
+    const rec = ev as Record<string, unknown>;
+    const existing = (rec["payload"] as Record<string, unknown> | undefined) ?? {};
+    const repacked: Record<string, unknown> = { ...existing };
+    const FIELDS = ["summary", "text", "truncated", "placeholder"];
+    for (const k of FIELDS) {
+      if (rec[k] !== undefined && repacked[k] === undefined) {
+        repacked[k] = rec[k];
+      }
+    }
+    return { ...ev, payload: repacked } as RenderEvent;
+  });
+}
+
+/**
  * Lowercased tool name from a normalized `tool_result.<tool>` event.
  * Falls back to the top-level `tool_name` field when the type was not
  * suffix-encoded (older capture paths).
@@ -959,7 +993,50 @@ interface ToolNameMeta {
   isMcp: boolean;
   /** Cleaned server label (e.g. "engram"), present only for MCP tools. */
   mcpServer?: string;
+  /**
+   * Single glyph rendered next to the chip label so the tool kind is legible
+   * at a glance. For MCP tools it keys off the server (engram → 🧠); for native
+   * tools it keys off the tool name (Bash → ⌨️). Absent when no glyph maps.
+   */
+  emoji?: string;
 }
+
+/**
+ * Per-MCP-server glyphs. engram is the brain (it IS the persistent memory);
+ * the rest map to their conceptual domain. Keyed by the cleaned server label
+ * produced by `prettifyToolName` (lowercased before lookup).
+ */
+const MCP_SERVER_EMOJI: Record<string, string> = {
+  engram: "🧠",
+  context7: "📚",
+  magic: "✨",
+  pencil: "✏️",
+  "computer-use": "🖥️",
+  vercel: "▲",
+};
+
+/**
+ * Per-native-tool glyphs. Keyed by the exact tool name Claude Code emits.
+ * Read/Write/Edit-family → page glyphs; search → magnifier; agent/skill →
+ * robot/puzzle; web → globe.
+ */
+const NATIVE_TOOL_EMOJI: Record<string, string> = {
+  Bash: "⌨️",
+  Read: "📄",
+  Edit: "✏️",
+  Write: "📝",
+  MultiEdit: "📝",
+  NotebookEdit: "📝",
+  Grep: "🔎",
+  Glob: "🔎",
+  Task: "🤖",
+  ToolSearch: "🔍",
+  Skill: "🧩",
+  WebFetch: "🌐",
+  WebSearch: "🌐",
+  TodoWrite: "✅",
+  AskUserQuestion: "❓",
+};
 
 /**
  * Parse a raw tool name into render metadata.
@@ -975,7 +1052,10 @@ interface ToolNameMeta {
  */
 function prettifyToolName(raw: string): ToolNameMeta {
   if (!raw.startsWith("mcp__")) {
-    return { displayName: raw, isMcp: false };
+    const emoji = NATIVE_TOOL_EMOJI[raw];
+    return emoji
+      ? { displayName: raw, isMcp: false, emoji }
+      : { displayName: raw, isMcp: false };
   }
   const parts = raw.split("__").filter((p) => p.length > 0);
   // parts[0] === "mcp"; last === tool; middle (joined) === server.
@@ -983,11 +1063,14 @@ function prettifyToolName(raw: string): ToolNameMeta {
   const serverRaw = parts.slice(1, -1).join("_");
   // Collapse known engram variants (e.g. plugin_engram_engram) to "engram".
   const server = /engram/i.test(serverRaw) ? "engram" : serverRaw || "mcp";
-  return {
+  const meta: ToolNameMeta = {
     displayName: `${server} · ${tool}`,
     isMcp: true,
     mcpServer: server,
   };
+  const emoji = MCP_SERVER_EMOJI[server.toLowerCase()];
+  if (emoji) meta.emoji = emoji;
+  return meta;
 }
 
 /**
@@ -1047,8 +1130,37 @@ function rollupClaudeMessageTools(
     let visible = openTools;
     let overflow = 0;
     if (openTools.length > TOOL_STRIP_OVERFLOW_CAP) {
+      // R-90 + teaching-faithful: a turn with many Bash calls plus a couple of
+      // engram/MCP calls used to bury the MCP chips in the hidden "+N more".
+      // The MCP calls are the didactically important ones (they show how the
+      // session talks to engram / context7 / …), so PRIORITIZE them into the
+      // visible head. We keep the first VISIBLE_HEAD entries in document order
+      // but guarantee every MCP entry is shown: any MCP entry that would fall
+      // into the overflow tail is promoted, displacing the LAST non-MCP entry
+      // currently in the head. Overall the strip never exceeds the head size,
+      // so it cannot explode.
+      const head = openTools.slice(0, TOOL_STRIP_VISIBLE_HEAD);
+      const tail = openTools.slice(TOOL_STRIP_VISIBLE_HEAD);
+      const hiddenMcp = tail.filter((t) => t.isMcp);
+      if (hiddenMcp.length > 0) {
+        // Non-MCP head slots are the displacement candidates (keep any MCP
+        // entries already in the head). We fill the LAST candidate slots so the
+        // surviving non-MCP chips stay at the front, and place the promoted MCP
+        // entries in ascending slot order so their document order is preserved.
+        const candidateSlots: number[] = [];
+        for (let i = 0; i < head.length; i++) {
+          if (!head[i]!.isMcp) candidateSlots.push(i);
+        }
+        const promoteCount = Math.min(hiddenMcp.length, candidateSlots.length);
+        const targetSlots = candidateSlots
+          .slice(candidateSlots.length - promoteCount)
+          .sort((a, b) => a - b);
+        for (let k = 0; k < promoteCount; k++) {
+          head[targetSlots[k]!] = hiddenMcp[k]!;
+        }
+      }
       overflow = openTools.length - TOOL_STRIP_VISIBLE_HEAD;
-      visible = openTools.slice(0, TOOL_STRIP_VISIBLE_HEAD);
+      visible = head;
     }
     payload["toolStrip"] = visible;
     if (overflow > 0) payload["overflow"] = overflow;
@@ -1085,6 +1197,7 @@ function rollupClaudeMessageTools(
       entry.isMcp = true;
       if (meta.mcpServer) entry.mcpServer = meta.mcpServer;
     }
+    if (meta.emoji) entry.emoji = meta.emoji;
     if (filePath) entry.file_path = filePath;
     if (toolUseId) entry.toolUseId = toolUseId;
     // Slice-24: 1-line summary of the tool's input + truncated output so the
@@ -1637,7 +1750,9 @@ export async function buildExportPayload(
     // Slice-22: AgentQuestionCard reads payload.question/options/chosen. The
     // upstream normalizeEvent flattens those to top-level, so we re-nest before
     // slim or the card renders "Untitled question" with zero options.
-    const repackedEvents = repackAgentQuestionPayload(narrativeEvents);
+    const repackedEvents = repackSessionContextPayload(
+      repackAgentQuestionPayload(narrativeEvents),
+    );
     const ghostTurns = computeGhostTurns(enrichedEvents);
 
     // Slice-20: strip the heavy `raw` / `_raw` / `tool_response` fields off
