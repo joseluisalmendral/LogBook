@@ -26,6 +26,7 @@
     type Annotation,
     type AnnotationMap,
   } from "../stores/annotations";
+  import { getMotionState } from "../stores/motion";
   import { router } from "../stores/router";
   import { selection } from "../stores/selection";
   import { payload } from "../stores/data";
@@ -100,12 +101,12 @@
   function doScroll(eventId: string): void {
     const el = typeof document !== "undefined" ? document.getElementById(`event-${eventId}`) : null;
     if (!el) return;
-    // INSTANT jump. Must be "instant", NOT "auto": "auto" defers to the page's
-    // CSS `scroll-behavior: smooth`, so it would still animate. A brief-legend
-    // point is a "take me there now" affordance: over long distances a smooth
-    // scroll reads as an erratic overshoot that never lands and can be nudged by
-    // scroll-snap mid-animation. "instant" lands precisely on the point.
-    el.scrollIntoView({ behavior: "instant", block: "center" });
+    // Smooth so the audience SEES the travel and doesn't lose context (a class
+    // affordance). The earlier "erratic overshoot" was a DOUBLE scroll (navigate
+    // re-firing ChapterPlayer's subscriber); now same-chapter does ONE scroll,
+    // so a single smooth animation lands cleanly. Reduced-motion → instant.
+    const motionAllowed = getMotionState().motionAllowed;
+    el.scrollIntoView({ behavior: motionAllowed ? "smooth" : "instant", block: "center" });
   }
 
   // After navigation the target may not be painted yet (cross-chapter remount).
