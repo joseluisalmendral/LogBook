@@ -47,6 +47,42 @@ open salida.html
 > **¿Ya tenés sesiones de Claude Code hechas en este repo antes de instalar LogBook?**
 > **Salen igual.** `logbook build` enumera todas las sesiones que Claude Code grabó en `~/.claude/projects/` para este repo y las backfillea desde el transcript. No perdés nada de tu trabajo previo.
 
+## Solo quiero el HTML, sin instalar nada en el repo (`present`)
+
+¿Ya ejecutaste sesiones de Claude Code en un repo y solo querés el HTML para mostrarlas, sin tocar ese repo? Ese es el trabajo de `logbook present`. **No instala hooks, ni MCP, ni skill, ni edita ningún archivo del proyecto:** scrapea los transcripts, genera el HTML autocontenido y lo deja en la carpeta que vos elijas. Todo lo intermedio (eventos, estado, docs) es efímero y se borra al terminar.
+
+```sh
+# UNA VEZ (a nivel sistema) — igual que el install normal
+git clone https://github.com/joseluisalmendral/LogBook.git
+cd LogBook && pnpm install && pnpm build && pnpm link --global
+
+# EN CUALQUIER REPO con sesiones de Claude Code ya hechas
+cd /path/to/tu-repo
+logbook present mi-clase-01 --out ~/Desktop/clases
+# → ~/Desktop/clases/mi-clase-01/index.html   (un único archivo autocontenido)
+open ~/Desktop/clases/mi-clase-01/index.html
+```
+
+El repo objetivo queda **intacto**: no aparece `logbook/`, ni `.logbook/`, ni edits en `CLAUDE.md` / `.gitignore` / `.claude/settings.local.json`. Lo único que se crea es `<nombre>/index.html` en la ruta de `--out`.
+
+**Tres cosas a tener en cuenta:**
+
+- **Parate dentro del repo objetivo** (`cd`): `present` deduce el proyecto del directorio actual y de ahí encuentra sus transcripts en `~/.claude/projects/`. No hay flag para apuntar a otro repo desde afuera.
+- **Mandá `--out` a una ruta fuera del repo** (ej. `~/Desktop/clases`) para no dejar ni la carpeta de salida dentro del árbol. Si omitís `--out`, la carpeta cae en el root del proyecto (sigue sin instalar nada, pero ensucia el directorio).
+- El repo tiene que tener **sesiones de Claude Code ya ejecutadas**. Si no hay transcripts, `present` te avisa con un mensaje claro y no escribe nada.
+
+| Flag | Qué hace |
+|---|---|
+| `<name>` | (requerido) identificador de la carpeta de salida → `<out>/<name>/index.html` |
+| `--out <dir>` | carpeta padre donde se crea `<name>/` (default: root del proyecto) |
+| `--safe` | redacta paths, usernames y emails antes de exportar (útil para proyectar en público) |
+
+> **¿No querés ni instalar el binario global?** Corré el `dist` directamente desde tu clon de LogBook:
+> ```sh
+> cd /path/to/tu-repo
+> node /path/to/LogBook/dist/cli/index.cjs present mi-clase-01 --out ~/Desktop/clases
+> ```
+
 ## Cómo funciona
 
 LogBook captura cada sesión de Claude Code automáticamente — vos no hacés nada durante la conversación. Cuando querés ver el resultado, generás un HTML editorial autocontenido con todas tus sesiones replayables.
@@ -164,6 +200,7 @@ Quick reference:
 | `logbook decision --with-diff` | Record ADR + capture git SHA + diff stats |
 | `logbook annotate <event-id> --note "..."` | Add a note to any captured event |
 | `logbook export html [--safe] [--speaker-mode] [--no-transcripts]` | Self-contained interactive HTML (single file) |
+| `logbook present <name> [--out <dir>] [--safe]` | One-shot HTML from transcripts — installs nothing, leaves the repo byte-identical |
 | `logbook providers list` | List configured LLM providers |
 | `logbook providers set <target> <provider>` | Configure routing |
 | `logbook providers test [--task <name>]` | Validate provider round-trip |
