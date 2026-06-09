@@ -9,10 +9,31 @@
 
   Subscribes to the shared `annotations` store, so it re-renders the moment an
   annotation is added, edited, removed, or cleared.
+
+  Navigation (slice export-ux): annotations are GLOBAL (localStorage keyed by
+  eventId across every session), so a marked point can live in a DIFFERENT
+  chapter than the one currently open. Clicking a row therefore resolves the
+  owning chapter from the payload and navigates through the SAME router +
+  selection plumbing SubAgentIndex uses, so ChapterPlayer's selection
+  subscriber scrolls the card into view and fires the one-shot acknowledge
+  pulse (.lb-pulse-once) — never the looping heartbeat (.is-active).
 -->
 <script lang="ts">
   import { annotations, activeLegendId, TAG_META, type Annotation } from "../stores/annotations";
   import { getMotionState } from "../stores/motion";
+  import { router } from "../stores/router";
+  import { selection } from "../stores/selection";
+  import { payload } from "../stores/data";
+
+  // eventId -> owning chapter sessionId, built once from the frozen payload.
+  // Lets a brief row jump to a mark that lives in another chapter (the chapter
+  // route uses the chapter's sessionId as its chapterId — see CourseTOC).
+  const eventChapter = new Map<string, string>();
+  for (const chapter of payload.chapters) {
+    for (const ev of chapter.events) {
+      eventChapter.set(ev.id, chapter.sessionId);
+    }
+  }
 
   interface Props {
     /** Layout variant. Mirrors LegendKey. */
@@ -41,6 +62,28 @@
 
   function scrollTo(eventId: string): void {
     activeLegendId.set(eventId);
+
+    // Resolve the chapter that actually owns this marked event. Fall back to
+    // the current chapter when the lookup misses (e.g. an orphaned annotation
+    // whose event is no longer in the payload).
+    const route = router.get();
+    const ownerChapterId =
+      eventChapter.get(eventId) ?? (route.name === "chapter" ? route.chapterId : null);
+
+    if (ownerChapterId) {
+      // Same robust path SubAgentIndex uses: prime the selection slot, then
+      // push the ?event=<id> route. ChapterPlayer's selection subscriber then
+      // scrolls + applies the one-shot .lb-pulse-once (NOT the looping
+      // .is-active heartbeat). Works cross-chapter: navigating to another
+      // chapter remounts ChapterPlayer, whose onMount subscriber fires with
+      // the current selection snapshot and scrolls the target.
+      selection._setFromRoute("chapter", eventId);
+      router.navigate({ name: "chapter", chapterId: ownerChapterId, eventId });
+      return;
+    }
+
+    // Fallback: scroll directly to the anchor if we could not resolve a
+    // chapter (no payload match and not on a chapter route).
     const el = document.getElementById(`event-${eventId}`);
     if (!el) return;
     const motionAllowed = getMotionState().motionAllowed;
@@ -60,7 +103,7 @@
           <button
             type="button"
             class="brief-row"
-            class:is-active={activeId === item.eventId}
+            class:brief-row--selected={activeId === item.eventId}
             onclick={() => scrollTo(item.eventId)}
             data-testid="brief-entry"
           >
@@ -109,7 +152,9 @@
   .brief-row {
     appearance: none;
     background: transparent;
-    border: 0;
+    /* Transparent 1px border at rest so the selected state can color it in
+       without shifting the row by 1px (no layout jump). */
+    border: 1px solid transparent;
     border-radius: 0;
     padding: 4px 6px;
     cursor: pointer;
@@ -134,13 +179,15 @@
     background: var(--color-surface-sunken);
   }
 
-  /* Last-clicked marked point stays highlighted (Paper Brutalism: sunken
-     surface + bold label + hard left accent border, no soft shadow). */
-  .brief-row.is-active {
+  /* Last-clicked marked point stays highlighted. Deliberately STATIC: a subtle
+     sunken surface + a hairline accent border. No animation, no box-shadow
+     pulse, no font-weight change (font-weight would shift layout). A distinct
+     class name (NOT `.is-active`) avoids the global `.is-active` heartbeat rule
+     in affordance.css, which loops `lb-heartbeat` forever for the playhead. */
+  .brief-row.brief-row--selected {
     color: var(--color-text-primary);
     background: var(--color-surface-sunken);
-    box-shadow: inset 2px 0 0 0 var(--color-accent-primary);
-    font-weight: 700;
+    border: 1px solid var(--color-accent-primary);
   }
 
   .brief-row:focus-visible {
