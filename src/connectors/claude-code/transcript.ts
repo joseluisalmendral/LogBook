@@ -84,6 +84,39 @@ export function userPromptHash(text: string): string {
 }
 
 /**
+ * Deterministic, stable event id derived from stable natural keys.
+ *
+ * Why this exists: `logbook present` re-scrapes the transcript into an
+ * EPHEMERAL workspace on every run, so each run starts with an empty
+ * events.jsonl. Without an explicit id, `appendEvent` assigns a FRESH random
+ * ULID to every event — which means `#event-{id}` anchors and the
+ * localStorage annotation keys (`lb.annotations`) change on every
+ * regeneration, breaking saved instructor marked points.
+ *
+ * The fix is to give each EventInput a DETERMINISTIC id derived from inputs
+ * that are stable across runs (the transcript content is immutable): the
+ * Claude line `uuid`, the `tool_use_id`, the session id, the event kind, and a
+ * per-line block index to disambiguate the multiple events one assistant line
+ * can emit (text / thinking / skill_invoked).
+ *
+ * Format: `evt_<sha256(parts.join('')).slice(0,20)>`. The `evt_` prefix
+ * keeps ids readable and visually distinct from ULIDs; the 20-hex-char digest
+ * (80 bits) makes accidental collisions across distinct natural keys
+ * astronomically unlikely. The `` separator can never appear in any
+ * natural key, so two different key tuples can never serialize to the same
+ * string.
+ *
+ * Stability contract: the same `parts` always yield the same id. Uniqueness
+ * contract: callers MUST pass a key tuple that is unique within a session
+ * (e.g. include the block index when one line emits several events).
+ */
+export function stableEventId(parts: Array<string | number | undefined>): string {
+  const key = parts.map((p) => (p === undefined ? "" : String(p))).join("");
+  const digest = crypto.createHash("sha256").update(key).digest("hex").slice(0, 20);
+  return `evt_${digest}`;
+}
+
+/**
  * Normalize a Claude Code `/rename` custom title for display.
  *
  * Claude Code often persists the value wrapped in a single layer of literal
@@ -836,6 +869,9 @@ function emitForCall(
     if (sanitizedNotes !== undefined) payload.notes = sanitizedNotes;
 
     out.push({
+      // toolUseId + questionIndex uniquely and stably identifies one question
+      // inside one AskUserQuestion call.
+      id: stableEventId([sessionId, "agent_question", call.toolUseId, i]),
       kind: "agent_question",
       sessionId,
       payload: payload as unknown as Record<string, unknown>,
@@ -937,6 +973,8 @@ export function extractSessionContextEvents(
 
   return [
     {
+      // At most one session_context per session — the session id is the key.
+      id: stableEventId([sessionId, "session_context"]),
       kind: "session_context",
       sessionId,
       payload,
@@ -1093,6 +1131,10 @@ export function extractToolEvents(
         payload["tool_response"] = toolResponse;
 
         const ev: EventInput = {
+          // tool_use_id is unique per tool call and stable across runs. Include
+          // agentId so the (rare) case of the same id surfacing in both a main
+          // and a sub-agent scrape can never collide.
+          id: stableEventId([sessionId, "tool_result", stampAgentId, toolUseId]),
           kind: "tool_result",
           sessionId,
           payload,
@@ -1153,6 +1195,9 @@ export function transcriptLineToEvents(
     }
     return [
       {
+        // session_rename is one-per-title (deduped by title), so the title is
+        // the stable natural key.
+        id: stableEventId([sessionId, "session_rename", titleRaw]),
         kind: "system",
         sessionId,
         payload: {
@@ -1200,6 +1245,9 @@ export function transcriptLineToEvents(
     }
     return [
       {
+        // The transcript line uuid is stable across runs and unique per
+        // prompt; fall back to the prompt-text hash when uuid is absent.
+        id: stableEventId([sessionId, "user_prompt", line.uuid ?? hash]),
         kind: "user_prompt",
         sessionId,
         payload: {
@@ -1222,9 +1270,17 @@ export function transcriptLineToEvents(
     }
 
     const events: EventInput[] = [];
-    for (const block of content) {
+    // One assistant line (one line.uuid) can emit several events — text,
+    // thinking, and skill_invoked blocks. Disambiguate them with the block's
+    // position in the content array so two events from the same line can never
+    // collide on a stable id while staying stable across runs (the transcript
+    // block order is immutable).
+    for (let blockIndex = 0; blockIndex < content.length; blockIndex++) {
+      const block = content[blockIndex];
+      if (block === undefined) continue;
       if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
         events.push({
+          id: stableEventId([sessionId, line.uuid, "claude_message", "text", blockIndex]),
           kind: "claude_message",
           sessionId,
           payload: {
@@ -1245,6 +1301,7 @@ export function transcriptLineToEvents(
         const rawText = typeof block.thinking === "string" ? block.thinking : "";
         const hasText = rawText.trim().length > 0;
         events.push({
+          id: stableEventId([sessionId, line.uuid, "claude_message", "thinking", blockIndex]),
           kind: "claude_message",
           sessionId,
           payload: {
@@ -1274,6 +1331,13 @@ export function transcriptLineToEvents(
           if (detected !== null) {
             // B3-R3: synthesize skill_invoked at the originating timestamp.
             events.push({
+              id: stableEventId([
+                sessionId,
+                line.uuid,
+                "skill_invoked",
+                detected.skillPath,
+                blockIndex,
+              ]),
               kind: "skill_invoked",
               sessionId,
               payload: {
@@ -1696,6 +1760,8 @@ export async function runTranscriptScraper(
 
         try {
           await appendEvent(paths, {
+            // One subagent_complete per agent file — agentId is the stable key.
+            id: stableEventId([sessionId, "subagent_complete", agentId]),
             kind: "subagent_complete",
             sessionId,
             provider: "claude-code-transcript",
