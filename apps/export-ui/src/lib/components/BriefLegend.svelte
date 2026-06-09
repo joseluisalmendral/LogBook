@@ -89,6 +89,13 @@
     const motionAllowed = getMotionState().motionAllowed;
     el.scrollIntoView({ behavior: motionAllowed ? "smooth" : "auto", block: "center" });
   }
+
+  // Remove a single marked point straight from the brief list (the global
+  // annotations store update re-renders both BriefLegend instances + the ring).
+  function removeMark(eventId: string): void {
+    annotations.remove(eventId);
+    if (activeLegendId.get() === eventId) activeLegendId.set(null);
+  }
 </script>
 
 <div class="brief-legend" data-variant={variant} data-testid="brief-legend">
@@ -112,6 +119,14 @@
             >
             <span class="brief-label">{item.label}</span>
           </button>
+          <button
+            type="button"
+            class="brief-remove"
+            onclick={() => removeMark(item.eventId)}
+            aria-label="Remove this marked point"
+            title="Remove this marked point"
+            data-testid="brief-remove"
+          >×</button>
         </li>
       {/each}
     </ul>
@@ -147,6 +162,52 @@
 
   .brief-item {
     min-width: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+  }
+
+  /* Per-point delete: a small "×" beside each marked row. Faint at rest,
+     brightens to the error color on hover/focus. Clicking it removes only
+     that annotation (not all). */
+  .brief-remove {
+    appearance: none;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 0;
+    color: var(--color-text-tertiary);
+    cursor: pointer;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    line-height: 1;
+    padding: 2px 5px;
+    opacity: 0.5;
+    transition: opacity 150ms ease-out, color 150ms ease-out,
+      background 150ms ease-out;
+  }
+
+  .brief-item:hover .brief-remove,
+  .brief-remove:focus-visible {
+    opacity: 1;
+  }
+
+  .brief-remove:hover {
+    color: var(--color-error);
+    background: var(--color-surface-sunken);
+  }
+
+  .brief-remove:focus-visible {
+    outline: 1px solid var(--color-error);
+    outline-offset: 1px;
+  }
+
+  .brief-legend[data-variant="mobile"] .brief-item {
+    display: flex;
+    width: 100%;
+  }
+
+  .brief-legend[data-variant="mobile"] .brief-row {
+    flex: 1;
   }
 
   .brief-row {
