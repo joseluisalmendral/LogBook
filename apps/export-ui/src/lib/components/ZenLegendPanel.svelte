@@ -49,7 +49,14 @@
   function handleWindowClick(event: MouseEvent): void {
     if (collapsed || !panelEl) return;
     const target = event.target as Node | null;
-    if (target && !panelEl.contains(target)) {
+    if (!target) return;
+    // A click on an in-panel control that removes ITSELF in the same tick
+    // (the "↕ Conversation order" reset, or a row's "×" delete) leaves the
+    // target detached from the DOM by the time this window handler runs, so
+    // `panelEl.contains(target)` would wrongly report "outside" and collapse
+    // the panel. Detached targets were rendered inside — never collapse on them.
+    if ((target as Node & { isConnected?: boolean }).isConnected === false) return;
+    if (!panelEl.contains(target)) {
       collapsed = true;
     }
   }

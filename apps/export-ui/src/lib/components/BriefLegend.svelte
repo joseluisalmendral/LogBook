@@ -1,23 +1,31 @@
 <!--
   BriefLegend — display-annotations Feature B (ADR-DA-7).
 
-  Sibling to LegendKey (NOT a mode prop on it — the LegendKey 8-chip contract is
-  preserved untouched). The Full/Brief toggle lives in the scrubber/mobile host;
-  this component renders ONLY the user-annotated events as a scannable, ordered
-  list: a tabular index, the tag glyph in the annotation color, the label, and a
-  per-row delete. Rows are sorted in CONVERSATION order (their position in the
-  payload), not insertion order, so the list mirrors the timeline.
+  Renders the instructor's marked points as a scannable, ordered, reorderable
+  list: a drag grip, a tabular index, the tag glyph in the annotation color, the
+  label, and a per-row delete. Default sort is CONVERSATION order (payload
+  position); the instructor can drag rows into a custom order (persisted via the
+  shared `briefOrder` store) and reset back to conversation order.
 
-  Clicking a row resolves the owning chapter and navigates through the SAME
-  router + selection plumbing SubAgentIndex uses, so ChapterPlayer's selection
-  subscriber scrolls the card into view and fires the one-shot acknowledge pulse
-  (.lb-pulse-once) — never the looping heartbeat (.is-active).
+  Clicking a row navigates to the owning chapter via the SAME router + selection
+  plumbing SubAgentIndex uses, then RETRIES the scroll until the target paints —
+  so it works for a mark in the current chapter AND for one in another chapter
+  (which remounts ChapterPlayer before the target exists). The one-shot
+  acknowledge pulse (.lb-pulse-once) fires; never the looping heartbeat.
 
-  Subscribes to the shared `annotations` store, so it re-renders the moment an
-  annotation is added, edited, removed, or cleared.
+  Subscribes to the shared `annotations` + `briefOrder` stores, so it re-renders
+  whenever a mark or the order changes. Both BriefLegend instances (scrubber +
+  Zen panel) stay in sync.
 -->
 <script lang="ts">
-  import { annotations, activeLegendId, TAG_META, type Annotation } from "../stores/annotations";
+  import {
+    annotations,
+    activeLegendId,
+    briefOrder,
+    TAG_META,
+    type Annotation,
+    type AnnotationMap,
+  } from "../stores/annotations";
   import { getMotionState } from "../stores/motion";
   import { router } from "../stores/router";
   import { selection } from "../stores/selection";
@@ -36,14 +44,24 @@
     }
   }
 
-  // Sort marks by their position in the conversation; orphans (event no longer
-  // in the payload) sink to the bottom but keep a stable relative order.
   function sortChrono(list: Annotation[]): Annotation[] {
     return [...list].sort((a, b) => {
       const oa = eventOrder.get(a.eventId) ?? Number.MAX_SAFE_INTEGER;
       const ob = eventOrder.get(b.eventId) ?? Number.MAX_SAFE_INTEGER;
       return oa - ob;
     });
+  }
+
+  // Apply the custom order if present: listed ids lead (in that order), the rest
+  // trail in conversation order.
+  function orderItems(map: AnnotationMap, custom: string[]): Annotation[] {
+    const chrono = sortChrono(Object.values(map));
+    if (custom.length === 0) return chrono;
+    const idx = new Map(custom.map((id, i) => [id, i] as const));
+    return chrono
+      .map((a, ci) => ({ a, rank: idx.has(a.eventId) ? (idx.get(a.eventId) as number) : custom.length + ci }))
+      .sort((x, y) => x.rank - y.rank)
+      .map((x) => x.a);
   }
 
   interface Props {
@@ -53,16 +71,25 @@
 
   const { variant = "inline" }: Props = $props();
 
-  let items = $state<Annotation[]>(sortChrono(Object.values(annotations.get())));
+  let map = $state<AnnotationMap>(annotations.get());
   $effect(() => {
-    const unsub = annotations.subscribe((map) => {
-      items = sortChrono(Object.values(map));
+    const unsub = annotations.subscribe((m) => {
+      map = m;
     });
     return () => unsub();
   });
 
-  // Last-clicked row, shared across BOTH BriefLegend instances (scrubber + Zen
-  // panel) so the highlight stays in sync wherever the row was clicked.
+  let customOrder = $state<string[]>(briefOrder.get());
+  $effect(() => {
+    const unsub = briefOrder.subscribe((o) => {
+      customOrder = o;
+    });
+    return () => unsub();
+  });
+
+  const items = $derived(orderItems(map, customOrder));
+
+  // Last-clicked row, shared across BOTH BriefLegend instances.
   let activeId = $state<string | null>(activeLegendId.get());
   $effect(() => {
     const unsub = activeLegendId.subscribe((id) => {
@@ -71,34 +98,88 @@
     return () => unsub();
   });
 
-  function scrollTo(eventId: string): void {
-    activeLegendId.set(eventId);
-
-    const route = router.get();
-    const ownerChapterId =
-      eventChapter.get(eventId) ?? (route.name === "chapter" ? route.chapterId : null);
-
-    if (ownerChapterId) {
-      // Robust path (same as SubAgentIndex): prime selection, push ?event=<id>.
-      // ChapterPlayer's selection subscriber scrolls + applies .lb-pulse-once
-      // (one-shot), NOT the looping .is-active heartbeat. Works cross-chapter.
-      selection._setFromRoute("chapter", eventId);
-      router.navigate({ name: "chapter", chapterId: ownerChapterId, eventId });
-      return;
-    }
-
-    // Fallback: direct anchor scroll if we could not resolve a chapter.
-    const el = document.getElementById(`event-${eventId}`);
+  function doScroll(eventId: string): void {
+    const el = typeof document !== "undefined" ? document.getElementById(`event-${eventId}`) : null;
     if (!el) return;
     const motionAllowed = getMotionState().motionAllowed;
     el.scrollIntoView({ behavior: motionAllowed ? "smooth" : "auto", block: "center" });
   }
 
-  // Remove a single marked point straight from the brief list (the global
-  // annotations store update re-renders both BriefLegend instances + the ring).
+  // After navigation the target may not be painted yet (cross-chapter remount).
+  // Retry on animation frames until it exists, then scroll. Bounded (~40 frames).
+  function scrollWhenReady(eventId: string, tries = 0): void {
+    if (typeof document === "undefined") return;
+    const el = document.getElementById(`event-${eventId}`);
+    if (el) {
+      doScroll(eventId);
+      return;
+    }
+    if (tries >= 40) return;
+    requestAnimationFrame(() => scrollWhenReady(eventId, tries + 1));
+  }
+
+  function scrollTo(eventId: string): void {
+    activeLegendId.set(eventId);
+    const route = router.get();
+    const ownerChapterId =
+      eventChapter.get(eventId) ?? (route.name === "chapter" ? route.chapterId : null);
+    if (ownerChapterId) {
+      // Robust path (same as SubAgentIndex): prime selection, push ?event=<id>.
+      selection._setFromRoute("chapter", eventId);
+      router.navigate({ name: "chapter", chapterId: ownerChapterId, eventId });
+    }
+    // Guarantee the scroll even if ChapterPlayer's own subscriber misses the
+    // post-remount timing.
+    scrollWhenReady(eventId);
+  }
+
   function removeMark(eventId: string): void {
     annotations.remove(eventId);
     if (activeLegendId.get() === eventId) activeLegendId.set(null);
+  }
+
+  // --- Drag & drop reorder (native HTML5 DnD; file://-safe, no deps) ---------
+  let draggedId = $state<string | null>(null);
+  let dragOverIndex = $state<number | null>(null);
+
+  function onDragStart(e: DragEvent, id: string): void {
+    draggedId = id;
+    if (e.dataTransfer) {
+      e.dataTransfer.effectAllowed = "move";
+      try {
+        e.dataTransfer.setData("text/plain", id);
+      } catch {
+        // Some engines disallow setData on synthetic events — ignore.
+      }
+    }
+  }
+
+  function onDragOver(e: DragEvent, i: number): void {
+    if (draggedId === null) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    dragOverIndex = i;
+  }
+
+  function onDrop(e: DragEvent, i: number): void {
+    e.preventDefault();
+    if (draggedId !== null) reorder(draggedId, i);
+    draggedId = null;
+    dragOverIndex = null;
+  }
+
+  function onDragEnd(): void {
+    draggedId = null;
+    dragOverIndex = null;
+  }
+
+  function reorder(id: string, targetIndex: number): void {
+    const ids = items.map((it) => it.eventId);
+    const from = ids.indexOf(id);
+    if (from === -1) return;
+    ids.splice(from, 1);
+    ids.splice(targetIndex, 0, id);
+    briefOrder.set(ids);
   }
 </script>
 
@@ -110,7 +191,23 @@
   {:else}
     <ol class="brief-list" data-testid="brief-list">
       {#each items as item, i (item.eventId)}
-        <li class="brief-item">
+        <li
+          class="brief-item"
+          class:is-drop-target={dragOverIndex === i}
+          ondragover={(e) => onDragOver(e, i)}
+          ondrop={(e) => onDrop(e, i)}
+        >
+          <span
+            class="brief-grip"
+            draggable="true"
+            role="button"
+            tabindex="-1"
+            aria-label="Drag to reorder this point"
+            title="Drag to reorder"
+            ondragstart={(e) => onDragStart(e, item.eventId)}
+            ondragend={onDragEnd}
+            data-testid="brief-grip">⠿</span
+          >
           <button
             type="button"
             class="brief-row"
@@ -131,11 +228,20 @@
             onclick={() => removeMark(item.eventId)}
             aria-label={`Remove marked point ${i + 1}: ${item.label}`}
             title="Remove this marked point"
-            data-testid="brief-remove"
-          >×</button>
+            data-testid="brief-remove">×</button
+          >
         </li>
       {/each}
     </ol>
+    {#if customOrder.length > 0}
+      <button
+        type="button"
+        class="brief-reset"
+        onclick={() => briefOrder.clear()}
+        title="Revert to conversation order"
+        data-testid="brief-reset"
+      >↕ Conversation order</button>
+    {/if}
   {/if}
 </div>
 
@@ -150,9 +256,9 @@
     margin: 0;
   }
 
-  /* Vertical, table-like list. One mark per row so the eye scans a single
-     column of labels; hairline separators give the "ledger" order the user
-     asked for. Capped height with a thin scroll so it grows but stays usable. */
+  /* Vertical, table-like list. One mark per row; hairline separators give the
+     "ledger" order. Capped height with a thin scroll so it grows but stays
+     usable. */
   .brief-list {
     list-style: none;
     margin: 0;
@@ -165,15 +271,13 @@
     scrollbar-width: thin;
   }
 
-  /* Width floor so the label column has room to align even in the narrow
-     scrubber host. The Zen panel / mobile give it more. */
   .brief-legend[data-variant="inline"] .brief-list {
-    min-width: 15rem;
+    min-width: 16rem;
   }
 
   .brief-item {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto; /* row | delete */
+    grid-template-columns: auto minmax(0, 1fr) auto; /* grip | row | delete */
     align-items: stretch;
     min-width: 0;
     border-bottom: 1px solid var(--color-border-hairline);
@@ -183,9 +287,38 @@
     border-bottom: 0;
   }
 
-  /* Aligned columns: a right-aligned tabular index, a fixed-width glyph, then
-     the label. Identical track sizing on every row keeps the glyphs and labels
-     in vertical alignment — the core scannability win. */
+  /* Drop indicator: a hard accent bar on the row's top edge. */
+  .brief-item.is-drop-target {
+    box-shadow: inset 0 2px 0 0 var(--color-accent-primary);
+  }
+
+  /* Drag grip: faint at rest, brighter on row hover. grab/grabbing cursor. */
+  .brief-grip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    line-height: 1;
+    color: var(--color-text-tertiary);
+    cursor: grab;
+    padding: 0 var(--p-space-1);
+    opacity: 0.3;
+    user-select: none;
+    transition: opacity 150ms ease-out, color 150ms ease-out;
+  }
+
+  .brief-item:hover .brief-grip {
+    opacity: 0.8;
+  }
+
+  .brief-grip:active {
+    cursor: grabbing;
+  }
+
+  /* Aligned columns: right-aligned tabular index, fixed-width glyph, then the
+     label. Identical track sizing on every row keeps glyphs + labels in
+     vertical alignment — the core scannability win. */
   .brief-row {
     appearance: none;
     background: transparent;
@@ -202,8 +335,6 @@
     color: var(--color-text-secondary);
     font: inherit;
     text-align: left;
-    /* inset accent lives on the left edge when selected; reserve nothing at
-       rest (box-shadow doesn't affect layout, so no shift). */
     transition: color 150ms ease-out, background 150ms ease-out;
   }
 
@@ -238,10 +369,9 @@
     background: var(--color-surface-sunken);
   }
 
-  /* Last-clicked marked point: STATIC sunken surface + a hard left accent bar
-     (inset shadow, so no layout shift) + the index goes accent + bold. No
-     animation — a distinct class name avoids the global `.is-active` heartbeat
-     in affordance.css. */
+  /* Last-clicked marked point: STATIC sunken surface + hard left accent bar
+     (inset shadow → no layout shift) + accent/bold index. No animation; a
+     distinct class name avoids the global `.is-active` heartbeat loop. */
   .brief-row.brief-row--selected {
     color: var(--color-text-primary);
     background: var(--color-surface-sunken);
@@ -258,8 +388,7 @@
     outline-offset: -1px;
   }
 
-  /* Per-point delete: faint at rest, brightens to the error color on hover of
-     the row or itself. Removes ONLY that mark (not all). */
+  /* Per-point delete. */
   .brief-remove {
     appearance: none;
     background: transparent;
@@ -291,8 +420,31 @@
     outline-offset: -1px;
   }
 
+  /* Reset-to-conversation-order: subtle text button shown only when a custom
+     order is active. */
+  .brief-reset {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    cursor: pointer;
+    display: block;
+    width: 100%;
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-meta);
+    color: var(--color-text-tertiary);
+    padding: var(--p-space-2);
+    transition: color 150ms ease-out;
+  }
+
+  .brief-reset:hover,
+  .brief-reset:focus-visible {
+    color: var(--color-text-primary);
+  }
+
   :global(html[data-motion="reduced"]) .brief-row,
-  :global(html[data-motion="reduced"]) .brief-remove {
+  :global(html[data-motion="reduced"]) .brief-remove,
+  :global(html[data-motion="reduced"]) .brief-grip {
     transition: none;
   }
 </style>

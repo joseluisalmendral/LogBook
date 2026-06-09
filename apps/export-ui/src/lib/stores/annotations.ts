@@ -194,3 +194,66 @@ export const activeLegendId = {
     for (const fn of legendIdListeners) fn(activeId);
   },
 };
+
+/**
+ * briefOrder — the instructor's CUSTOM order for the brief-legend marked points
+ * (drag-and-drop reorder). An array of eventIds. When empty, BriefLegend falls
+ * back to conversation order. When set, listed ids lead (in this order) and any
+ * not-yet-ordered marks trail in conversation order.
+ *
+ * Persisted to localStorage under `lb.brief.order` (removed entirely when empty,
+ * so a cleared order leaves no residue). Shared module store so both BriefLegend
+ * instances (scrubber + Zen panel) reorder together. Same plain-store pattern.
+ */
+const ORDER_KEY = "lb.brief.order";
+
+function readOrder(): string[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(ORDER_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+type OrderListener = (order: string[]) => void;
+let order: string[] = readOrder();
+const orderListeners = new Set<OrderListener>();
+
+function persistOrder(): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (order.length === 0) window.localStorage.removeItem(ORDER_KEY);
+    else window.localStorage.setItem(ORDER_KEY, JSON.stringify(order));
+  } catch {
+    // Non-fatal — the in-memory order still applies this session.
+  }
+}
+
+export const briefOrder = {
+  get(): string[] {
+    return order;
+  },
+  subscribe(fn: OrderListener): () => void {
+    orderListeners.add(fn);
+    fn(order);
+    return () => {
+      orderListeners.delete(fn);
+    };
+  },
+  /** Replace the custom order, persist, and notify. */
+  set(next: string[]): void {
+    order = [...next];
+    persistOrder();
+    for (const fn of orderListeners) fn(order);
+  },
+  /** Drop the custom order (revert to conversation order), persist, notify. */
+  clear(): void {
+    order = [];
+    persistOrder();
+    for (const fn of orderListeners) fn(order);
+  },
+};
