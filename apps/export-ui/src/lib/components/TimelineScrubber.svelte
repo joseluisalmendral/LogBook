@@ -41,6 +41,23 @@
   // (annotated points only). Default Full, NOT persisted (ADR-DA-8).
   let legendView = $state<"full" | "brief">("full");
 
+  // Collapsible legend (parity with the Zen legend panel): clicking anywhere
+  // outside the legend collapses it to a chip; the chip reopens it. Default
+  // expanded, not persisted.
+  let collapsed = $state(false);
+  let legendHostEl = $state<HTMLElement | undefined>(undefined);
+
+  function handleWindowClick(event: MouseEvent): void {
+    if (collapsed || !legendHostEl) return;
+    const target = event.target as Node | null;
+    if (!target) return;
+    // In-legend controls that remove themselves (brief "×" / "↕" reset) detach
+    // from the DOM before this bubbles up — contains() would then falsely report
+    // "outside" and wrongly collapse. Detached targets were inside: ignore them.
+    if ((target as Node & { isConnected?: boolean }).isConnected === false) return;
+    if (!legendHostEl.contains(target)) collapsed = true;
+  }
+
   let progress = $state(0);
   let rafId: number | null = null;
   let playMode = $state<"scroll" | "play">("scroll");
@@ -147,7 +164,7 @@
   }
 </script>
 
-<svelte:window onkeydown={onKey} />
+<svelte:window onkeydown={onKey} onclick={handleWindowClick} />
 
 <div
   class="scrubber"
@@ -157,33 +174,55 @@
 >
   <!-- Slice 12 P1 R-51: collapsible legend mounted above the dock.
        display-annotations: Full/Brief switch (ADR-DA-7). -->
-  <div class="legend-host">
-    <div class="legend-views" role="group" aria-label="Legend view">
+  <div class="legend-host" bind:this={legendHostEl}>
+    {#if collapsed}
       <button
         type="button"
-        class="legend-view-btn"
-        class:is-active={legendView === "full"}
-        aria-pressed={legendView === "full"}
-        onclick={() => (legendView = "full")}
-        data-testid="legend-view-full"
+        class="legend-reopen"
+        onclick={() => (collapsed = false)}
+        data-testid="legend-reopen"
+        title="Show legend"
       >
-        Full
+        ☰ Legend
       </button>
-      <button
-        type="button"
-        class="legend-view-btn"
-        class:is-active={legendView === "brief"}
-        aria-pressed={legendView === "brief"}
-        onclick={() => (legendView = "brief")}
-        data-testid="legend-view-brief"
-      >
-        Brief
-      </button>
-    </div>
-    {#if legendView === "full"}
-      <LegendKey variant="inline" />
     {:else}
-      <BriefLegend variant="inline" />
+      <div class="legend-views" role="group" aria-label="Legend view">
+        <button
+          type="button"
+          class="legend-view-btn"
+          class:is-active={legendView === "full"}
+          aria-pressed={legendView === "full"}
+          onclick={() => (legendView = "full")}
+          data-testid="legend-view-full"
+        >
+          Full
+        </button>
+        <button
+          type="button"
+          class="legend-view-btn"
+          class:is-active={legendView === "brief"}
+          aria-pressed={legendView === "brief"}
+          onclick={() => (legendView = "brief")}
+          data-testid="legend-view-brief"
+        >
+          Brief
+        </button>
+      </div>
+      <button
+        type="button"
+        class="legend-collapse"
+        onclick={() => (collapsed = true)}
+        data-testid="legend-collapse"
+        aria-label="Collapse legend"
+        title="Collapse legend"
+      >
+        —
+      </button>
+      {#if legendView === "full"}
+        <LegendKey variant="inline" />
+      {:else}
+        <BriefLegend variant="inline" />
+      {/if}
     {/if}
   </div>
 
@@ -264,6 +303,45 @@
   }
 
   :global(html[data-motion="reduced"]) .legend-view-btn {
+    transition: none;
+  }
+
+  /* Collapse "—" button + reopen "☰ Legend" chip (parity with the Zen panel). */
+  .legend-collapse,
+  .legend-reopen {
+    appearance: none;
+    background: transparent;
+    border: 1px solid var(--color-border-hairline);
+    border-radius: 0;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-caption);
+    line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: color 150ms ease-out, background 150ms ease-out;
+  }
+
+  .legend-collapse {
+    padding: 4px 8px;
+  }
+
+  .legend-reopen {
+    padding: 4px 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  .legend-collapse:hover,
+  .legend-collapse:focus-visible,
+  .legend-reopen:hover,
+  .legend-reopen:focus-visible {
+    color: var(--color-text-primary);
+    background: var(--color-surface-sunken);
+  }
+
+  :global(html[data-motion="reduced"]) .legend-collapse,
+  :global(html[data-motion="reduced"]) .legend-reopen {
     transition: none;
   }
 

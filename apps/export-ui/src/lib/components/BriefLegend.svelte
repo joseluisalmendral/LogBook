@@ -26,7 +26,6 @@
     type Annotation,
     type AnnotationMap,
   } from "../stores/annotations";
-  import { getMotionState } from "../stores/motion";
   import { router } from "../stores/router";
   import { selection } from "../stores/selection";
   import { payload } from "../stores/data";
@@ -101,8 +100,12 @@
   function doScroll(eventId: string): void {
     const el = typeof document !== "undefined" ? document.getElementById(`event-${eventId}`) : null;
     if (!el) return;
-    const motionAllowed = getMotionState().motionAllowed;
-    el.scrollIntoView({ behavior: motionAllowed ? "smooth" : "auto", block: "center" });
+    // INSTANT jump. Must be "instant", NOT "auto": "auto" defers to the page's
+    // CSS `scroll-behavior: smooth`, so it would still animate. A brief-legend
+    // point is a "take me there now" affordance: over long distances a smooth
+    // scroll reads as an erratic overshoot that never lands and can be nudged by
+    // scroll-snap mid-animation. "instant" lands precisely on the point.
+    el.scrollIntoView({ behavior: "instant", block: "center" });
   }
 
   // After navigation the target may not be painted yet (cross-chapter remount).
@@ -123,14 +126,22 @@
     const route = router.get();
     const ownerChapterId =
       eventChapter.get(eventId) ?? (route.name === "chapter" ? route.chapterId : null);
-    if (ownerChapterId) {
-      // Robust path (same as SubAgentIndex): prime selection, push ?event=<id>.
+    const sameChapter = route.name === "chapter" && ownerChapterId === route.chapterId;
+
+    if (ownerChapterId && !sameChapter) {
+      // Cross-chapter: remount the owning chapter, then scroll once it paints.
       selection._setFromRoute("chapter", eventId);
       router.navigate({ name: "chapter", chapterId: ownerChapterId, eventId });
+      scrollWhenReady(eventId);
+      return;
     }
-    // Guarantee the scroll even if ChapterPlayer's own subscriber misses the
-    // post-remount timing.
-    scrollWhenReady(eventId);
+
+    // Same chapter (the common case): a SINGLE direct scroll. We deliberately do
+    // NOT router.navigate here — navigating to the chapter we're already on
+    // re-fires ChapterPlayer's selection subscriber, which ALSO scrolls, and the
+    // two animations fight (visible as an erratic overshoot that never lands on
+    // the point). One scroll lands cleanly on the target.
+    doScroll(eventId);
   }
 
   function removeMark(eventId: string): void {
