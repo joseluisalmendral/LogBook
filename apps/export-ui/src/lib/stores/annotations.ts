@@ -144,6 +144,25 @@ export const annotations = {
     notify();
   },
   /**
+   * Remove a batch of annotations by eventId in ONE persist + notify. Used to
+   * clear only the CURRENT lesson's marks (the eventIds that belong to the open
+   * chapter), leaving every other lesson's annotations untouched.
+   */
+  removeMany(eventIds: string[]): void {
+    let changed = false;
+    const next = { ...current };
+    for (const id of eventIds) {
+      if (id in next) {
+        delete next[id];
+        changed = true;
+      }
+    }
+    if (!changed) return;
+    current = next;
+    persist();
+    notify();
+  },
+  /**
    * Remove ALL annotations with zero residue: the localStorage key is removed
    * entirely (not set to "{}") so getItem returns null afterwards (spec B-5).
    */

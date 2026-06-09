@@ -87,7 +87,29 @@
     return () => unsub();
   });
 
-  const items = $derived(orderItems(map, customOrder));
+  // The lesson currently open. The brief shows ONLY this lesson's marks — an
+  // eventId belongs to exactly one chapter, so we filter by it. Reactive so it
+  // updates when the instructor switches lessons.
+  let currentChapterId = $state<string | null>(
+    router.get().name === "chapter" ? (router.get() as { chapterId: string }).chapterId : null,
+  );
+  $effect(() => {
+    const unsub = router.subscribe((r) => {
+      currentChapterId = r.name === "chapter" ? r.chapterId : null;
+    });
+    return () => unsub();
+  });
+
+  const items = $derived(
+    orderItems(map, customOrder).filter(
+      (a) => currentChapterId !== null && eventChapter.get(a.eventId) === currentChapterId,
+    ),
+  );
+
+  // Does THIS lesson have a custom drag order? (controls the "↕ Order" reset)
+  const lessonHasCustomOrder = $derived(
+    customOrder.some((x) => eventChapter.get(x) === currentChapterId),
+  );
 
   // Last-clicked row, shared across BOTH BriefLegend instances.
   let activeId = $state<string | null>(activeLegendId.get());
@@ -186,21 +208,59 @@
   }
 
   function reorder(id: string, targetIndex: number): void {
-    const ids = items.map((it) => it.eventId);
-    const from = ids.indexOf(id);
+    const curIds = items.map((it) => it.eventId); // this lesson, displayed order
+    const from = curIds.indexOf(id);
     if (from === -1) return;
-    ids.splice(from, 1);
-    ids.splice(targetIndex, 0, id);
-    briefOrder.set(ids);
+    curIds.splice(from, 1);
+    curIds.splice(targetIndex, 0, id);
+    // Keep OTHER lessons' order entries untouched; replace only this lesson's.
+    const others = briefOrder.get().filter((x) => eventChapter.get(x) !== currentChapterId);
+    briefOrder.set([...others, ...curIds]);
+  }
+
+  // Revert ONLY this lesson to conversation order (other lessons keep theirs).
+  function resetOrder(): void {
+    briefOrder.set(briefOrder.get().filter((x) => eventChapter.get(x) !== currentChapterId));
+  }
+
+  // Clear ONLY this lesson's marks. Other lessons' annotations are untouched.
+  function clearLesson(): void {
+    const ids = items.map((it) => it.eventId);
+    if (ids.length === 0) return;
+    annotations.removeMany(ids);
+    const idSet = new Set(ids);
+    briefOrder.set(briefOrder.get().filter((x) => !idSet.has(x)));
+    const a = activeLegendId.get();
+    if (a !== null && idSet.has(a)) activeLegendId.set(null);
   }
 </script>
 
 <div class="brief-legend" data-variant={variant} data-testid="brief-legend">
   {#if items.length === 0}
     <p class="brief-empty lb-margin-note">
-      No marked points yet — use the tag control on any event.
+      No marked points in this lesson yet — use the tag control on any event.
     </p>
   {:else}
+    <div class="brief-head">
+      <span class="brief-count" data-testid="brief-count">{items.length} marked</span>
+      <span class="brief-head-spacer"></span>
+      {#if lessonHasCustomOrder}
+        <button
+          type="button"
+          class="brief-headbtn"
+          onclick={resetOrder}
+          title="Revert this lesson to conversation order"
+          data-testid="brief-reset"
+        >↕ Order</button>
+      {/if}
+      <button
+        type="button"
+        class="brief-headbtn brief-headbtn--danger"
+        onclick={clearLesson}
+        title="Remove all marks in this lesson (other lessons are not affected)"
+        data-testid="brief-clear-lesson"
+      >Clear lesson</button>
+    </div>
     <ol class="brief-list" data-testid="brief-list">
       {#each items as item, i (item.eventId)}
         <li
@@ -245,15 +305,6 @@
         </li>
       {/each}
     </ol>
-    {#if customOrder.length > 0}
-      <button
-        type="button"
-        class="brief-reset"
-        onclick={() => briefOrder.clear()}
-        title="Revert to conversation order"
-        data-testid="brief-reset"
-      >↕ Conversation order</button>
-    {/if}
   {/if}
 </div>
 
@@ -432,26 +483,53 @@
     outline-offset: -1px;
   }
 
-  /* Reset-to-conversation-order: subtle text button shown only when a custom
-     order is active. */
-  .brief-reset {
+  /* Header: per-lesson count + per-lesson actions (reset order / clear lesson). */
+  .brief-head {
+    display: flex;
+    align-items: center;
+    gap: var(--p-space-2);
+    padding: var(--p-space-1) var(--p-space-2) var(--p-space-2);
+    border-bottom: 1px solid var(--color-border-hairline);
+  }
+
+  .brief-count {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-meta);
+    color: var(--color-text-secondary);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .brief-head-spacer {
+    flex: 1;
+  }
+
+  .brief-headbtn {
     appearance: none;
     background: transparent;
-    border: 0;
+    border: 1px solid var(--color-border-hairline);
+    border-radius: 0;
     cursor: pointer;
-    display: block;
-    width: 100%;
-    text-align: left;
     font-family: var(--font-mono);
     font-size: var(--font-size-meta);
     color: var(--color-text-tertiary);
-    padding: var(--p-space-2);
-    transition: color 150ms ease-out;
+    padding: 2px 8px;
+    white-space: nowrap;
+    transition: color 150ms ease-out, background 150ms ease-out,
+      border-color 150ms ease-out;
   }
 
-  .brief-reset:hover,
-  .brief-reset:focus-visible {
+  .brief-headbtn:hover,
+  .brief-headbtn:focus-visible {
     color: var(--color-text-primary);
+    background: var(--color-surface-sunken);
+  }
+
+  .brief-headbtn--danger:hover,
+  .brief-headbtn--danger:focus-visible {
+    color: var(--color-error);
+    border-color: var(--color-error);
+    background: var(--color-surface-sunken);
   }
 
   :global(html[data-motion="reduced"]) .brief-row,

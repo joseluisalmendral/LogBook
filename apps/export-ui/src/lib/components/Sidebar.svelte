@@ -223,7 +223,7 @@
        `lb.annotations` localStorage key entirely (zero residue, spec B-5). -->
   <section class="annotations-block" aria-label="Annotations">
     <p class="annotations-title">Annotations</p>
-    <p class="annotations-count">{annotationCount} marked</p>
+    <p class="annotations-count">{annotationCount} marked · all lessons</p>
     {#if confirmingClear}
       <div class="confirm-row" data-testid="annotations-confirm">
         <span class="confirm-text">Confirm clear?</span>
@@ -254,7 +254,7 @@
         onclick={() => (confirmingClear = true)}
         data-testid="annotations-clear-all"
       >
-        Clear all annotations
+        Clear all (every lesson)
       </button>
     {/if}
   </section>
